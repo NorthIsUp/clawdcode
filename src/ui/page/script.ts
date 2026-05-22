@@ -335,8 +335,24 @@ export const pageScript = String.raw`    // --- Token management ---
         if (runs.length === 0) {
           setCardBody("home-recent", '<div class="card-empty">No recent activity.</div>');
         } else {
-          var recentItems = runs.slice(-8).reverse().map(function(r) {
-            return '<div class="card-list-item"><span class="card-list-name">' + esc(r.name || r.job || "run") + '</span><span class="card-list-meta">' + esc(fmtRelative(r.startedAt || r.at)) + '</span></div>';
+          var recentItems = runs.slice(0, 8).map(function(r) {
+            var runName = r.file ? r.file.replace(/\.log$/, "").replace(/-\d{4}-\d{2}-\d{2}T[\dZ:\-\.]+$/, "").replace(/-\d{4}-\d{2}-\d{2}$/, "") : "run";
+            var timeStr = r.mtime ? formatSessionTime(new Date(r.mtime).toISOString()) : "";
+            var lastLine = "";
+            if (Array.isArray(r.lines)) {
+              for (var li = r.lines.length - 1; li >= 0; li--) {
+                var ln = r.lines[li].trim();
+                if (ln && !ln.startsWith("#") && !ln.startsWith("Date:") && !ln.startsWith("Session:") && !ln.startsWith("Model") && !ln.startsWith("Prompt:") && !ln.startsWith("Exit code:")) {
+                  lastLine = ln.length > 60 ? ln.slice(0, 57) + "…" : ln;
+                  break;
+                }
+              }
+            }
+            return '<div class="card-list-item">' +
+              '<span class="card-list-name">' + esc(runName) + '</span>' +
+              '<span class="card-list-meta">' + esc(timeStr) + '</span>' +
+              (lastLine ? '<span class="card-list-sub">' + esc(lastLine) + '</span>' : '') +
+              '</div>';
           }).join("");
           setCardBody("home-recent", '<div class="card-list">' + recentItems + '</div>');
         }
@@ -413,7 +429,8 @@ export const pageScript = String.raw`    // --- Token management ---
       var item = document.createElement("div");
       item.className = "session-item" + (s.id === activeBrowseSessionId ? " active" : "") + (s.closed ? " closed" : "");
       item.dataset.sid = s.id;
-      var preview = esc(s.title || s.lastMessage || s.firstMessage || "(empty)");
+      var previewText = s.channel === "job" ? (s.title || "") : (s.title || s.lastMessage || s.firstMessage || "");
+      var preview = previewText ? esc(previewText) : "";
       var channel = s.channel && s.channel !== "web" ? s.channel : "";
       var displayName = esc(s.title || s.agent || "global");
       item.innerHTML =
@@ -424,7 +441,7 @@ export const pageScript = String.raw`    // --- Token management ---
         (s.jobName
           ? '<div class="session-job"><button class="session-job-link" type="button" data-job="' + escAttr(s.jobName) + '" title="Open job file">🗂 ' + esc(s.jobName) + '</button></div>'
           : '') +
-        '<div class="session-preview">' + preview + '</div>' +
+        (preview ? '<div class="session-preview">' + preview + '</div>' : '') +
         '<div class="session-time">' + esc(formatSessionTime(s.lastUsedAt)) + " · " + (s.turnCount || 0) + ' turns</div>' +
         '<div class="session-actions">' +
           '<button class="session-rename" data-sid="' + escAttr(s.id) + '" title="Rename">✎</button>' +
@@ -458,7 +475,7 @@ export const pageScript = String.raw`    // --- Token management ---
 
       // Header
       var newest = sessions[0] || {};
-      var newestPreview = newest.title || newest.lastMessage || newest.firstMessage || "(empty)";
+      var newestPreview = thread.kind === "job" ? (newest.title || "") : (newest.title || newest.lastMessage || newest.firstMessage || "");
       var newestTime = newest.lastUsedAt ? formatSessionTime(newest.lastUsedAt) : "";
       var countText = sessions.length > 1 ? " · " + sessions.length : "";
 
@@ -492,13 +509,15 @@ export const pageScript = String.raw`    // --- Token management ---
 
       var summaryRow = document.createElement("div");
       summaryRow.className = "thread-summary-row";
-      var previewSpan = document.createElement("span");
-      previewSpan.className = "thread-summary-preview";
-      previewSpan.textContent = newestPreview;
       var metaSpan = document.createElement("span");
       metaSpan.className = "thread-summary-meta";
       metaSpan.textContent = newestTime + (countText ? " " + countText : "");
-      summaryRow.appendChild(previewSpan);
+      if (newestPreview) {
+        var previewSpan = document.createElement("span");
+        previewSpan.className = "thread-summary-preview";
+        previewSpan.textContent = newestPreview;
+        summaryRow.appendChild(previewSpan);
+      }
       summaryRow.appendChild(metaSpan);
       summary.appendChild(summaryRow);
 

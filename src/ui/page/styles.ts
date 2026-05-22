@@ -168,6 +168,9 @@ export const pageStyles = String.raw`    :root {
       .rail-toggle {
         display: flex;
       }
+      .rail.rail-open ~ .rail-toggle {
+        display: none;
+      }
       .section-host {
         width: 100vw;
       }
@@ -276,12 +279,14 @@ export const pageStyles = String.raw`    :root {
       background: #0b1422a8;
       font-size: 11px;
       display: flex;
+      flex-wrap: wrap;
       justify-content: space-between;
-      gap: 8px;
+      gap: 2px 8px;
     }
 
     .card-list-name { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .card-list-meta { color: var(--muted); white-space: nowrap; flex-shrink: 0; }
+    .card-list-sub { color: var(--muted); font-size: 10px; opacity: 0.75; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 100%; margin-top: 2px; }
 
     .card-empty {
       color: var(--muted);

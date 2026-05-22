@@ -37,8 +37,9 @@ async function readRecentRunLogs(tail: number) {
       .filter((x): x is { name: string; path: string; mtime: number } => Boolean(x))
       .sort((a, b) => b.mtime - a.mtime)
       .slice(0, 5)
-      .map(async ({ name, path }) => ({
+      .map(async ({ name, path, mtime }) => ({
         file: name,
+        mtime,
         lines: await readTail(path, tail),
       }))
   );
