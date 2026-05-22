@@ -249,6 +249,48 @@ export const pageScript = String.raw`    // --- Token management ---
     }
 
     // --- Home section ---
+    // Persistent disclosure state for usage group rows
+    var usageGroupExpanded = {};
+
+    // Derive a job-group key from a usage session label.
+    // Labels from the usage service are like "#every-1m:20260522213159808" or "#every-1m" (base) or "global".
+    // A label matches a job run if it starts with "#" and the part after the last ":" is all digits (run timestamp).
+    // Returns the base key (e.g. "every-1m") or null if not a groupable job session.
+    // knownBases (optional Set) — if provided, also matches bare "#base" labels whose base is in the set.
+    function usageJobBase(label, knownBases) {
+      if (typeof label !== "string" || label.charAt(0) !== "#") return null;
+      var bare = label.slice(1); // strip leading #
+      var colonIdx = bare.lastIndexOf(":");
+      if (colonIdx < 0) {
+        // No colon — could be a base label like "#every-1m". Group it if known.
+        return (knownBases && knownBases[bare]) ? bare : null;
+      }
+      var runPart = bare.slice(colonIdx + 1);
+      // run-id is a pure-digit timestamp (e.g. 20260522213159808)
+      if (!/^\d+$/.test(runPart)) return null;
+      return bare.slice(0, colonIdx);
+    }
+
+    function buildUsageRow(s, maxCost, extraClass) {
+      var barPct = maxCost > 0 ? Math.round(((s.estimatedCostUsd || 0) / maxCost) * 100) : 0;
+      var channelIcon = s.channel === "discord" ? "🎮" : s.channel === "web" ? "🌐" : "⚙️";
+      return "<tr class='" + (extraClass || "") + "'>" +
+        "<td class='usage-td usage-td-label'>" + channelIcon + " " + esc(s.label) + "</td>" +
+        "<td class='usage-td usage-td-num'>" + fmtTokens(s.inputTokens || 0) + "</td>" +
+        "<td class='usage-td usage-td-num'>" + fmtTokens(s.outputTokens || 0) + "</td>" +
+        "<td class='usage-td usage-td-num'>" + fmtTokens(s.cacheReadTokens || 0) + "</td>" +
+        "<td class='usage-td usage-td-num'>" + (s.cacheHitPct || 0) + "%</td>" +
+        "<td class='usage-td usage-td-cost'>" +
+          "<div class='usage-cost-wrap'>" +
+            "<div class='usage-cost-bar' style='width:" + barPct + "%'></div>" +
+            "<span class='usage-cost-label'>~" + fmtCost(s.estimatedCostUsd || 0) + "</span>" +
+          "</div>" +
+        "</td>" +
+        "<td class='usage-td usage-td-num usage-td-turns'>" + (s.turnCount || 0) + "</td>" +
+        "<td class='usage-td usage-td-age'>" + fmtRelative(s.lastUsedAt) + "</td>" +
+        "</tr>";
+    }
+
     function renderUsageTable(sessions, wrapId) {
       var usageWrap = $(wrapId || "home-usage-wrap");
       if (!usageWrap) return;
@@ -256,28 +298,77 @@ export const pageScript = String.raw`    // --- Token management ---
         usageWrap.innerHTML = '<div class="usage-loading">No active sessions found.</div>';
         return;
       }
-      var maxCost = sessions.reduce(function(m, s) { return Math.max(m, s.estimatedCostUsd || 0); }, 0);
-      var rows = sessions.map(function(s) {
-        var barPct = maxCost > 0 ? Math.round(((s.estimatedCostUsd || 0) / maxCost) * 100) : 0;
-        var channelIcon = s.channel === "discord" ? "🎮" : s.channel === "web" ? "🌐" : "❓";
-        return "<tr>" +
-          "<td class='usage-td usage-td-label'>" + channelIcon + " " + esc(s.label) + "</td>" +
-          "<td class='usage-td usage-td-num'>" + fmtTokens(s.inputTokens || 0) + "</td>" +
-          "<td class='usage-td usage-td-num'>" + fmtTokens(s.outputTokens || 0) + "</td>" +
-          "<td class='usage-td usage-td-num'>" + fmtTokens(s.cacheReadTokens || 0) + "</td>" +
-          "<td class='usage-td usage-td-num'>" + (s.cacheHitPct || 0) + "%</td>" +
-          "<td class='usage-td usage-td-cost'>" +
-            "<div class='usage-cost-wrap'>" +
-              "<div class='usage-cost-bar' style='width:" + barPct + "%'></div>" +
-              "<span class='usage-cost-label'>~" + fmtCost(s.estimatedCostUsd || 0) + "</span>" +
-            "</div>" +
-          "</td>" +
-          "<td class='usage-td usage-td-num usage-td-turns'>" + (s.turnCount || 0) + "</td>" +
-          "<td class='usage-td usage-td-age'>" + fmtRelative(s.lastUsedAt) + "</td>" +
-          "</tr>";
-      }).join("");
-      usageWrap.innerHTML =
-        "<table class='usage-table'>" +
+
+      // Group job-run sessions by their base name.
+      // Two-pass: first identify all bases from run-ID sessions, then also pull in base sessions.
+      var groupMap = {}; // baseName → array of sessions
+      var standalones = [];
+      var groupOrder = []; // insertion-ordered list of base names
+
+      // Pass 1: collect run-ID sessions (label like "#base:digits") to build known bases set
+      var knownBases = {};
+      for (var i = 0; i < sessions.length; i++) {
+        var base1 = usageJobBase(sessions[i].label, null);
+        if (base1 !== null) knownBases[base1] = true;
+      }
+
+      // Pass 2: bucket every session
+      for (var i = 0; i < sessions.length; i++) {
+        var s = sessions[i];
+        var base = usageJobBase(s.label, knownBases);
+        if (base !== null) {
+          if (!groupMap[base]) {
+            groupMap[base] = [];
+            groupOrder.push(base);
+          }
+          groupMap[base].push(s);
+        } else {
+          standalones.push(s);
+        }
+      }
+
+      // Build flat display list: standalone rows + one aggregated parent per group
+      // (parents sorted by aggregated estimatedCostUsd desc)
+      var displayRows = []; // { type: "standalone"|"parent", data, base?, children? }
+      for (var i = 0; i < standalones.length; i++) {
+        displayRows.push({ type: "standalone", data: standalones[i] });
+      }
+      for (var gi = 0; gi < groupOrder.length; gi++) {
+        var base = groupOrder[gi];
+        var children = groupMap[base];
+        // Aggregate
+        var agg = {
+          label: "#" + base,
+          channel: "web",
+          inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0,
+          estimatedCostUsd: 0, turnCount: 0, lastUsedAt: ""
+        };
+        for (var ci = 0; ci < children.length; ci++) {
+          var c = children[ci];
+          agg.inputTokens += c.inputTokens || 0;
+          agg.outputTokens += c.outputTokens || 0;
+          agg.cacheReadTokens += c.cacheReadTokens || 0;
+          agg.cacheWriteTokens += (c.cacheWriteTokens || 0);
+          agg.estimatedCostUsd += c.estimatedCostUsd || 0;
+          agg.turnCount += c.turnCount || 0;
+          if (!agg.lastUsedAt || (c.lastUsedAt && c.lastUsedAt > agg.lastUsedAt)) {
+            agg.lastUsedAt = c.lastUsedAt;
+          }
+        }
+        var totalIn = agg.inputTokens + agg.cacheReadTokens + agg.cacheWriteTokens;
+        agg.cacheHitPct = totalIn > 0 ? Math.round((agg.cacheReadTokens / totalIn) * 100) : 0;
+        // Sort children newest-first
+        children.sort(function(a, b) {
+          return (b.lastUsedAt || "") > (a.lastUsedAt || "") ? 1 : -1;
+        });
+        displayRows.push({ type: "parent", data: agg, base: base, children: children });
+      }
+
+      var maxCost = displayRows.reduce(function(m, r) { return Math.max(m, r.data.estimatedCostUsd || 0); }, 0);
+
+      var tableEl = document.createElement("table");
+      tableEl.className = "usage-table";
+      tableEl.innerHTML =
         "<thead><tr>" +
         "<th class='usage-th'>Session</th>" +
         "<th class='usage-th usage-th-num'>Input</th>" +
@@ -287,9 +378,75 @@ export const pageScript = String.raw`    // --- Token management ---
         "<th class='usage-th'>Est. Cost</th>" +
         "<th class='usage-th usage-th-num'>Turns</th>" +
         "<th class='usage-th'>Last Active</th>" +
-        "</tr></thead>" +
-        "<tbody>" + rows + "</tbody>" +
-        "</table>";
+        "</tr></thead>";
+      var tbody = document.createElement("tbody");
+
+      for (var ri = 0; ri < displayRows.length; ri++) {
+        var row = displayRows[ri];
+        if (row.type === "standalone") {
+          tbody.insertAdjacentHTML("beforeend", buildUsageRow(row.data, maxCost, ""));
+        } else {
+          // Parent row with disclosure caret
+          var groupBase = row.base;
+          var isExpanded = !!usageGroupExpanded[groupBase];
+          var parentRowEl = document.createElement("tr");
+          parentRowEl.className = "usage-group-parent" + (isExpanded ? " usage-group-expanded" : "");
+          parentRowEl.dataset.usageGroup = groupBase;
+          var barPct = maxCost > 0 ? Math.round(((row.data.estimatedCostUsd || 0) / maxCost) * 100) : 0;
+          parentRowEl.innerHTML =
+            "<td class='usage-td usage-td-label usage-td-group-label'>⚙️ " +
+              "<button class='usage-group-caret' type='button'>" + (isExpanded ? "▼" : "▶") + "</button>" +
+              " " + esc(row.data.label) +
+              " <span class='usage-group-count'>(" + row.children.length + " runs)</span>" +
+            "</td>" +
+            "<td class='usage-td usage-td-num'>" + fmtTokens(row.data.inputTokens || 0) + "</td>" +
+            "<td class='usage-td usage-td-num'>" + fmtTokens(row.data.outputTokens || 0) + "</td>" +
+            "<td class='usage-td usage-td-num'>" + fmtTokens(row.data.cacheReadTokens || 0) + "</td>" +
+            "<td class='usage-td usage-td-num'>" + (row.data.cacheHitPct || 0) + "%</td>" +
+            "<td class='usage-td usage-td-cost'>" +
+              "<div class='usage-cost-wrap'>" +
+                "<div class='usage-cost-bar' style='width:" + barPct + "%'></div>" +
+                "<span class='usage-cost-label'>~" + fmtCost(row.data.estimatedCostUsd || 0) + "</span>" +
+              "</div>" +
+            "</td>" +
+            "<td class='usage-td usage-td-num usage-td-turns'>" + (row.data.turnCount || 0) + "</td>" +
+            "<td class='usage-td usage-td-age'>" + fmtRelative(row.data.lastUsedAt) + "</td>";
+          tbody.appendChild(parentRowEl);
+
+          // Child rows (initially hidden unless expanded)
+          var childRowEls = [];
+          for (var ci = 0; ci < row.children.length; ci++) {
+            var childTr = document.createElement("tr");
+            childTr.className = "usage-group-child" + (isExpanded ? "" : " usage-group-child-hidden");
+            childTr.innerHTML = buildUsageRow(row.children[ci], maxCost, "").replace(/^<tr[^>]*>/, "").replace(/<\/tr>$/, "");
+            // Replace label cell to add indent
+            var labelCell = childTr.querySelector(".usage-td-label");
+            if (labelCell) {
+              labelCell.innerHTML = "<span class='usage-child-indent'>↳</span> " + labelCell.innerHTML;
+            }
+            childRowEls.push(childTr);
+            tbody.appendChild(childTr);
+          }
+
+          // Wire up caret click
+          (function(pRow, cRows, gBase) {
+            pRow.addEventListener("click", function(e) {
+              if (!e.target.closest(".usage-group-caret") && !e.target.closest(".usage-td-group-label")) return;
+              var nowExp = pRow.classList.toggle("usage-group-expanded");
+              usageGroupExpanded[gBase] = nowExp;
+              var caret = pRow.querySelector(".usage-group-caret");
+              if (caret) caret.textContent = nowExp ? "▼" : "▶";
+              for (var k = 0; k < cRows.length; k++) {
+                cRows[k].classList.toggle("usage-group-child-hidden", !nowExp);
+              }
+            });
+          })(parentRowEl, childRowEls, groupBase);
+        }
+      }
+
+      tableEl.appendChild(tbody);
+      usageWrap.innerHTML = "";
+      usageWrap.appendChild(tableEl);
     }
 
     function setCardBody(cardId, html) {
@@ -467,11 +624,16 @@ export const pageScript = String.raw`    // --- Token management ---
             : '')
         ) +
         (preview ? '<div class="session-preview">' + preview + '</div>' : '') +
-        '<div class="session-time">' + esc(formatSessionTime(s.lastUsedAt)) + " · " + (s.turnCount || 0) + ' turns</div>' +
-        '<div class="session-actions">' +
-          '<button class="session-rename" data-sid="' + escAttr(s.id) + '" title="Rename">✎</button>' +
-          '<button class="session-close" data-sid="' + escAttr(s.id) + '" data-closed="' + (s.closed ? '1' : '0') + '" title="' + (s.closed ? 'Reopen' : 'Close') + '">' + (s.closed ? '↺' : '×') + '</button>' +
-        '</div>';
+        (isJobSession
+          ? '<div class="session-time session-time-row">' +
+              '<span>' + esc(formatSessionTime(s.lastUsedAt)) + " · " + (s.turnCount || 0) + ' turns</span>' +
+              '<button class="session-close" data-sid="' + escAttr(s.id) + '" data-closed="' + (s.closed ? '1' : '0') + '" title="' + (s.closed ? 'Reopen' : 'Close') + '">' + (s.closed ? '↺' : '×') + '</button>' +
+            '</div>'
+          : '<div class="session-time">' + esc(formatSessionTime(s.lastUsedAt)) + " · " + (s.turnCount || 0) + ' turns</div>' +
+            '<div class="session-actions">' +
+              '<button class="session-rename" data-sid="' + escAttr(s.id) + '" title="Rename">✎</button>' +
+              '<button class="session-close" data-sid="' + escAttr(s.id) + '" data-closed="' + (s.closed ? '1' : '0') + '" title="' + (s.closed ? 'Reopen' : 'Close') + '">' + (s.closed ? '↺' : '×') + '</button>' +
+            '</div>');
       item.addEventListener("click", function(e) {
         if (e.target.closest(".session-rename, .session-close, .session-title-input, .session-job-link")) return;
         browseSession(s.id);

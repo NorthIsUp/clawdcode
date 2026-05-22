@@ -303,7 +303,7 @@ export const pageStyles = String.raw`    :root {
 
     .card-list-name { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .card-list-meta { color: var(--muted); white-space: nowrap; flex-shrink: 0; }
-    .card-list-sub { color: var(--muted); font-size: 10px; opacity: 0.75; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 100%; margin-top: 2px; }
+    .card-list-sub { color: var(--muted); font-size: 10px; opacity: 0.75; overflow: hidden; text-overflow: ellipsis; white-space: normal; overflow-wrap: anywhere; width: 100%; margin-top: 2px; }
 
     .card-empty {
       color: var(--muted);
@@ -465,6 +465,18 @@ export const pageStyles = String.raw`    :root {
       font-size: 10px;
       color: var(--muted);
       margin-top: 2px;
+    }
+
+    .session-time-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .session-time-row .session-close {
+      flex-shrink: 0;
+      min-width: 22px;
+      min-height: 18px;
     }
 
     .session-actions {
@@ -1429,4 +1441,20 @@ export const pageStyles = String.raw`    :root {
     }
     .usage-cost-label { position: relative; padding-left: 6px; font-variant-numeric: tabular-nums; color: var(--text); }
     .usage-loading { font-size: 12px; color: var(--muted); padding: 8px 0; }
+
+    /* Usage grouping */
+    .usage-group-parent { cursor: pointer; }
+    .usage-group-parent:hover { background: rgba(255,255,255,0.03); }
+    .usage-group-caret {
+      border: none; background: transparent; color: var(--muted);
+      font-size: 9px; padding: 0 3px 0 0; cursor: pointer; vertical-align: middle;
+      transition: transform 0.14s ease;
+    }
+    .usage-group-count { color: var(--muted); font-size: 10px; }
+    .usage-group-child { font-size: 11px; }
+    .usage-group-child-hidden { display: none; }
+    .usage-child-indent { color: var(--muted); opacity: 0.55; margin-right: 4px; }
+    .usage-group-child .usage-td-label { padding-left: 18px; color: var(--muted); font-weight: 400; }
+    .usage-td-group-label { font-weight: 600; }
+
 `;
