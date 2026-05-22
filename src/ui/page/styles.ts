@@ -1253,6 +1253,21 @@ export const pageStyles = String.raw`    :root {
     .thread-badge-discord { color: #b9abff; background: rgba(185,171,255,0.1); border: 1px solid rgba(185,171,255,0.2); }
     .thread-badge-web { color: var(--muted); background: rgba(168,180,197,0.1); border: 1px solid rgba(168,180,197,0.18); }
 
+    .thread-job-link {
+      background: transparent;
+      border: 1px solid transparent;
+      padding: 0 4px;
+      font-size: 13px;
+      line-height: 1;
+      cursor: pointer;
+      border-radius: 4px;
+      flex-shrink: 0;
+    }
+    .thread-job-link:hover {
+      background: rgba(125,197,255,0.12);
+      border-color: rgba(125,197,255,0.25);
+    }
+
     .thread-summary {
       flex: 1;
       min-width: 0;

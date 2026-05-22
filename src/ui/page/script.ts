@@ -446,18 +446,24 @@ export const pageScript = String.raw`    // --- Token management ---
       var item = document.createElement("div");
       item.className = "session-item" + (s.id === activeBrowseSessionId ? " active" : "") + (s.closed ? " closed" : "");
       item.dataset.sid = s.id;
-      var previewText = s.channel === "job" ? (s.title || "") : (s.title || s.lastMessage || s.firstMessage || "");
+      // Inside a job thread the per-row chrome (agent name, channel badge, job 🗂 chip)
+      // is redundant — the thread header already carries the job name + JOB badge + link.
+      // So for job sessions we collapse the row to just title (if set), time, turns, actions.
+      var isJobSession = s.channel === "job";
+      var previewText = isJobSession ? (s.title || "") : (s.title || s.lastMessage || s.firstMessage || "");
       var preview = previewText ? esc(previewText) : "";
       var channel = s.channel && s.channel !== "web" ? s.channel : "";
       var displayName = esc(s.title || s.agent || "global");
       item.innerHTML =
-        '<div class="session-item-header">' +
-          '<span class="session-agent">' + displayName + '</span>' +
-          (channel ? '<span class="session-channel">' + esc(channel) + '</span>' : '') +
-        '</div>' +
-        (s.jobName
-          ? '<div class="session-job"><button class="session-job-link" type="button" data-job="' + escAttr(s.jobName) + '" title="Open job file">🗂 ' + esc(s.jobName) + '</button></div>'
-          : '') +
+        (isJobSession ? '' :
+          '<div class="session-item-header">' +
+            '<span class="session-agent">' + displayName + '</span>' +
+            (channel ? '<span class="session-channel">' + esc(channel) + '</span>' : '') +
+          '</div>' +
+          (s.jobName
+            ? '<div class="session-job"><button class="session-job-link" type="button" data-job="' + escAttr(s.jobName) + '" title="Open job file">🗂 ' + esc(s.jobName) + '</button></div>'
+            : '')
+        ) +
         (preview ? '<div class="session-preview">' + preview + '</div>' : '') +
         '<div class="session-time">' + esc(formatSessionTime(s.lastUsedAt)) + " · " + (s.turnCount || 0) + ' turns</div>' +
         '<div class="session-actions">' +
@@ -521,6 +527,21 @@ export const pageScript = String.raw`    // --- Token management ---
       badge.className = "thread-badge thread-badge-" + thread.kind;
       badge.textContent = thread.kind;
 
+      // For a job thread, surface the job-file 🗂 link at the thread level
+      // (the per-row chips are redundant and have been dropped from buildSessionItem).
+      var threadJobLink = null;
+      if (thread.kind === "job") {
+        threadJobLink = document.createElement("button");
+        threadJobLink.className = "thread-job-link";
+        threadJobLink.type = "button";
+        threadJobLink.title = "Open job file";
+        threadJobLink.textContent = "🗂";
+        threadJobLink.addEventListener("click", function(e) {
+          e.stopPropagation();
+          openJobFromSession(thread.label);
+        });
+      }
+
       var summary = document.createElement("div");
       summary.className = "thread-summary";
 
@@ -541,6 +562,7 @@ export const pageScript = String.raw`    // --- Token management ---
       hdr.appendChild(caretBtn);
       hdr.appendChild(labelSpan);
       hdr.appendChild(badge);
+      if (threadJobLink) hdr.appendChild(threadJobLink);
       hdr.appendChild(summary);
 
       // Clicking the header body (not the caret) browses the most-recent session
