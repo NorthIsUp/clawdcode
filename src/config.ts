@@ -80,7 +80,7 @@ const DEFAULT_SETTINGS: Settings = {
   timezone: "UTC",
   timezoneOffsetMinutes: 0,
   heartbeat: {
-    enabled: false,
+    enabled: true,
     interval: 15,
     prompt: "",
     excludeWindows: [],

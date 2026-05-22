@@ -1058,14 +1058,22 @@ export const pageStyles = String.raw`    :root {
       padding: 14px 16px;
     }
 
+    /* Float the legend so it renders as a normal block header inside the
+       card instead of straddling/notching the fieldset border. */
     .settings-group legend {
+      float: left;
+      width: 100%;
+      margin: 0 0 10px;
+      padding: 0 0 8px;
+      border-bottom: 1px solid var(--border);
       font-family: "JetBrains Mono", monospace;
       font-size: 11px;
       text-transform: uppercase;
       letter-spacing: 0.06em;
       color: var(--muted);
-      padding: 0 6px;
     }
+
+    .settings-group legend + * { clear: both; }
 
     .settings-row {
       display: flex;
