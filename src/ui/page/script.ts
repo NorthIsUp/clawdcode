@@ -216,7 +216,7 @@ export const pageScript = String.raw`    // --- Token management ---
       // Track the active section in the URL #fragment so a refresh stays put.
       if (location.hash.replace(/^#/, "") !== name) location.hash = name;
       if (name === "home") loadHome();
-      if (name === "chats") loadSessions();
+      if (name === "chats") { loadSessions(); refreshSlashCommands(); }
       if (name === "jobs") loadJobsSection();
       if (name === "settings") loadSettingsSection();
     }
@@ -336,11 +336,13 @@ export const pageScript = String.raw`    // --- Token management ---
         } else if (!repo.cloned) {
           gitHtml = '<div class="card-row"><span class="card-row-label">Status</span><span class="card-row-value warn">Not cloned</span></div>';
         } else {
+          var homePlugins = Array.isArray(repo.plugins) ? repo.plugins : [];
           gitHtml =
             '<div class="card-row"><span class="card-row-label">Branch</span><span class="card-row-value">' + esc(repo.branch || "main") + '</span></div>' +
             '<div class="card-row"><span class="card-row-label">Status</span><span class="card-row-value ' + (repo.dirty ? "warn" : "ok") + '">' + (repo.dirty ? "Dirty" : "Clean") + '</span></div>' +
             (repo.ahead || repo.behind ? '<div class="card-row"><span class="card-row-label">Ahead/Behind</span><span class="card-row-value">' + (repo.ahead || 0) + '↑ ' + (repo.behind || 0) + '↓</span></div>' : "") +
             '<div class="card-row"><span class="card-row-label">Last Pull</span><span class="card-row-value">' + esc(repo.lastPullAt ? fmtRelative(repo.lastPullAt) : "Never") + '</span></div>' +
+            (homePlugins.length > 0 ? '<div class="card-row"><span class="card-row-label">Plugins</span><span class="card-row-value">' + homePlugins.length + '</span></div>' : "") +
             (repo.lastError ? '<div class="card-row"><span class="card-row-label">Error</span><span class="card-row-value bad">' + esc(repo.lastError) + '</span></div>' : "");
         }
         gitHtml += '<button class="card-link-btn" onclick="showSection(\'jobs\')">Open Jobs →</button>';
@@ -948,6 +950,25 @@ export const pageScript = String.raw`    // --- Token management ---
           if (repo.lastPullAt) parts.push("pulled " + fmtRelative(repo.lastPullAt));
           statusEl.textContent = parts.join(" · ");
           if (syncBtn) syncBtn.disabled = false;
+
+          // Render plugin capability readout
+          var plugins = Array.isArray(repo.plugins) ? repo.plugins : [];
+          var existingPluginList = statusEl.parentElement && statusEl.parentElement.querySelector(".jobs-plugin-list");
+          if (existingPluginList) existingPluginList.remove();
+          if (plugins.length > 0) {
+            var listEl = document.createElement("div");
+            listEl.className = "jobs-plugin-list";
+            plugins.forEach(function(p) {
+              var parts2 = [];
+              if (p.skills && p.skills.length > 0) parts2.push(p.skills.length + " skill" + (p.skills.length !== 1 ? "s" : ""));
+              if (p.commands && p.commands.length > 0) parts2.push(p.commands.length + " command" + (p.commands.length !== 1 ? "s" : ""));
+              var line = document.createElement("div");
+              line.className = "jobs-plugin-item";
+              line.textContent = esc(p.name) + (parts2.length > 0 ? " — " + parts2.join(", ") : "");
+              listEl.appendChild(line);
+            });
+            statusEl.insertAdjacentElement("afterend", listEl);
+          }
         }
       } catch (e) {
         if (statusEl) statusEl.textContent = "Repo status unavailable";
@@ -1659,6 +1680,127 @@ export const pageScript = String.raw`    // --- Token management ---
     var chatCancelBtn = $("chat-cancel");
     if (chatCancelBtn) {
       chatCancelBtn.addEventListener("click", cancelChat);
+    }
+
+    // ── Slash-command autocomplete ──
+    // Caches the discovered plugin commands from /api/jobs/repo/status.
+    // Refreshed when the Chats section is shown.
+    var slashCommands = []; // [{plugin, command}]
+    var slashPopover = null;
+    var slashSelectedIdx = -1;
+
+    function refreshSlashCommands() {
+      fetch("/api/jobs/repo/status").then(function(r) { return r.json(); }).then(function(repo) {
+        slashCommands = [];
+        var plugins = Array.isArray(repo.plugins) ? repo.plugins : [];
+        plugins.forEach(function(p) {
+          (p.commands || []).forEach(function(cmd) {
+            slashCommands.push({ plugin: p.name, command: cmd, text: "/" + cmd });
+          });
+        });
+      }).catch(function() {});
+    }
+
+    function hideSlashPopover() {
+      if (slashPopover) {
+        slashPopover.remove();
+        slashPopover = null;
+      }
+      slashSelectedIdx = -1;
+    }
+
+    function showSlashPopover(items) {
+      hideSlashPopover();
+      if (!items.length || !chatInput) return;
+
+      var popover = document.createElement("div");
+      popover.className = "slash-popover";
+      popover.setAttribute("role", "listbox");
+
+      items.forEach(function(item, idx) {
+        var opt = document.createElement("div");
+        opt.className = "slash-option";
+        opt.setAttribute("role", "option");
+        opt.dataset.idx = String(idx);
+        opt.textContent = item.text;
+        opt.addEventListener("mousedown", function(e) {
+          e.preventDefault(); // don't blur the input
+          applySlashCommand(item.text);
+        });
+        popover.appendChild(opt);
+      });
+
+      // Insert the popover above the chat input
+      var inputArea = chatInput.closest(".chat-input-area");
+      if (inputArea) {
+        inputArea.insertBefore(popover, inputArea.firstChild);
+      } else {
+        chatInput.parentElement && chatInput.parentElement.insertBefore(popover, chatInput);
+      }
+      slashPopover = popover;
+      slashSelectedIdx = -1;
+    }
+
+    function updateSlashSelection(idx) {
+      if (!slashPopover) return;
+      var opts = slashPopover.querySelectorAll(".slash-option");
+      opts.forEach(function(o, i) {
+        o.classList.toggle("slash-option-selected", i === idx);
+        if (i === idx) o.scrollIntoView({ block: "nearest" });
+      });
+      slashSelectedIdx = idx;
+    }
+
+    function applySlashCommand(text) {
+      if (!chatInput) return;
+      chatInput.value = text;
+      autoResizeChatInput && autoResizeChatInput();
+      hideSlashPopover();
+      chatInput.focus();
+    }
+
+    function updateSlashAutocomplete() {
+      if (!chatInput) return;
+      var val = chatInput.value;
+      if (!val.startsWith("/") || slashCommands.length === 0) {
+        hideSlashPopover();
+        return;
+      }
+      var query = val.slice(1).toLowerCase();
+      var filtered = slashCommands.filter(function(item) {
+        return item.command.toLowerCase().startsWith(query) || item.text.toLowerCase().startsWith("/" + query);
+      });
+      if (filtered.length === 0) {
+        hideSlashPopover();
+        return;
+      }
+      showSlashPopover(filtered);
+    }
+
+    if (chatInput) {
+      chatInput.addEventListener("input", updateSlashAutocomplete);
+      chatInput.addEventListener("keydown", function(e) {
+        if (!slashPopover) return;
+        var opts = slashPopover.querySelectorAll(".slash-option");
+        var count = opts.length;
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          updateSlashSelection((slashSelectedIdx + 1) % count);
+        } else if (e.key === "ArrowUp") {
+          e.preventDefault();
+          updateSlashSelection((slashSelectedIdx - 1 + count) % count);
+        } else if (e.key === "Enter" && slashSelectedIdx >= 0) {
+          e.preventDefault();
+          var selectedOpt = opts[slashSelectedIdx];
+          if (selectedOpt) applySlashCommand(selectedOpt.textContent || "");
+        } else if (e.key === "Escape") {
+          hideSlashPopover();
+        }
+      });
+      chatInput.addEventListener("blur", function() {
+        // Small delay so mousedown on option fires before blur hides popover
+        setTimeout(hideSlashPopover, 150);
+      });
     }
 
     setInterval(function() {

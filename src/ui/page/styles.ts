@@ -983,6 +983,48 @@ export const pageStyles = String.raw`    :root {
       flex-shrink: 0;
     }
 
+    .jobs-plugin-list {
+      padding: 2px 14px 6px;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 11px;
+      color: var(--muted);
+      background: rgba(255,255,255,0.02);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .jobs-plugin-item {
+      padding: 1px 0;
+      color: #7dc5ff99;
+    }
+
+    /* ── Slash-command autocomplete popover ── */
+    .slash-popover {
+      position: relative;
+      width: 100%;
+      background: #0d1929;
+      border: 1px solid #7dc5ff44;
+      border-radius: 6px;
+      margin-bottom: 4px;
+      max-height: 160px;
+      overflow-y: auto;
+      z-index: 100;
+    }
+
+    .slash-option {
+      padding: 5px 10px;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 12px;
+      color: #b0cce8;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+
+    .slash-option:hover, .slash-option-selected {
+      background: #7dc5ff22;
+      color: #e0f0ff;
+    }
+
     .job-editor {
       flex: 1;
       width: 100%;
