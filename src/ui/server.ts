@@ -4,7 +4,8 @@ import { checkToken } from "./auth";
 import type { StartWebUiOptions, WebServerHandle } from "./types";
 import { buildState, buildTechnicalInfo, sanitizeSettings } from "./services/state";
 import { readHeartbeatSettings, updateHeartbeatSettings } from "./services/settings";
-import { createQuickJob, deleteJob, listJobFiles, readJobFile, writeJobFile, createJobFile, deleteJobFile } from "./services/jobs";
+import { createQuickJob, deleteJob, listJobFiles, readJobFile, writeJobFile, createJobFile, deleteJobFile, renameJobFile, isSafeJobPath } from "./services/jobs";
+import { generateJobName, isDateFilename } from "../haiku";
 import { setSessionTitle, setSessionClosed, normalizeTitle } from "./services/session-meta";
 import { getJobsRepoStatus, syncJobsRepo, pullJobsRepo } from "../jobsRepo";
 import { loadJobs } from "../jobs";
@@ -252,6 +253,43 @@ export function startWebUi(opts: StartWebUiOptions): WebServerHandle {
         const p = url.searchParams.get("path") ?? "";
         try { await deleteJobFile(p); return json({ ok: true }); }
         catch (e) { return json({ error: String(e instanceof Error ? e.message : e) }, 400); }
+      }
+
+      // --- Auto-name route: POST /api/jobs/file/auto-name ---
+      // Reads a date-pattern file, asks Haiku for a pithy kebab-case name,
+      // renames the file, and returns the new relative path.
+      if (url.pathname === "/api/jobs/file/auto-name" && req.method === "POST") {
+        try {
+          const body = await req.json().catch(() => ({})) as Record<string, unknown>;
+          const path = String(body.path ?? "");
+          // Only operates on date-stamp filenames (no subdirectory prefix expected here,
+          // but support the basename check in case path has a folder prefix).
+          const basename = path.split("/").pop() ?? "";
+          if (!isDateFilename(basename)) {
+            return json({ error: "path does not match date-stamp pattern" }, 400);
+          }
+          const content = await readJobFile(path);
+          const name = await generateJobName(content);
+
+          // Collision avoidance: find a free filename.
+          const jobsDir = (await import("../config")).getJobsDir();
+          const { existsSync } = await import("fs");
+          const { join } = await import("path");
+          let candidate = `${name}.md`;
+          let suffix = 2;
+          while (existsSync(join(jobsDir, candidate)) && suffix <= 20) {
+            candidate = `${name}-${suffix}.md`;
+            suffix++;
+          }
+          if (suffix > 20) {
+            return json({ error: "could not find a free filename after 20 attempts" }, 400);
+          }
+
+          await renameJobFile(path, candidate);
+          return json({ ok: true, newPath: candidate });
+        } catch (e) {
+          return json({ error: String(e instanceof Error ? e.message : e) }, 400);
+        }
       }
 
       // --- Jobs repo routes ---

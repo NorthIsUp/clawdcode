@@ -1,5 +1,5 @@
-import { mkdir, writeFile, readdir, readFile, stat, unlink, realpath } from "fs/promises";
-import { join, resolve, relative, sep, dirname } from "path";
+import { mkdir, writeFile, readdir, readFile, stat, unlink, realpath, rename } from "fs/promises";
+import { join, resolve, relative, sep, dirname, basename } from "path";
 import { getJobsDir } from "../../config";
 
 export interface QuickJobInput {
@@ -139,9 +139,33 @@ export async function createJobFile(relPath: string, dir: string = getJobsDir())
   const full = await resolveSafe(relPath, dir);
   if (await Bun.file(full).exists()) throw new Error("File already exists.");
   await mkdir(join(full, ".."), { recursive: true });
-  await writeFile(full, "---\nschedule: \"0 9 * * *\"\nrecurring: true\n---\n", "utf-8");
+  await writeFile(full, "---\nschedule: \"0 9 * * *\"\nrecurring: true\nreuse_session: false\n---\n", "utf-8");
 }
 
 export async function deleteJobFile(relPath: string, dir: string = getJobsDir()): Promise<void> {
   await unlink(await resolveSafe(relPath, dir));
+}
+
+/**
+ * Rename a job file within the jobs dir.  Both `oldRelPath` and `newRelPath`
+ * are validated to stay inside `dir` via resolveSafe.
+ * Returns the new relative path.
+ */
+export async function renameJobFile(
+  oldRelPath: string,
+  newRelPath: string,
+  dir: string = getJobsDir()
+): Promise<string> {
+  const oldFull = await resolveSafe(oldRelPath, dir);
+  // For the destination we can't call resolveSafe directly (it realpaths the
+  // path which requires it to exist), so we do a lexical safety check instead.
+  if (!isSafeJobPath(newRelPath)) throw new Error("Invalid destination job path.");
+  const realDir = await realpath(dir).catch(() => resolve(dir));
+  const newFull = resolve(realDir, newRelPath);
+  if (newFull !== realDir && !newFull.startsWith(realDir + sep)) {
+    throw new Error("Invalid destination job path.");
+  }
+  await mkdir(join(newFull, ".."), { recursive: true });
+  await rename(oldFull, newFull);
+  return newRelPath;
 }

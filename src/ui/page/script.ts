@@ -1167,6 +1167,11 @@ export const pageScript = String.raw`    // --- Token management ---
       });
     }
 
+    // True when filename matches the YYYY-MM-DD-HHmm[ss].md date-stamp pattern.
+    function isDateFilename(filename) {
+      return /^\d{4}-\d{2}-\d{2}-\d{4}\.md$/.test(filename);
+    }
+
     var jobsSaveBtn = $("jobs-save-btn");
     if (jobsSaveBtn) {
       jobsSaveBtn.addEventListener("click", async function() {
@@ -1184,7 +1189,41 @@ export const pageScript = String.raw`    // --- Token management ---
           jobEditorDirty = false;
           updateJobsDirtyIndicator();
           setJobsStatus("Saved.");
-          await loadJobFiles();
+
+          // Auto-rename: if the current file still has a date-stamp name, ask
+          // the server to pick a pithy kebab-case name via Claude Haiku.
+          var savedPath = currentJobFile;
+          var basename = savedPath.split("/").pop() || "";
+          if (isDateFilename(basename)) {
+            setJobsStatus("Auto-naming…");
+            try {
+              var renameRes = await fetch("/api/jobs/file/auto-name", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ path: savedPath })
+              });
+              var renameOut = await renameRes.json();
+              if (renameOut.ok && renameOut.newPath) {
+                currentJobFile = renameOut.newPath;
+                var currentFileEl = $("jobs-current-file");
+                if (currentFileEl) currentFileEl.textContent = currentJobFile;
+                await loadJobFiles();
+                // Re-highlight the renamed file without reloading content
+                document.querySelectorAll(".job-file-item").forEach(function(el) {
+                  el.classList.toggle("active", el.dataset.path === currentJobFile);
+                });
+                setJobsStatus("Saved and renamed to " + currentJobFile);
+              } else {
+                setJobsStatus("Saved. (auto-rename failed: " + (renameOut.error || "unknown") + ")");
+                await loadJobFiles();
+              }
+            } catch (re) {
+              setJobsStatus("Saved. (auto-rename error: " + String(re instanceof Error ? re.message : re) + ")");
+              await loadJobFiles();
+            }
+          } else {
+            await loadJobFiles();
+          }
         } catch (e) {
           setJobsStatus("Failed: " + String(e instanceof Error ? e.message : e));
         } finally {
@@ -1193,17 +1232,39 @@ export const pageScript = String.raw`    // --- Token management ---
       });
     }
 
+    // Helper: compute a sortable date-stamp filename in the configured timezone.
+    function makeDateFilename(suffix) {
+      var tz = clockTimezone || "UTC";
+      var now = new Date();
+      var parts = {};
+      try {
+        var fmt = new Intl.DateTimeFormat("en-US", {
+          timeZone: tz,
+          year: "numeric", month: "2-digit", day: "2-digit",
+          hour: "2-digit", minute: "2-digit", second: "2-digit",
+          hour12: false
+        });
+        fmt.formatToParts(now).forEach(function(p) { parts[p.type] = p.value; });
+      } catch (e) {
+        // Fallback to UTC
+        parts = {
+          year: String(now.getUTCFullYear()),
+          month: String(now.getUTCMonth() + 1).padStart(2, "0"),
+          day: String(now.getUTCDate()).padStart(2, "0"),
+          hour: String(now.getUTCHours()).padStart(2, "0"),
+          minute: String(now.getUTCMinutes()).padStart(2, "0"),
+          second: String(now.getUTCSeconds()).padStart(2, "0")
+        };
+      }
+      var base = parts.year + "-" + parts.month + "-" + parts.day + "-" + parts.hour + parts.minute;
+      if (suffix) base = base + parts.second;
+      return base + ".md";
+    }
+
     var jobsNewBtn = $("jobs-new-btn");
     if (jobsNewBtn) {
       jobsNewBtn.addEventListener("click", async function() {
-        var name = prompt("New job file name (e.g. daily.md):");
-        if (!name) return;
-        name = name.trim();
-        if (!/^[A-Za-z0-9._/-]+$/.test(name)) {
-          alert("Invalid filename. Use only letters, numbers, dots, hyphens, underscores, slashes.");
-          return;
-        }
-        if (!name.endsWith(".md")) name = name + ".md";
+        var name = makeDateFilename(false);
         try {
           var res = await fetch("/api/jobs/file", {
             method: "POST",
@@ -1211,7 +1272,17 @@ export const pageScript = String.raw`    // --- Token management ---
             body: JSON.stringify({ path: name })
           });
           var out = await res.json();
-          if (!out.ok) throw new Error(out.error || "create failed");
+          if (!out.ok) {
+            // Same-minute collision: retry with seconds appended.
+            name = makeDateFilename(true);
+            res = await fetch("/api/jobs/file", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ path: name })
+            });
+            out = await res.json();
+            if (!out.ok) throw new Error(out.error || "create failed");
+          }
           await loadJobFiles();
           await loadJobFile(name);
         } catch (e) {
