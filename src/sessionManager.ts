@@ -108,3 +108,33 @@ export async function peekThreadSession(threadId: string): Promise<ThreadSession
   const data = await loadSessions();
   return data.threads[threadId] ?? null;
 }
+
+/**
+ * Pure helper: given a threads record, return the subset to keep for baseName.
+ * Keeps the `keep` most-recent entries (by lastUsedAt) whose threadId is
+ * `baseName` or starts with `baseName + ":"`. All other entries are passed through unchanged.
+ */
+export function selectThreadsToKeep(
+  threads: Record<string, ThreadSession>,
+  baseName: string,
+  keep: number,
+): Record<string, ThreadSession> {
+  const prefix = baseName + ":";
+  const matches = Object.values(threads).filter(
+    (t) => t.threadId === baseName || t.threadId.startsWith(prefix),
+  );
+  matches.sort((a, b) => new Date(b.lastUsedAt).getTime() - new Date(a.lastUsedAt).getTime());
+  const toRemove = new Set(matches.slice(keep).map((t) => t.threadId));
+  const result: Record<string, ThreadSession> = {};
+  for (const [id, session] of Object.entries(threads)) {
+    if (!toRemove.has(id)) result[id] = session;
+  }
+  return result;
+}
+
+/** Keep only the most-recent `keep` thread sessions whose threadId is `<baseName>` or `<baseName>:*`. */
+export async function pruneJobSessions(baseName: string, keep = 25): Promise<void> {
+  const data = await loadSessions();
+  data.threads = selectThreadsToKeep(data.threads, baseName, keep);
+  await saveSessions(data);
+}

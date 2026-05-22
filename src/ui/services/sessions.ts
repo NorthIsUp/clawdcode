@@ -163,10 +163,11 @@ export async function listSessions(includeClosed = false): Promise<SessionInfo[]
           firstMessage: first,
           lastMessage: last,
           closed: false,
-          // A standalone job's thread ID is its job name → its file is
-          // <name>.md in the jobs dir. Agent jobs share one thread across
-          // multiple files, so they get no single-file link.
-          ...(isSnowflake || isAgentJob ? {} : { jobName: threadId }),
+          // A standalone job's thread ID is its job name or <name>:<runId> (per-run).
+          // Strip the :<runId> suffix so all runs of a job group under the same name,
+          // and <name>.md keeps working as the file link.
+          // Agent jobs share one thread across multiple files, so they get no single-file link.
+          ...(isSnowflake || isAgentJob ? {} : { jobName: threadId.split(":")[0] }),
         });
         knownIds.add(t.sessionId);
       }

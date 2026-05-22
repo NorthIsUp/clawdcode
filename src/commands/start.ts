@@ -5,8 +5,9 @@ import { fileURLToPath } from "url";
 import { run, runUserMessage, streamUserMessage, bootstrap, ensureProjectClaudeMd, loadHeartbeatPromptTemplate, isRateLimited, getRateLimitResetAt, wasRateLimitNotified, markRateLimitNotified } from "../runner";
 import { writeState, type StateData } from "../statusline";
 import { cronMatches, nextCronMatch } from "../cron";
-import { clearJobSchedule, loadJobs, snapshotJobFrontmatter } from "../jobs";
+import { buildJobThreadId, clearJobSchedule, loadJobs, snapshotJobFrontmatter } from "../jobs";
 import { writePidFile, cleanupPidFile, checkExistingDaemon } from "../pid";
+import { pruneJobSessions } from "../sessionManager";
 import { initConfig, loadSettings, reloadSettings, resolvePrompt, type HeartbeatConfig, type Settings } from "../config";
 import { getDayAndMinuteAtOffset, buildClockPromptPrefix } from "../timezone";
 import { startWebUi, type WebServerHandle } from "../web";
@@ -877,6 +878,18 @@ export async function start(args: string[] = []) {
 
   function runJob(job: (typeof currentJobs)[0]) {
     const timeoutMs = job.timeoutSeconds ? job.timeoutSeconds * 1000 : undefined;
+    const base = job.agent ? `agent:${job.agent}` : job.name;
+    const reuse = job.agent ? true : job.reuseSession;
+    const now = new Date();
+    const runId = [
+      now.getUTCFullYear(),
+      String(now.getUTCMonth() + 1).padStart(2, "0"),
+      String(now.getUTCDate()).padStart(2, "0"),
+      String(now.getUTCHours()).padStart(2, "0"),
+      String(now.getUTCMinutes()).padStart(2, "0"),
+      String(now.getUTCSeconds()).padStart(2, "0"),
+    ].join("");
+    const threadId = buildJobThreadId(base, reuse, runId);
     snapshotJobFrontmatter(job.name)
       .then((restoreFrontmatter) =>
         resolvePrompt(job.prompt)
@@ -885,7 +898,7 @@ export async function start(args: string[] = []) {
             return run(
               job.name,
               `${clock}\n${prompt}`,
-              job.agent ? `agent:${job.agent}` : job.name,
+              threadId,
               job.model,
               timeoutMs,
               job.agent,
@@ -914,6 +927,9 @@ export async function start(args: string[] = []) {
                 jobRetryState.delete(job.name);
                 console.log(`[${ts()}] Job ${job.name} exhausted ${job.retry} retries`);
               }
+            }
+            if (!reuse) {
+              pruneJobSessions(job.name).catch(() => {/* best-effort */});
             }
             if (job.notify === false) return;
             if (job.notify === "error" && r.exitCode === 0) return;

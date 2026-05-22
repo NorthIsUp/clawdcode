@@ -1,6 +1,9 @@
 import { describe, test, expect, beforeEach, afterAll } from "bun:test";
 import { mkdir, writeFile, rm } from "fs/promises";
 import { join } from "path";
+import { buildJobThreadId } from "../jobs";
+import { selectThreadsToKeep } from "../sessionManager";
+import type { ThreadSession } from "../sessionManager";
 
 const TEST_ROOT = join(import.meta.dir, "../../test-sandbox-jobs");
 const LEGACY_JOBS_DIR = join(TEST_ROOT, ".claude", "claudeclaw", "jobs");
@@ -191,5 +194,186 @@ describe("write-protection bug validation", () => {
     const agentPath = join(process.cwd(), "agents", "suzy", "jobs", "daily.md");
     expect(legacyPath).toContain("/.claude/");
     expect(agentPath).not.toContain("/.claude/");
+  });
+});
+
+// ─── Unit: reuse_session frontmatter parsing ─────────────────────────────
+
+describe("parseJobFile — reuse_session", () => {
+  beforeEach(resetSandbox);
+
+  test("reuse_session: true → reuseSession === true", async () => {
+    await writeFile(
+      join(LEGACY_JOBS_DIR, "r1.md"),
+      jobMd("0 1 * * *", "test prompt", "reuse_session: true")
+    );
+    const jobs = await loadJobsInSandbox();
+    const job = jobs.find((j) => j.name === "r1");
+    expect(job).toBeDefined();
+    expect(job?.reuseSession).toBe(true);
+  });
+
+  test("reuse_session: yes → reuseSession === true", async () => {
+    await writeFile(
+      join(LEGACY_JOBS_DIR, "r2.md"),
+      jobMd("0 1 * * *", "test prompt", "reuse_session: yes")
+    );
+    const jobs = await loadJobsInSandbox();
+    const job = jobs.find((j) => j.name === "r2");
+    expect(job?.reuseSession).toBe(true);
+  });
+
+  test("reuse_session: 1 → reuseSession === true", async () => {
+    await writeFile(
+      join(LEGACY_JOBS_DIR, "r3.md"),
+      jobMd("0 1 * * *", "test prompt", "reuse_session: 1")
+    );
+    const jobs = await loadJobsInSandbox();
+    const job = jobs.find((j) => j.name === "r3");
+    expect(job?.reuseSession).toBe(true);
+  });
+
+  test("reuse_session absent → reuseSession === false", async () => {
+    await writeFile(
+      join(LEGACY_JOBS_DIR, "r4.md"),
+      jobMd("0 1 * * *", "test prompt")
+    );
+    const jobs = await loadJobsInSandbox();
+    const job = jobs.find((j) => j.name === "r4");
+    expect(job?.reuseSession).toBe(false);
+  });
+
+  test("reuse_session: false → reuseSession === false", async () => {
+    await writeFile(
+      join(LEGACY_JOBS_DIR, "r5.md"),
+      jobMd("0 1 * * *", "test prompt", "reuse_session: false")
+    );
+    const jobs = await loadJobsInSandbox();
+    const job = jobs.find((j) => j.name === "r5");
+    expect(job?.reuseSession).toBe(false);
+  });
+
+  test("reuse_session: no → reuseSession === false", async () => {
+    await writeFile(
+      join(LEGACY_JOBS_DIR, "r6.md"),
+      jobMd("0 1 * * *", "test prompt", "reuse_session: no")
+    );
+    const jobs = await loadJobsInSandbox();
+    const job = jobs.find((j) => j.name === "r6");
+    expect(job?.reuseSession).toBe(false);
+  });
+});
+
+// ─── Unit: buildJobThreadId ───────────────────────────────────────────────
+
+describe("buildJobThreadId", () => {
+  const RUN_ID = "20260522140300";
+
+  test("reuseSession=true → returns base unchanged", () => {
+    expect(buildJobThreadId("daily", true, RUN_ID)).toBe("daily");
+  });
+
+  test("reuseSession=false → returns base:runId", () => {
+    expect(buildJobThreadId("daily", false, RUN_ID)).toBe("daily:20260522140300");
+  });
+
+  test("reuseSession=true with agent base → returns base unchanged", () => {
+    expect(buildJobThreadId("agent:mike", true, RUN_ID)).toBe("agent:mike");
+  });
+
+  test("reuseSession=false with complex base → base:runId", () => {
+    expect(buildJobThreadId("every-1m", false, RUN_ID)).toBe("every-1m:20260522140300");
+  });
+});
+
+// ─── Unit: selectThreadsToKeep (pure prune logic) ────────────────────────
+
+function makeThread(threadId: string, lastUsedAt: string): ThreadSession {
+  return {
+    sessionId: `session-${threadId}`,
+    threadId,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    lastUsedAt,
+    turnCount: 1,
+    compactWarned: false,
+  };
+}
+
+describe("selectThreadsToKeep", () => {
+  test("keeps the 25 newest foo:* entries when given 30, drops the 5 oldest", () => {
+    const threads: Record<string, ThreadSession> = {};
+    // Create 30 foo:* entries with ascending lastUsedAt timestamps
+    for (let i = 0; i < 30; i++) {
+      const id = `foo:2026052214${String(i).padStart(4, "0")}`;
+      const ts = new Date(2026, 4, 22, 14, i, 0).toISOString();
+      threads[id] = makeThread(id, ts);
+    }
+    const result = selectThreadsToKeep(threads, "foo", 25);
+    const kept = Object.keys(result).filter((k) => k.startsWith("foo:"));
+    expect(kept).toHaveLength(25);
+    // The 5 oldest (i=0..4) should be dropped
+    for (let i = 0; i < 5; i++) {
+      const id = `foo:2026052214${String(i).padStart(4, "0")}`;
+      expect(result[id]).toBeUndefined();
+    }
+    // The 25 newest (i=5..29) should be kept
+    for (let i = 5; i < 30; i++) {
+      const id = `foo:2026052214${String(i).padStart(4, "0")}`;
+      expect(result[id]).toBeDefined();
+    }
+  });
+
+  test("unrelated Discord snowflake threads are untouched", () => {
+    const threads: Record<string, ThreadSession> = {};
+    // Add a Discord snowflake
+    threads["123456789012345678"] = makeThread("123456789012345678", "2026-05-22T00:00:00.000Z");
+    // Add 30 foo:* entries
+    for (let i = 0; i < 30; i++) {
+      const id = `foo:${String(i).padStart(14, "0")}`;
+      threads[id] = makeThread(id, new Date(2026, 0, 1, 0, i, 0).toISOString());
+    }
+    const result = selectThreadsToKeep(threads, "foo", 25);
+    // Snowflake must survive
+    expect(result["123456789012345678"]).toBeDefined();
+    // Only 25 foo:* remain
+    expect(Object.keys(result).filter((k) => k.startsWith("foo:")).length).toBe(25);
+  });
+
+  test("other job threads (bar:*) are untouched", () => {
+    const threads: Record<string, ThreadSession> = {};
+    threads["bar:20260101000000"] = makeThread("bar:20260101000000", "2026-01-01T00:00:00.000Z");
+    for (let i = 0; i < 30; i++) {
+      const id = `foo:${String(i).padStart(14, "0")}`;
+      threads[id] = makeThread(id, new Date(2026, 0, 1, 0, i, 0).toISOString());
+    }
+    const result = selectThreadsToKeep(threads, "foo", 25);
+    expect(result["bar:20260101000000"]).toBeDefined();
+    expect(Object.keys(result).filter((k) => k.startsWith("foo:")).length).toBe(25);
+  });
+
+  test("fewer than keep entries → all kept", () => {
+    const threads: Record<string, ThreadSession> = {};
+    for (let i = 0; i < 10; i++) {
+      const id = `foo:${String(i).padStart(14, "0")}`;
+      threads[id] = makeThread(id, new Date(2026, 0, 1, 0, i, 0).toISOString());
+    }
+    const result = selectThreadsToKeep(threads, "foo", 25);
+    expect(Object.keys(result).filter((k) => k.startsWith("foo:")).length).toBe(10);
+  });
+
+  test("exact base name match (reuseSession=true, no colon) included in pruning", () => {
+    const threads: Record<string, ThreadSession> = {};
+    // 1 stable thread (base name, no colon) + 29 per-run
+    threads["foo"] = makeThread("foo", "2026-01-01T00:00:00.000Z"); // oldest
+    for (let i = 0; i < 29; i++) {
+      const id = `foo:${String(i + 1).padStart(14, "0")}`;
+      threads[id] = makeThread(id, new Date(2026, 0, 1, 0, i + 1, 0).toISOString());
+    }
+    // Total 30 entries, keep 25 → oldest 5 dropped (foo base + 4 per-run with lowest i)
+    const result = selectThreadsToKeep(threads, "foo", 25);
+    const fooKeys = Object.keys(result).filter((k) => k === "foo" || k.startsWith("foo:"));
+    expect(fooKeys).toHaveLength(25);
+    // "foo" was the oldest, should be dropped
+    expect(result["foo"]).toBeUndefined();
   });
 });
