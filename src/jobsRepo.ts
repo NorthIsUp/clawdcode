@@ -1,6 +1,7 @@
 import { existsSync } from "fs";
 import { join } from "path";
 import { getSettings, getJobsRepoDir } from "./config";
+import { discoverJobsRepoPlugins, type JobsRepoPlugin } from "./jobsRepoPlugins";
 
 export interface GitResult { ok: boolean; stdout: string; stderr: string; code: number; }
 
@@ -13,6 +14,7 @@ export interface JobsRepoStatus {
   branch: string;
   lastPullAt: string | null;
   lastError: string | null;
+  plugins: JobsRepoPlugin[];
 }
 
 export interface SyncResult {
@@ -103,11 +105,13 @@ export async function getJobsRepoStatus(): Promise<JobsRepoStatus> {
       ahead = a ?? 0; behind = b ?? 0;
     }
   }
+  const plugins = await discoverJobsRepoPlugins();
   return {
     configured: !!jobsRepo.url,
     cloned, dirty, ahead, behind,
     branch: jobsRepo.branch,
     lastPullAt, lastError,
+    plugins,
   };
 }
 
