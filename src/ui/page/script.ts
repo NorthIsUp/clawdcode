@@ -604,13 +604,14 @@ export const pageScript = String.raw`    // --- Token management ---
       if (saveBtn) saveBtn.disabled = true;
       try {
         var data = await fetch("/api/jobs/file?path=" + encodeURIComponent(path)).then(function(r) { return r.json(); });
+        if (data && data.error) throw new Error(data.error);
         editor.value = data.content || "";
         editor.disabled = false;
         if (saveBtn) saveBtn.disabled = false;
       } catch (e) {
         editor.value = "";
         editor.disabled = true;
-        setJobsStatus("Failed to load file: " + String(e));
+        setJobsStatus("Failed to load file: " + String(e instanceof Error ? e.message : e));
       }
       // Update active class
       document.querySelectorAll(".job-file-item").forEach(function(el) {

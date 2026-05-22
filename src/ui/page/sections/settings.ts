@@ -41,6 +41,7 @@ export const settingsHtml = `
         <div class="settings-row">
           <label class="settings-label" for="s-security">Level</label>
           <select class="settings-select" id="s-security">
+            <option value="locked">Locked</option>
             <option value="strict">Strict</option>
             <option value="moderate">Moderate</option>
             <option value="unrestricted">Unrestricted</option>

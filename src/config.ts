@@ -503,11 +503,20 @@ function extractDiscordUserIds(rawText: string): string[] {
   return items;
 }
 
+/** Clamp an env-overridden security level back to a valid value. */
+function validateSecurityLevel(settings: Settings): Settings {
+  if (!VALID_LEVELS.has(settings.security.level)) {
+    console.warn(`[config] Invalid security level "${settings.security.level}" — falling back to "moderate"`);
+    settings.security.level = "moderate";
+  }
+  return settings;
+}
+
 export async function loadSettings(): Promise<Settings> {
   if (cached) return cached;
   const rawText = await Bun.file(SETTINGS_FILE).text();
   const raw = JSON.parse(rawText);
-  cached = applyEnvOverrides(parseSettings(raw, extractDiscordUserIds(rawText)));
+  cached = validateSecurityLevel(applyEnvOverrides(parseSettings(raw, extractDiscordUserIds(rawText))));
   return cached;
 }
 
@@ -515,7 +524,7 @@ export async function loadSettings(): Promise<Settings> {
 export async function reloadSettings(): Promise<Settings> {
   const rawText = await Bun.file(SETTINGS_FILE).text();
   const raw = JSON.parse(rawText);
-  cached = applyEnvOverrides(parseSettings(raw, extractDiscordUserIds(rawText)));
+  cached = validateSecurityLevel(applyEnvOverrides(parseSettings(raw, extractDiscordUserIds(rawText))));
   return cached;
 }
 

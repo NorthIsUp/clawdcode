@@ -1,5 +1,5 @@
-import { mkdir, writeFile, readdir, readFile, stat, unlink } from "fs/promises";
-import { join, resolve, relative } from "path";
+import { mkdir, writeFile, readdir, readFile, stat, unlink, realpath } from "fs/promises";
+import { join, resolve, relative, sep } from "path";
 import { getJobsDir } from "../../config";
 
 export interface QuickJobInput {
@@ -68,12 +68,20 @@ export function isSafeJobPath(relPath: string): boolean {
   return true;
 }
 
-function resolveSafe(relPath: string): string {
+async function resolveSafe(relPath: string): Promise<string> {
   if (!isSafeJobPath(relPath)) throw new Error("Invalid job path.");
   const dir = getJobsDir();
-  const full = resolve(dir, relPath);
-  const rel = relative(dir, full);
-  if (rel.startsWith("..") || resolve(dir, rel) !== full) throw new Error("Invalid job path.");
+  const realDir = await realpath(dir).catch(() => resolve(dir));
+  const full = resolve(realDir, relPath);
+  if (full !== realDir && !full.startsWith(realDir + sep)) throw new Error("Invalid job path.");
+  // If the target already exists, verify it doesn't symlink outside the jobs dir.
+  try {
+    const realFull = await realpath(full);
+    if (realFull !== realDir && !realFull.startsWith(realDir + sep)) throw new Error("Invalid job path.");
+  } catch (e) {
+    if (e instanceof Error && e.message === "Invalid job path.") throw e;
+    // ENOENT — target doesn't exist yet (create / write-new); the lexical check above stands.
+  }
   return full;
 }
 
@@ -102,23 +110,23 @@ export async function listJobFiles(): Promise<JobFileEntry[]> {
 }
 
 export async function readJobFile(relPath: string): Promise<string> {
-  return readFile(resolveSafe(relPath), "utf-8");
+  return readFile(await resolveSafe(relPath), "utf-8");
 }
 
 export async function writeJobFile(relPath: string, content: string): Promise<void> {
   if (content.length > 100_000) throw new Error("File too large.");
-  const full = resolveSafe(relPath);
+  const full = await resolveSafe(relPath);
   await mkdir(join(full, ".."), { recursive: true });
   await writeFile(full, content, "utf-8");
 }
 
 export async function createJobFile(relPath: string): Promise<void> {
-  const full = resolveSafe(relPath);
+  const full = await resolveSafe(relPath);
   if (await Bun.file(full).exists()) throw new Error("File already exists.");
   await mkdir(join(full, ".."), { recursive: true });
   await writeFile(full, "---\nschedule: \"0 9 * * *\"\nrecurring: true\n---\n", "utf-8");
 }
 
 export async function deleteJobFile(relPath: string): Promise<void> {
-  await unlink(resolveSafe(relPath));
+  await unlink(await resolveSafe(relPath));
 }
