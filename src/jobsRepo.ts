@@ -110,3 +110,33 @@ export async function getJobsRepoStatus(): Promise<JobsRepoStatus> {
     lastPullAt, lastError,
   };
 }
+
+/** Auto-generated commit message for a UI-triggered sync. */
+export function buildCommitMessage(now: Date = new Date()): string {
+  return `claudeclaw: sync jobs (${now.toISOString().replace("T", " ").slice(0, 19)} UTC)`;
+}
+
+/** Stage everything, commit (if there are changes), and push. */
+export async function syncJobsRepo(): Promise<SyncResult> {
+  const { jobsRepo } = getSettings();
+  if (!jobsRepo.url || !isCloned()) {
+    return { ok: false, committed: false, pushed: false, message: "", error: "jobs repo not configured" };
+  }
+  await runGit(repoDir(), ["add", "-A"]);
+  const status = await runGit(repoDir(), ["status", "--porcelain"]);
+  const message = buildCommitMessage();
+  let committed = false;
+  if (parseStatus(status.stdout).dirty) {
+    const commit = await runGit(repoDir(), ["commit", "-m", message]);
+    if (!commit.ok) {
+      return { ok: false, committed: false, pushed: false, message, error: commit.stderr.trim() };
+    }
+    committed = true;
+  }
+  const push = await runGit(repoDir(), ["push", "origin", jobsRepo.branch]);
+  if (!push.ok) {
+    return { ok: false, committed, pushed: false, message, error: push.stderr.trim() };
+  }
+  lastError = null;
+  return { ok: true, committed, pushed: true, message, error: null };
+}

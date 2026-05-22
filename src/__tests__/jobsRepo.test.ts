@@ -2,7 +2,7 @@ import { test, expect } from "bun:test";
 import { mkdtemp, rm, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
-import { runGit, parseStatus } from "../jobsRepo";
+import { runGit, parseStatus, buildCommitMessage } from "../jobsRepo";
 
 async function tmp(): Promise<string> { return mkdtemp(join(tmpdir(), "ccjr-")); }
 
@@ -40,4 +40,37 @@ test("clone + clean status round-trips", async () => {
   expect(parseStatus(st.stdout).dirty).toBe(false);
 
   for (const d of [remote, work, clone]) await rm(d, { recursive: true, force: true });
+});
+
+test("commit message includes a timestamp", () => {
+  const msg = buildCommitMessage(new Date("2026-05-22T14:30:00Z"));
+  expect(msg).toContain("claudeclaw: sync jobs");
+  expect(msg).toContain("2026-05-22");
+});
+
+test("dirty working tree is detected so pull is skipped", async () => {
+  const remote = await tmp();
+  await runGit(remote, ["init", "--bare"]);
+  const work = await tmp();
+  await runGit(work, ["init"]);
+  await runGit(work, ["config", "user.email", "t@t"]);
+  await runGit(work, ["config", "user.name", "t"]);
+  await writeFile(join(work, "a.md"), "original\n");
+  await runGit(work, ["add", "-A"]);
+  await runGit(work, ["commit", "-m", "init"]);
+  await runGit(work, ["branch", "-M", "main"]);
+  await runGit(work, ["remote", "add", "origin", remote]);
+  await runGit(work, ["push", "-u", "origin", "main"]);
+
+  // Make a local uncommitted edit -> tree is dirty.
+  await writeFile(join(work, "a.md"), "local edit\n");
+  const st = await runGit(work, ["status", "--porcelain"]);
+  expect(parseStatus(st.stdout).dirty).toBe(true);
+
+  // The dirty edit must still be on disk and uncommitted (nothing destroyed it).
+  expect(await Bun.file(join(work, "a.md")).text()).toBe("local edit\n");
+  const log = await runGit(work, ["log", "-1", "--pretty=%s"]);
+  expect(log.stdout.trim()).toBe("init");
+
+  for (const d of [remote, work]) await rm(d, { recursive: true, force: true });
 });
