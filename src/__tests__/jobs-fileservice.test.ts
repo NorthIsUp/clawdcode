@@ -27,6 +27,11 @@ test("rejects trailing slash (directory path)", () => {
   expect(isSafeJobPath("sub/")).toBe(false);
 });
 
+test("enforces the 200-character length cap", () => {
+  expect(isSafeJobPath("a".repeat(200))).toBe(true);
+  expect(isSafeJobPath("a".repeat(201))).toBe(false);
+});
+
 // ─── Real-fs fixtures ─────────────────────────────────────────────────────────
 
 let tmpDir: string;
@@ -193,6 +198,17 @@ test("writeJobFile rejects a symlink escape (symlink inside dir pointing outside
   await expect(writeJobFile("linked-dir/evil.md", "pwned\n", tmpDir)).rejects.toThrow("Invalid job path.");
 });
 
+test("writeJobFile rejects a file-symlink escape (symlink file pointing outside)", async () => {
+  // Create a real file outside the jobs dir
+  await writeFile(join(outsideDir, "secret.md"), "secret content\n", "utf-8");
+  // Symlink it into the jobs dir as a file
+  await symlink(join(outsideDir, "secret.md"), join(tmpDir, "escape.md"));
+  // Writing through the symlink would otherwise overwrite the outside file
+  await expect(writeJobFile("escape.md", "pwned\n", tmpDir)).rejects.toThrow("Invalid job path.");
+  // And the outside file must be untouched
+  expect(await readFile(join(outsideDir, "secret.md"), "utf-8")).toBe("secret content\n");
+});
+
 // ─── createJobFile ────────────────────────────────────────────────────────────
 
 test("createJobFile creates a new file with frontmatter seed", async () => {
@@ -218,6 +234,13 @@ test("createJobFile rejects path traversal", async () => {
   await expect(createJobFile("../escape.md", tmpDir)).rejects.toThrow("Invalid job path.");
 });
 
+test("createJobFile rejects a symlink escape (symlinked dir pointing outside)", async () => {
+  // Symlink a directory inside the jobs dir to an outside directory
+  await symlink(outsideDir, join(tmpDir, "linked-dir"));
+  // Creating a new file through the symlink would land outside the jobs dir
+  await expect(createJobFile("linked-dir/new.md", tmpDir)).rejects.toThrow("Invalid job path.");
+});
+
 // ─── deleteJobFile ────────────────────────────────────────────────────────────
 
 test("deleteJobFile removes the file from disk", async () => {
@@ -233,6 +256,16 @@ test("deleteJobFile throws for non-existent file", async () => {
 
 test("deleteJobFile rejects path traversal", async () => {
   await expect(deleteJobFile("../../etc/passwd", tmpDir)).rejects.toThrow("Invalid job path.");
+});
+
+test("deleteJobFile rejects a symlink escape (file symlink pointing outside)", async () => {
+  // Create a real file outside the jobs dir and symlink it in
+  await writeFile(join(outsideDir, "secret.md"), "secret content\n", "utf-8");
+  await symlink(join(outsideDir, "secret.md"), join(tmpDir, "escape.md"));
+  // Deleting through the symlink would otherwise unlink the outside file
+  await expect(deleteJobFile("escape.md", tmpDir)).rejects.toThrow("Invalid job path.");
+  // And the outside file must still exist
+  expect(await readFile(join(outsideDir, "secret.md"), "utf-8")).toBe("secret content\n");
 });
 
 // ─── resolveSafe: symlink escape via directory symlink ────────────────────────

@@ -1,5 +1,5 @@
 import { mkdir, writeFile, readdir, readFile, stat, unlink, realpath } from "fs/promises";
-import { join, resolve, relative, sep } from "path";
+import { join, resolve, relative, sep, dirname } from "path";
 import { getJobsDir } from "../../config";
 
 export interface QuickJobInput {
@@ -81,7 +81,6 @@ async function resolveSafe(relPath: string, dir: string): Promise<string> {
     if (e instanceof Error && e.message === "Invalid job path.") throw e;
     // ENOENT — target doesn't exist yet (create / write-new).
     // Also verify the parent directory doesn't escape via a symlink.
-    const { dirname } = await import("path");
     const parent = dirname(full);
     if (parent !== realDir && parent !== full) {
       try {
