@@ -3,6 +3,7 @@ import { join, basename } from "node:path";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { getAgentsDir } from "../../config";
+import { getSessionMeta, mergeMeta } from "./session-meta";
 
 export interface SessionInfo {
   id: string;
@@ -13,6 +14,8 @@ export interface SessionInfo {
   turnCount: number;
   firstMessage: string;
   lastMessage: string;
+  title?: string;
+  closed: boolean;
 }
 
 export interface ChatMessage {
@@ -78,7 +81,7 @@ async function peekMessages(sessionId: string): Promise<{ first: string; last: s
   return { first, last };
 }
 
-export async function listSessions(): Promise<SessionInfo[]> {
+export async function listSessions(includeClosed = false): Promise<SessionInfo[]> {
   const cwd = process.cwd();
   const sessionFile = join(cwd, ".claude", "claudeclaw", "session.json");
   const sessionsFile = join(cwd, ".claude", "claudeclaw", "sessions.json");
@@ -101,6 +104,7 @@ export async function listSessions(): Promise<SessionInfo[]> {
           turnCount: data.turnCount ?? 0,
           firstMessage: first,
           lastMessage: last,
+          closed: false,
         });
         knownIds.add(data.sessionId);
       }
@@ -128,6 +132,7 @@ export async function listSessions(): Promise<SessionInfo[]> {
           turnCount: data.turnCount ?? 0,
           firstMessage: first,
           lastMessage: last,
+          closed: false,
         });
         knownIds.add(data.sessionId);
       } catch {}
@@ -152,6 +157,7 @@ export async function listSessions(): Promise<SessionInfo[]> {
           turnCount: t.turnCount ?? 0,
           firstMessage: first,
           lastMessage: last,
+          closed: false,
         });
         knownIds.add(t.sessionId);
       }
@@ -179,13 +185,16 @@ export async function listSessions(): Promise<SessionInfo[]> {
           turnCount: 0,
           firstMessage: first,
           lastMessage: last,
+          closed: false,
         });
       } catch {}
     }
   } catch {}
 
-  sessions.sort((a, b) => new Date(b.lastUsedAt).getTime() - new Date(a.lastUsedAt).getTime());
-  return sessions;
+  const meta = await getSessionMeta();
+  const merged = sessions.map((s) => mergeMeta(s, meta));
+  merged.sort((a, b) => new Date(b.lastUsedAt).getTime() - new Date(a.lastUsedAt).getTime());
+  return includeClosed ? merged : merged.filter((s) => !s.closed);
 }
 
 export interface MessagesResult {
