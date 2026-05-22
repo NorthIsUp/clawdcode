@@ -167,6 +167,17 @@ export const pageStyles = String.raw`    :root {
       }
       .rail-toggle {
         display: flex;
+        top: 0;
+        left: 0;
+        width: 58px;
+        height: 52px;
+        border-radius: 0;
+        border-top: none;
+        border-left: none;
+        border-right: 1px solid var(--border);
+        border-bottom: 1px solid var(--border);
+        background: #06101ccc;
+        z-index: 20;
       }
       .rail.rail-open ~ .rail-toggle {
         display: none;
@@ -174,8 +185,14 @@ export const pageStyles = String.raw`    :root {
       .section-host {
         width: 100vw;
       }
+      /* Reserve the full top bar so content clears the hamburger */
       .section {
         padding-top: 52px;
+      }
+      /* Push section headings/leading content clear of the 58px-wide button */
+      .home-grid,
+      .settings-section {
+        padding-top: 16px;
       }
     }
 
