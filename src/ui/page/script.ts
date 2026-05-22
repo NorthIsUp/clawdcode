@@ -1514,6 +1514,202 @@ export const pageScript = String.raw`    // --- Token management ---
     // --- Settings section ---
     var settingsDirty = false;
 
+    // -- MCP servers section --
+
+    function mcpSetStatus(msg, isError) {
+      var el = $("s-mcp-status");
+      if (!el) return;
+      el.textContent = msg || "";
+      el.className = "settings-status mcp-status" + (isError ? " err" : msg ? " ok" : "");
+    }
+
+    function renderMcpServers(data) {
+      var listEl = $("s-mcp-list");
+      if (!listEl) return;
+      var html = "";
+      var userServers = Array.isArray(data.user) ? data.user : [];
+      var projectServers = Array.isArray(data.project) ? data.project : [];
+      if (userServers.length === 0 && projectServers.length === 0) {
+        html = '<div class="mcp-empty">No MCP servers configured.</div>';
+      } else {
+        if (userServers.length > 0) {
+          userServers.forEach(function(s) {
+            html += buildMcpRow(s);
+          });
+        } else {
+          html += '<div class="mcp-empty">No user-scope servers.</div>';
+        }
+        if (projectServers.length > 0) {
+          html += '<div class="mcp-scope-heading">(project)</div>';
+          projectServers.forEach(function(s) {
+            html += buildMcpRow(s);
+          });
+        }
+      }
+      listEl.innerHTML = html;
+      // Attach remove handlers
+      listEl.querySelectorAll(".mcp-remove-btn").forEach(function(btn) {
+        if (!(btn instanceof HTMLElement)) return;
+        btn.addEventListener("click", function() {
+          var name = btn.dataset.name || "";
+          var scope = btn.dataset.scope || "user";
+          if (!name) return;
+          if (!confirm("Remove MCP server \"" + name + "\" (" + scope + " scope)?")) return;
+          mcpSetStatus("Removing…", false);
+          fetch("/api/mcp?name=" + encodeURIComponent(name) + "&scope=" + encodeURIComponent(scope), {
+            method: "DELETE",
+            headers: { "Origin": location.origin }
+          }).then(function(r) { return r.json(); }).then(function(res) {
+            if (res.error) throw new Error(res.error);
+            mcpSetStatus("Removed " + name + ".", false);
+            loadMcpServers();
+          }).catch(function(e) {
+            mcpSetStatus("Error: " + String(e instanceof Error ? e.message : e), true);
+          });
+        });
+      });
+    }
+
+    function buildMcpRow(s) {
+      var transportClass = "mcp-transport-" + esc(s.transport || "stdio");
+      var targetShort = String(s.target || "");
+      if (targetShort.length > 60) targetShort = targetShort.slice(0, 58) + "…";
+      return (
+        '<div class="mcp-row">' +
+          '<span class="mcp-name">' + esc(s.name) + '</span>' +
+          '<span class="mcp-transport-badge ' + esc(transportClass) + '">' + esc(s.transport || "stdio") + '</span>' +
+          '<span class="mcp-target" title="' + escAttr(s.target || "") + '">' + esc(targetShort) + '</span>' +
+          '<button class="mcp-remove-btn" type="button" data-name="' + escAttr(s.name) + '" data-scope="' + escAttr(s.scope || "user") + '" title="Remove">−</button>' +
+        '</div>'
+      );
+    }
+
+    function loadMcpServers() {
+      mcpSetStatus("Loading…", false);
+      fetch("/api/mcp").then(function(r) { return r.json(); }).then(function(data) {
+        renderMcpServers(data);
+        mcpSetStatus("", false);
+      }).catch(function(e) {
+        mcpSetStatus("Failed to load MCP servers: " + String(e instanceof Error ? e.message : e), true);
+      });
+    }
+
+    // + Add toggle
+    var mcpAddToggle = $("s-mcp-add-toggle");
+    var mcpForm = $("s-mcp-form");
+    if (mcpAddToggle && mcpForm) {
+      mcpAddToggle.addEventListener("click", function() {
+        if (mcpForm.hidden) {
+          mcpForm.hidden = false;
+          mcpAddToggle.textContent = "Cancel Add";
+          var nameInput = $("s-mcp-name");
+          if (nameInput) nameInput.focus();
+        } else {
+          mcpForm.hidden = true;
+          mcpAddToggle.textContent = "+ Add";
+        }
+      });
+    }
+
+    // Transport change → show/hide headers section
+    var mcpTransportSelect = $("s-mcp-transport");
+    var mcpTargetInput = $("s-mcp-target");
+    var mcpHeadersSection = $("s-mcp-headers-section");
+    var mcpHeadersAddRow = $("s-mcp-headers-add-row");
+    if (mcpTransportSelect) {
+      mcpTransportSelect.addEventListener("change", function() {
+        var t = mcpTransportSelect.value;
+        var isHttpy = t === "http" || t === "sse";
+        if (mcpHeadersSection) mcpHeadersSection.hidden = !isHttpy;
+        if (mcpHeadersAddRow) mcpHeadersAddRow.hidden = !isHttpy;
+        if (mcpTargetInput) {
+          mcpTargetInput.placeholder = isHttpy ? "https://example.com/mcp" : "npx -y @your/mcp-server";
+        }
+      });
+    }
+
+    // + Header button
+    var mcpHeaderAddBtn = $("s-mcp-header-add");
+    if (mcpHeaderAddBtn) {
+      mcpHeaderAddBtn.addEventListener("click", function() {
+        var listEl = $("s-mcp-headers-list");
+        if (!listEl) return;
+        var row = document.createElement("div");
+        row.className = "mcp-header-row";
+        row.innerHTML =
+          '<input class="mcp-header-input" type="text" placeholder="Authorization: Bearer …" />' +
+          '<button class="mcp-header-remove" type="button" title="Remove">−</button>';
+        row.querySelector(".mcp-header-remove").addEventListener("click", function() {
+          row.remove();
+        });
+        listEl.appendChild(row);
+        var input = row.querySelector(".mcp-header-input");
+        if (input) input.focus();
+        if (mcpHeadersSection) mcpHeadersSection.hidden = false;
+      });
+    }
+
+    // Cancel button inside form
+    var mcpCancelBtn = $("s-mcp-cancel");
+    if (mcpCancelBtn && mcpForm && mcpAddToggle) {
+      mcpCancelBtn.addEventListener("click", function() {
+        mcpForm.hidden = true;
+        mcpAddToggle.textContent = "+ Add";
+      });
+    }
+
+    // Submit
+    var mcpSubmitBtn = $("s-mcp-submit");
+    if (mcpSubmitBtn) {
+      mcpSubmitBtn.addEventListener("click", async function() {
+        var nameEl = $("s-mcp-name");
+        var transportEl = $("s-mcp-transport");
+        var targetEl = $("s-mcp-target");
+        var name = nameEl ? nameEl.value.trim() : "";
+        var transport = transportEl ? transportEl.value : "stdio";
+        var target = targetEl ? targetEl.value.trim() : "";
+        if (!name) { mcpSetStatus("Name is required.", true); return; }
+        if (!/^[a-zA-Z0-9_:.\-]{1,128}$/.test(name)) {
+          mcpSetStatus("Invalid name — use letters, digits, _, :, ., - only.", true); return;
+        }
+        if (!target) { mcpSetStatus("Target is required.", true); return; }
+
+        // Collect headers
+        var headers = [];
+        var headersList = $("s-mcp-headers-list");
+        if (headersList) {
+          headersList.querySelectorAll(".mcp-header-input").forEach(function(inp) {
+            var v = inp.value.trim();
+            if (v) headers.push(v);
+          });
+        }
+
+        mcpSubmitBtn.disabled = true;
+        mcpSetStatus("Adding…", false);
+        try {
+          var res = await fetch("/api/mcp", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Origin": location.origin },
+            body: JSON.stringify({ name: name, scope: "user", transport: transport, target: target, headers: headers })
+          });
+          var out = await res.json();
+          if (out.error) throw new Error(out.error);
+          mcpSetStatus("Added " + name + ".", false);
+          // Reset form
+          if (nameEl) nameEl.value = "";
+          if (targetEl) targetEl.value = "";
+          if (headersList) headersList.innerHTML = "";
+          if (mcpForm) mcpForm.hidden = true;
+          if (mcpAddToggle) mcpAddToggle.textContent = "+ Add";
+          loadMcpServers();
+        } catch (e) {
+          mcpSetStatus("Error: " + String(e instanceof Error ? e.message : e), true);
+        } finally {
+          mcpSubmitBtn.disabled = false;
+        }
+      });
+    }
+
     // -- Jobs Plugin Repos list helpers --
 
     function renderJobsReposList(repos) {
@@ -1669,6 +1865,9 @@ export const pageScript = String.raw`    // --- Token management ---
           tzSelect.value = tz;
           clockTimezone = tz;
         }
+
+        // MCP servers list (independent async load)
+        loadMcpServers();
 
         // Jobs Plugin Repos list
         var reposList = Array.isArray(state.jobsRepos) && state.jobsRepos.length > 0

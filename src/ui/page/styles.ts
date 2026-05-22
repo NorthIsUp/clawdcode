@@ -1292,6 +1292,192 @@ export const pageStyles = String.raw`    :root {
       accent-color: var(--accent);
     }
 
+    /* ── MCP fieldset ── */
+    .settings-btn-secondary {
+      height: 28px;
+      padding: 0 12px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #ffffff0f;
+      color: var(--muted);
+      font-family: "JetBrains Mono", monospace;
+      font-size: 11px;
+      cursor: pointer;
+      transition: background 0.14s ease, color 0.14s ease;
+    }
+    .settings-btn-secondary:hover { background: #ffffff1a; color: var(--text); }
+
+    .settings-btn-primary {
+      height: 28px;
+      padding: 0 12px;
+      border: 1px solid #3cb87966;
+      border-radius: 6px;
+      background: linear-gradient(180deg, #1f6f47d4 0%, #18563ace 100%);
+      color: #c8f8de;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 11px;
+      cursor: pointer;
+      transition: filter 0.14s ease;
+    }
+    .settings-btn-primary:hover { filter: brightness(1.1); }
+    .settings-btn-primary:disabled { opacity: 0.5; cursor: not-allowed; filter: none; }
+
+    .mcp-status {
+      min-height: 16px;
+      margin-bottom: 6px;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 11px;
+    }
+    .mcp-status.ok { color: var(--good); }
+    .mcp-status.err { color: var(--bad); }
+
+    .mcp-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 7px 0;
+      border-bottom: 1px solid #ffffff08;
+    }
+    .mcp-row:last-child { border-bottom: none; }
+
+    .mcp-name {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 12px;
+      color: var(--text);
+      flex-shrink: 0;
+      min-width: 100px;
+    }
+
+    .mcp-transport-badge {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 1px 5px;
+      border-radius: 3px;
+      flex-shrink: 0;
+    }
+    .mcp-transport-stdio {
+      color: var(--muted);
+      background: rgba(168,180,197,0.12);
+      border: 1px solid rgba(168,180,197,0.2);
+    }
+    .mcp-transport-http {
+      color: var(--accent);
+      background: rgba(155,231,255,0.1);
+      border: 1px solid rgba(155,231,255,0.2);
+    }
+    .mcp-transport-sse {
+      color: var(--warn);
+      background: rgba(255,194,118,0.1);
+      border: 1px solid rgba(255,194,118,0.2);
+    }
+
+    .mcp-target {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 11px;
+      color: var(--muted);
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .mcp-remove-btn {
+      flex-shrink: 0;
+      width: 24px;
+      height: 24px;
+      border: 1px solid #ff7f7f44;
+      border-radius: 4px;
+      background: transparent;
+      color: var(--bad);
+      font-size: 14px;
+      line-height: 1;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.14s ease;
+    }
+    .mcp-remove-btn:hover { background: rgba(255,100,100,0.12); }
+
+    .mcp-scope-heading {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      padding: 6px 0 2px;
+      opacity: 0.7;
+    }
+
+    .mcp-empty {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 11px;
+      color: var(--muted);
+      padding: 6px 0;
+      font-style: italic;
+    }
+
+    .mcp-form {
+      margin-top: 8px;
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #ffffff05;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .mcp-form-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .mcp-headers-list {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      flex: 1;
+    }
+
+    .mcp-header-row {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .mcp-header-input {
+      flex: 1;
+      border: 1px solid #ffffff2e;
+      border-radius: 6px;
+      background: #ffffff09;
+      color: var(--text);
+      font-family: "JetBrains Mono", monospace;
+      font-size: 11px;
+      padding: 4px 8px;
+    }
+    .mcp-header-input:focus { outline: 1px solid #7dc5ff66; outline-offset: 1px; }
+
+    .mcp-header-remove {
+      flex-shrink: 0;
+      width: 22px;
+      height: 22px;
+      border: 1px solid #ff7f7f44;
+      border-radius: 4px;
+      background: transparent;
+      color: var(--bad);
+      font-size: 13px;
+      line-height: 1;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .mcp-header-remove:hover { background: rgba(255,100,100,0.12); }
+
     /* ── Thread blocks (Chats sidebar) ── */
     .thread {
       border-bottom: 1px solid var(--border);

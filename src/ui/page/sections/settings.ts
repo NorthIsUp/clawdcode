@@ -74,6 +74,48 @@ export const settingsHtml = `
         </div>
       </fieldset>
 
+      <fieldset class="settings-group" id="s-mcp-fieldset">
+        <legend>MCP Servers</legend>
+        <div class="settings-status mcp-status" id="s-mcp-status"></div>
+        <div id="s-mcp-list">
+          <!-- Populated by loadMcpServers() -->
+        </div>
+        <div class="settings-row">
+          <button class="settings-btn-secondary" id="s-mcp-add-toggle" type="button">+ Add</button>
+        </div>
+        <div class="mcp-form" id="s-mcp-form" hidden>
+          <div class="mcp-form-row">
+            <label class="settings-label" for="s-mcp-name">Name</label>
+            <input class="settings-input" id="s-mcp-name" type="text" placeholder="my-server" pattern="[a-zA-Z0-9_:.-]{1,128}" />
+          </div>
+          <div class="mcp-form-row">
+            <label class="settings-label" for="s-mcp-transport">Transport</label>
+            <select class="settings-select" id="s-mcp-transport">
+              <option value="stdio">stdio</option>
+              <option value="http">http</option>
+              <option value="sse">sse</option>
+            </select>
+          </div>
+          <div class="mcp-form-row">
+            <label class="settings-label" for="s-mcp-target">Target</label>
+            <input class="settings-input" id="s-mcp-target" type="text" placeholder="npx -y @your/mcp-server" />
+          </div>
+          <div class="mcp-form-row" id="s-mcp-headers-section" hidden>
+            <label class="settings-label">Headers</label>
+            <div id="s-mcp-headers-list" class="mcp-headers-list"></div>
+          </div>
+          <div class="mcp-form-row" id="s-mcp-headers-add-row" hidden>
+            <span class="settings-label"></span>
+            <button class="settings-btn-secondary" id="s-mcp-header-add" type="button">+ Header</button>
+          </div>
+          <div class="mcp-form-row">
+            <span class="settings-label"></span>
+            <button class="settings-btn-primary" id="s-mcp-submit" type="button">Add server</button>
+            <button class="settings-btn-secondary" id="s-mcp-cancel" type="button">Cancel</button>
+          </div>
+        </div>
+      </fieldset>
+
       <fieldset class="settings-group">
         <legend>Jobs Plugin Repos</legend>
         <div id="jobs-repos-list" class="jobs-repos-list">
