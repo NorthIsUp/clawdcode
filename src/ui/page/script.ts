@@ -175,7 +175,16 @@ export const pageScript = String.raw`    // --- Token management ---
     }
 
     // --- Section router ---
+    var SECTIONS = ["home", "chats", "jobs", "settings"];
+
+    // Resolve the section from the URL #fragment, falling back to "home".
+    function sectionFromHash() {
+      var h = (location.hash || "").replace(/^#/, "");
+      return SECTIONS.indexOf(h) !== -1 ? h : "home";
+    }
+
     function showSection(name) {
+      if (SECTIONS.indexOf(name) === -1) name = "home";
       document.querySelectorAll(".section").forEach(function(s) {
         s.hidden = s.id !== "section-" + name;
         s.classList.toggle("section-active", s.id === "section-" + name);
@@ -187,11 +196,18 @@ export const pageScript = String.raw`    // --- Token management ---
       var scrim = $("rail-scrim");
       if (rail) rail.classList.remove("rail-open");
       if (scrim) scrim.hidden = true;
+      // Track the active section in the URL #fragment so a refresh stays put.
+      if (location.hash.replace(/^#/, "") !== name) location.hash = name;
       if (name === "home") loadHome();
       if (name === "chats") loadSessions();
       if (name === "jobs") loadJobsSection();
       if (name === "settings") loadSettingsSection();
     }
+
+    // Browser back/forward or a manual hash edit re-syncs the visible section.
+    window.addEventListener("hashchange", function() {
+      showSection(sectionFromHash());
+    });
 
     document.querySelectorAll(".rail-btn").forEach(function(b) {
       b.addEventListener("click", function() { showSection(b.dataset.section); });
@@ -1330,7 +1346,7 @@ export const pageScript = String.raw`    // --- Token management ---
     renderChatHistory();
     loadSessions();
 
-    showSection("home");
+    showSection(sectionFromHash());
     setInterval(function() {
       // Refresh home (including usage card) when it's visible
       var homeSection = $("section-home");
