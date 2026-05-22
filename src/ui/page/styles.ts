@@ -158,6 +158,7 @@ export const pageStyles = String.raw`    :root {
       height: 100vh;
       overflow: hidden;
       position: relative;
+      min-width: 0;
     }
 
     .section {
@@ -166,6 +167,7 @@ export const pageStyles = String.raw`    :root {
       overflow-y: auto;
       overflow-x: hidden;
       padding: 0;
+      margin: 0;
     }
 
     .section-active {
@@ -346,7 +348,7 @@ export const pageStyles = String.raw`    :root {
     /* ── Chat / Session section ── */
     .chat-layout {
       display: flex;
-      height: 100vh;
+      height: 100%;
       overflow: hidden;
     }
 
@@ -908,7 +910,7 @@ export const pageStyles = String.raw`    :root {
     /* ── Jobs section ── */
     .jobs-layout {
       display: flex;
-      height: 100vh;
+      height: 100%;
       overflow: hidden;
     }
 
