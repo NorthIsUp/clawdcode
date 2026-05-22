@@ -1,7 +1,7 @@
 import { existsSync } from "fs";
 import { readdir, readFile } from "fs/promises";
 import { join, basename } from "path";
-import { getSettings, getJobsRepoDir } from "./config";
+import { getSettings } from "./config";
 
 export interface JobsRepoPlugin {
   name: string;    // from .claude-plugin/plugin.json "name", or directory basename
@@ -60,7 +60,7 @@ async function readPlugin(dir: string): Promise<JobsRepoPlugin> {
 }
 
 /**
- * Scan the jobs repo for plugin directories (bounded — no deep recursion).
+ * Scan a single repo directory for plugin directories (bounded — no deep recursion).
  * A plugin directory is one containing .claude-plugin/plugin.json.
  *
  * Scan locations:
@@ -68,13 +68,13 @@ async function readPlugin(dir: string): Promise<JobsRepoPlugin> {
  *   - each immediate subdirectory of the repo root
  *   - each immediate subdirectory of a plugins/ folder if one exists
  *
- * Returns [] when jobsRepo.url is unset or the clone is missing.
+ * Returns [] when the dir has no .git or repoConfigured is false.
  */
-export async function discoverJobsRepoPlugins(): Promise<JobsRepoPlugin[]> {
-  const { jobsRepo } = getSettings();
-  if (!jobsRepo.url) return [];
-
-  const repoDir = getJobsRepoDir();
+export async function discoverPluginsForDir(
+  repoDir: string,
+  repoConfigured: boolean = true,
+): Promise<JobsRepoPlugin[]> {
+  if (!repoConfigured) return [];
   if (!existsSync(join(repoDir, ".git"))) return [];
 
   const seen = new Set<string>();
@@ -119,35 +119,91 @@ export async function discoverJobsRepoPlugins(): Promise<JobsRepoPlugin[]> {
 }
 
 /**
- * Build the spawn flags to pass to a claude subprocess.
- *
- * - If plugins found → ["--plugin-dir", p.dir, ...] for each plugin
- * - Else if root .claude/skills/ exists → ["--add-dir", repoRoot]
- * - Else → []
- *
- * Returns [] when unconfigured / not cloned, so zero-jobs-repo deployments
- * are byte-identical to today.
+ * Scan ALL configured repos for plugins.
+ * Returns the concatenation of discoverPluginsForDir() for each repo, in config order.
  */
-export async function getJobsRepoSpawnArgs(): Promise<string[]> {
-  const { jobsRepo } = getSettings();
+export async function discoverPlugins(): Promise<JobsRepoPlugin[]> {
+  const { jobsRepos } = getSettings();
+  const { getJobsRepoDirForRepo } = await import("./config");
+  const allPlugins: JobsRepoPlugin[] = [];
+  for (const repo of jobsRepos) {
+    if (!repo.url) continue;
+    const dir = getJobsRepoDirForRepo(repo);
+    const plugins = await discoverPluginsForDir(dir, true);
+    allPlugins.push(...plugins);
+  }
+  return allPlugins;
+}
+
+/**
+ * @deprecated Use discoverPlugins() for multi-repo.
+ * Kept for back-compat with existing tests that mock the config module
+ * to inject a single-repo config.
+ */
+export async function discoverJobsRepoPlugins(): Promise<JobsRepoPlugin[]> {
+  const { getSettings: gs, getJobsRepoDir } = await import("./config");
+  const settings = gs();
+  const { jobsRepo } = settings;
   if (!jobsRepo.url) return [];
 
+  // Use the new multi-repo discovery if jobsRepos is populated
+  if (settings.jobsRepos && settings.jobsRepos.length > 0) {
+    return discoverPlugins();
+  }
+
+  // Legacy path: single jobsRepo
   const repoDir = getJobsRepoDir();
-  if (!existsSync(join(repoDir, ".git"))) return [];
+  return discoverPluginsForDir(repoDir, true);
+}
 
-  const plugins = await discoverJobsRepoPlugins();
+/**
+ * Build the spawn flags to pass to a claude subprocess, aggregating all repos.
+ *
+ * - If plugins found across any repo → ["--plugin-dir", p.dir, ...] for each plugin
+ * - Else if root .claude/skills/ exists in any repo → ["--add-dir", repoRoot] for that repo
+ * - Else → []
+ */
+export async function getJobsRepoSpawnArgs(): Promise<string[]> {
+  const { jobsRepos, jobsRepo } = getSettings();
+  const { getJobsRepoDirForRepo, getJobsRepoDir } = await import("./config");
 
-  if (plugins.length > 0) {
+  // Determine list of repo dirs to scan
+  const repoDirs: string[] = [];
+  if (jobsRepos && jobsRepos.length > 0) {
+    for (const repo of jobsRepos) {
+      if (repo.url) repoDirs.push(getJobsRepoDirForRepo(repo));
+    }
+  } else if (jobsRepo?.url) {
+    // Legacy single-repo
+    repoDirs.push(getJobsRepoDir());
+  }
+
+  if (repoDirs.length === 0) return [];
+
+  const allPlugins: JobsRepoPlugin[] = [];
+  const addDirs: string[] = [];
+
+  for (const repoDir of repoDirs) {
+    const plugins = await discoverPluginsForDir(repoDir, true);
+    if (plugins.length > 0) {
+      allPlugins.push(...plugins);
+    } else if (existsSync(join(repoDir, ".claude", "skills"))) {
+      addDirs.push(repoDir);
+    }
+  }
+
+  if (allPlugins.length > 0) {
     const args: string[] = [];
-    for (const plugin of plugins) {
+    // allPlugins already sorted by dir within each repo; maintain order
+    for (const plugin of allPlugins) {
       args.push("--plugin-dir", plugin.dir);
     }
     return args;
   }
 
-  // Fallback: if a .claude/skills/ directory exists at the repo root
-  if (existsSync(join(repoDir, ".claude", "skills"))) {
-    return ["--add-dir", repoDir];
+  if (addDirs.length > 0) {
+    // --add-dir for the first fallback repo
+    return ["--add-dir", addDirs[0]];
   }
 
   return [];
