@@ -1072,8 +1072,8 @@ export const pageScript = String.raw`    // --- Token management ---
             var slug = repo.slug || "";
             var repoLabel = slug || repo.url || "repo";
             var pluginBadge = (Array.isArray(repo.plugins) && repo.plugins.length > 0)
-              ? ' <span class="jobs-plugin-icon" title="provides ' + repo.plugins.length + ' plugin(s)">🧩</span>' : "";
-            html += '<div class="job-file-group-header">' + esc(repoLabel) + pluginBadge + '</div>';
+              ? '<span class="jobs-plugin-icon" title="provides ' + repo.plugins.length + ' plugin(s)">🧩</span> ' : "";
+            html += '<div class="job-file-group-header">' + pluginBadge + esc(repoLabel) + '</div>';
             var files2 = [];
             try {
               files2 = await fetch("/api/jobs/files?repo=" + encodeURIComponent(slug)).then(function(r) { return r.json(); });
@@ -1180,7 +1180,7 @@ export const pageScript = String.raw`    // --- Token management ---
         containerEl.innerHTML = repos.map(function(repo) {
           var label = repo.slug || repo.url || "repo";
           var pluginIcon = (Array.isArray(repo.plugins) && repo.plugins.length > 0)
-            ? ' <span class="jobs-plugin-icon" title="provides ' + repo.plugins.length + ' plugin(s)">🧩</span>'
+            ? '<span class="jobs-plugin-icon" title="provides ' + repo.plugins.length + ' plugin(s)">🧩</span> '
             : "";
           var statusParts = [];
           if (!repo.configured) {
@@ -1195,14 +1195,16 @@ export const pageScript = String.raw`    // --- Token management ---
             if (repo.behind) statusParts.push(repo.behind + "↓");
             if (repo.lastPullAt) statusParts.push("pulled " + fmtRelative(repo.lastPullAt));
             if (Array.isArray(repo.plugins) && repo.plugins.length > 0) {
-              statusParts.push("plugins:" + repo.plugins.length);
+              statusParts.push("plugins: " + repo.plugins.length);
             }
           }
           var slug = escAttr(repo.slug || "");
           return '<div class="jobs-repo-status-row" data-slug="' + slug + '">' +
-            '<span class="jobs-repo-status-label">' + esc(label) + pluginIcon + '</span>' +
-            '<span class="jobs-repo-status-text">' + statusParts.join(" · ") + '</span>' +
-            (repo.configured ? '<button class="jobs-btn jobs-btn-sync" type="button" data-sync-slug="' + slug + '">Sync to Git</button>' : '') +
+            '<div class="jobs-repo-status-name">' + pluginIcon + esc(label) + '</div>' +
+            '<div class="jobs-repo-status-bottom">' +
+              '<span class="jobs-repo-status-text">' + statusParts.join(" · ") + '</span>' +
+              (repo.configured ? '<button class="jobs-btn jobs-btn-sync" type="button" data-sync-slug="' + slug + '">Sync to Git</button>' : '') +
+            '</div>' +
             '</div>';
         }).join("");
 

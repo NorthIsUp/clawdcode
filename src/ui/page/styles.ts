@@ -1042,6 +1042,62 @@ export const pageStyles = String.raw`    :root {
       flex-shrink: 0;
     }
 
+    /* Per-repo status row in the editor pane */
+    .jobs-repo-status-row {
+      padding: 6px 14px;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 11px;
+      background: rgba(255,255,255,0.02);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    /* Repo name line: icon on left, muted label style */
+    .jobs-repo-status-name {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 3px;
+    }
+
+    /* Status text + sync button on one flex row, button pushed right */
+    .jobs-repo-status-bottom {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .jobs-repo-status-text {
+      flex: 1;
+      color: var(--muted);
+      min-width: 0;
+    }
+
+    .jobs-btn-sync {
+      flex-shrink: 0;
+      margin-left: auto;
+    }
+
+    /* File-list group heading: small muted uppercase, icon on left */
+    .job-file-group-header {
+      padding: 5px 12px 3px;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted);
+      border-bottom: 1px solid var(--border);
+      background: rgba(255,255,255,0.01);
+    }
+
+    .jobs-plugin-icon {
+      opacity: 0.75;
+    }
+
     .jobs-plugin-list {
       padding: 2px 14px 6px;
       font-family: "JetBrains Mono", monospace;
