@@ -68,9 +68,8 @@ export function isSafeJobPath(relPath: string): boolean {
   return true;
 }
 
-async function resolveSafe(relPath: string): Promise<string> {
+async function resolveSafe(relPath: string, dir: string): Promise<string> {
   if (!isSafeJobPath(relPath)) throw new Error("Invalid job path.");
-  const dir = getJobsDir();
   const realDir = await realpath(dir).catch(() => resolve(dir));
   const full = resolve(realDir, relPath);
   if (full !== realDir && !full.startsWith(realDir + sep)) throw new Error("Invalid job path.");
@@ -80,14 +79,25 @@ async function resolveSafe(relPath: string): Promise<string> {
     if (realFull !== realDir && !realFull.startsWith(realDir + sep)) throw new Error("Invalid job path.");
   } catch (e) {
     if (e instanceof Error && e.message === "Invalid job path.") throw e;
-    // ENOENT — target doesn't exist yet (create / write-new); the lexical check above stands.
+    // ENOENT — target doesn't exist yet (create / write-new).
+    // Also verify the parent directory doesn't escape via a symlink.
+    const { dirname } = await import("path");
+    const parent = dirname(full);
+    if (parent !== realDir && parent !== full) {
+      try {
+        const realParent = await realpath(parent);
+        if (realParent !== realDir && !realParent.startsWith(realDir + sep)) throw new Error("Invalid job path.");
+      } catch (pe) {
+        if (pe instanceof Error && pe.message === "Invalid job path.") throw pe;
+        // Parent also doesn't exist yet — lexical check above is sufficient.
+      }
+    }
   }
   return full;
 }
 
 /** List all files in the jobs dir (recursive), relative paths. */
-export async function listJobFiles(): Promise<JobFileEntry[]> {
-  const dir = getJobsDir();
+export async function listJobFiles(dir: string = getJobsDir()): Promise<JobFileEntry[]> {
   const out: JobFileEntry[] = [];
   async function walk(sub: string): Promise<void> {
     let entries: import("fs").Dirent[] = [];
@@ -109,24 +119,24 @@ export async function listJobFiles(): Promise<JobFileEntry[]> {
   return out;
 }
 
-export async function readJobFile(relPath: string): Promise<string> {
-  return readFile(await resolveSafe(relPath), "utf-8");
+export async function readJobFile(relPath: string, dir: string = getJobsDir()): Promise<string> {
+  return readFile(await resolveSafe(relPath, dir), "utf-8");
 }
 
-export async function writeJobFile(relPath: string, content: string): Promise<void> {
+export async function writeJobFile(relPath: string, content: string, dir: string = getJobsDir()): Promise<void> {
   if (content.length > 100_000) throw new Error("File too large.");
-  const full = await resolveSafe(relPath);
+  const full = await resolveSafe(relPath, dir);
   await mkdir(join(full, ".."), { recursive: true });
   await writeFile(full, content, "utf-8");
 }
 
-export async function createJobFile(relPath: string): Promise<void> {
-  const full = await resolveSafe(relPath);
+export async function createJobFile(relPath: string, dir: string = getJobsDir()): Promise<void> {
+  const full = await resolveSafe(relPath, dir);
   if (await Bun.file(full).exists()) throw new Error("File already exists.");
   await mkdir(join(full, ".."), { recursive: true });
   await writeFile(full, "---\nschedule: \"0 9 * * *\"\nrecurring: true\n---\n", "utf-8");
 }
 
-export async function deleteJobFile(relPath: string): Promise<void> {
-  await unlink(await resolveSafe(relPath));
+export async function deleteJobFile(relPath: string, dir: string = getJobsDir()): Promise<void> {
+  await unlink(await resolveSafe(relPath, dir));
 }
