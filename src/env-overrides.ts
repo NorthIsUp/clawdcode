@@ -1,4 +1,4 @@
-import type { Settings } from "./config";
+import type { Settings, JobsRepoConfig } from "./config";
 
 type Kind = "string" | "number" | "boolean" | "stringList";
 
@@ -70,5 +70,35 @@ export function applyEnvOverrides(settings: Settings): Settings {
     }
     assignPath(settings as unknown as Record<string, any>, o.path, value);
   }
+
+  // Back-compat: if CLAUDECLAW_JOBSREPO_* env vars modified `settings.jobsRepo`,
+  // propagate the change into `settings.jobsRepos[0]` to keep the array canonical.
+  if (!Array.isArray(settings.jobsRepos)) settings.jobsRepos = [];
+  const jobsRepoEnvSet =
+    process.env["CLAUDECLAW_JOBSREPO_URL"] ||
+    process.env["CLAUDECLAW_JOBSREPO_BRANCH"] ||
+    process.env["CLAUDECLAW_JOBSREPO_INTERVAL"];
+  if (jobsRepoEnvSet && settings.jobsRepo.url) {
+    if (settings.jobsRepos.length === 0) {
+      settings.jobsRepos = [{ ...settings.jobsRepo }];
+    } else {
+      // Update the first repo's fields that were env-overridden
+      settings.jobsRepos[0] = { ...settings.jobsRepos[0], ...settings.jobsRepo };
+    }
+  }
+
+  // CLAUDECLAW_JOBSREPOS: comma-separated git URLs replace the entire list
+  const multiEnv = process.env["CLAUDECLAW_JOBSREPOS"];
+  if (multiEnv && multiEnv.trim()) {
+    const urls = multiEnv.split(",").map((u) => u.trim()).filter(Boolean);
+    if (urls.length > 0) {
+      settings.jobsRepos = urls.map((url) => ({
+        url,
+        branch: "main",
+        intervalSeconds: 300,
+      } as JobsRepoConfig));
+    }
+  }
+
   return settings;
 }

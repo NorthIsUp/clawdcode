@@ -12,7 +12,10 @@ export type WatchdogSettings = WatchdogConfig;
 const HEARTBEAT_DIR = join(process.cwd(), ".claude", "claudeclaw");
 const SETTINGS_FILE = join(HEARTBEAT_DIR, "settings.json");
 const DEFAULT_JOBS_DIR = join(HEARTBEAT_DIR, "jobs");
+/** Legacy single-repo clone dir — kept for migration compatibility. */
 const JOBS_REPO_DIR = join(HEARTBEAT_DIR, "jobs-repo");
+/** New multi-repo parent dir — each repo lives under <slug>/. */
+const JOBS_REPOS_DIR = join(HEARTBEAT_DIR, "jobs-repos");
 const LOGS_DIR = join(HEARTBEAT_DIR, "logs");
 
 /** Default Claude session timeout (30 minutes). Exported so runner.ts can reference the same value. */
@@ -21,16 +24,82 @@ export const DEFAULT_SESSION_TIMEOUT_MS = 30 * 60 * 1000;
 export const DEFAULT_IMAGE_OUTPUT_ROOT = join(HEARTBEAT_DIR, "outbox", "discord");
 
 export function getJobsDir(): string {
-  if (cached?.jobsDir) {
-    return isAbsolute(cached.jobsDir) ? cached.jobsDir : join(process.cwd(), cached.jobsDir);
-  }
-  if (cached?.jobsRepo?.url) return JOBS_REPO_DIR;
-  return DEFAULT_JOBS_DIR;
+  return getJobsDirs()[0];
 }
 
-/** Directory the jobs git repo is cloned into. */
+/**
+ * Return the list of job directories in priority order.
+ * When repos are configured each repo's clone dir comes first,
+ * then the default local-only jobs dir is appended last.
+ * When no repos are configured (or jobsDir override is set) falls back to a single dir.
+ */
+export function getJobsDirs(): string[] {
+  // Legacy jobsDir override wins as a single dir.
+  if (cached?.jobsDir) {
+    const d = cached.jobsDir;
+    return [isAbsolute(d) ? d : join(process.cwd(), d)];
+  }
+  const repos = cached?.jobsRepos ?? [];
+  if (repos.length > 0) {
+    const repoDirs = repos
+      .filter((r) => r.url)
+      .map((r) => getJobsRepoDirForRepo(r));
+    return [...repoDirs, DEFAULT_JOBS_DIR];
+  }
+  // Legacy single-repo field fallback (pre-migration, no jobsRepos yet)
+  if (cached?.jobsRepo?.url) return [JOBS_REPO_DIR];
+  return [DEFAULT_JOBS_DIR];
+}
+
+/**
+ * Derive a filesystem-safe slug from a git URL.
+ * - strip trailing .git
+ * - take the last path segment
+ * - lowercase, replace non-[a-z0-9-] with -, collapse runs of -
+ * - if empty, use a short sha256 hash of the URL
+ */
+export function slugForRepo(url: string, existingSlugs: Set<string> = new Set()): string {
+  const noGit = url.replace(/\.git$/i, "");
+  const segment = noGit.split(/[\\/]/).filter(Boolean).pop() ?? "";
+  let slug = segment.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
+  if (!slug) slug = shortHash(url);
+  if (existingSlugs.has(slug)) {
+    slug = slug + "-" + shortHash(url);
+  }
+  return slug;
+}
+
+function shortHash(s: string): string {
+  // Simple deterministic short hash — not crypto-strength, just for collision avoidance.
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(16).padStart(8, "0").slice(0, 8);
+}
+
+/** Return the clone directory for a given repo config. */
+export function getJobsRepoDirForRepo(repo: JobsRepoConfig | string): string {
+  const url = typeof repo === "string" ? repo : repo.url;
+  const slug = slugForRepo(url);
+  return join(JOBS_REPOS_DIR, slug);
+}
+
+/** Legacy single-repo clone dir — kept so existing code that calls getJobsRepoDir() still works. */
 export function getJobsRepoDir(): string {
   return JOBS_REPO_DIR;
+}
+
+/** Legacy single-repo dir constant — exported for migration code. */
+export const LEGACY_JOBS_REPO_DIR = JOBS_REPO_DIR;
+
+/** The parent directory for multi-repo clones. */
+export const JOBS_REPOS_PARENT_DIR = JOBS_REPOS_DIR;
+
+/** Return the first configured jobs repo, or null. */
+export function firstJobsRepo(): JobsRepoConfig | null {
+  return cached?.jobsRepos?.[0] ?? (cached?.jobsRepo?.url ? cached.jobsRepo : null);
 }
 
 /** Returns the root directory for agent-scoped sessions and jobs. */
@@ -98,6 +167,7 @@ const DEFAULT_SETTINGS: Settings = {
   session: { autoRotate: false, maxMessages: 50, maxAgeHours: 24, summaryPath: "" },
   plugins: {},
   jobsRepo: { url: "", branch: "main", intervalSeconds: 300 },
+  jobsRepos: [],
 };
 
 export interface HeartbeatExcludeWindow {
@@ -196,7 +266,11 @@ export interface Settings {
   plugins: Record<string, PluginEntry>;
   session: SessionConfig;
   jobsDir?: string;
+  /** @deprecated single-repo form; migrated into `jobsRepos[0]` at parse time. The on-disk
+   *  JSON may still carry this key until the user saves from the Settings UI. */
   jobsRepo: JobsRepoConfig;
+  /** Multi-repo list. Takes precedence over legacy `jobsRepo` when non-empty. */
+  jobsRepos: JobsRepoConfig[];
 }
 
 
@@ -326,6 +400,36 @@ function parseAgenticConfig(raw: any): AgenticConfig {
   };
 }
 
+function parseJobsRepoConfig(raw: any): JobsRepoConfig {
+  return {
+    url: typeof raw?.url === "string" ? raw.url.trim() : "",
+    branch: typeof raw?.branch === "string" && raw.branch.trim() ? raw.branch.trim() : "main",
+    intervalSeconds: Number.isFinite(raw?.intervalSeconds) && Number(raw.intervalSeconds) >= 0
+      ? Number(raw.intervalSeconds) : 300,
+  };
+}
+
+/**
+ * Parse and migrate jobsRepo/jobsRepos.
+ * - jobsRepos (array) wins if non-empty.
+ * - Otherwise, if legacy jobsRepo.url is set, lift it into jobsRepos[0].
+ * - Otherwise jobsRepos = [].
+ */
+function parseJobsRepos(raw: Record<string, any>): JobsRepoConfig[] {
+  // New array form wins if present and non-empty
+  if (Array.isArray(raw.jobsRepos) && raw.jobsRepos.length > 0) {
+    return raw.jobsRepos
+      .filter((r: any) => typeof r?.url === "string" && r.url.trim())
+      .map(parseJobsRepoConfig);
+  }
+  // Legacy single-repo form: lift into array
+  const legacyUrl = typeof raw.jobsRepo?.url === "string" ? raw.jobsRepo.url.trim() : "";
+  if (legacyUrl) {
+    return [parseJobsRepoConfig(raw.jobsRepo)];
+  }
+  return [];
+}
+
 function parseSettings(
   raw: Record<string, any>,
   discordUserIds?: string[],
@@ -446,6 +550,7 @@ function parseSettings(
       intervalSeconds: Number.isFinite(raw.jobsRepo?.intervalSeconds) && Number(raw.jobsRepo.intervalSeconds) >= 0
         ? Number(raw.jobsRepo.intervalSeconds) : 300,
     },
+    jobsRepos: parseJobsRepos(raw),
   };
 }
 
