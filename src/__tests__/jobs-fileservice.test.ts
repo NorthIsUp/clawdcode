@@ -67,11 +67,13 @@ test("listJobFiles lists a single file with correct fields", async () => {
   expect(f.isJob).toBe(true);
 });
 
-test("listJobFiles sets isJob=true only for .md files with valid --- frontmatter", async () => {
-  // valid job: has ---\n...\n---
+test("listJobFiles marks isJob only for .md frontmatter with a schedule: field", async () => {
+  // valid job: frontmatter has schedule:
   await writeFile(join(tmpDir, "valid-job.md"), "---\nschedule: \"0 9 * * *\"\n---\nsome prompt\n", "utf-8");
   // plain .md: no frontmatter
   await writeFile(join(tmpDir, "readme.md"), "# Just a readme\n", "utf-8");
+  // SKILL-style .md: has frontmatter (name/description) but NO schedule — not a job
+  await writeFile(join(tmpDir, "SKILL.md"), "---\nname: system-check\ndescription: a skill\n---\n# Skill\n", "utf-8");
   // non-.md file: never a job
   await writeFile(join(tmpDir, "data.txt"), "data\n", "utf-8");
 
@@ -80,6 +82,7 @@ test("listJobFiles sets isJob=true only for .md files with valid --- frontmatter
 
   expect(byName["valid-job.md"].isJob).toBe(true);
   expect(byName["readme.md"].isJob).toBe(false);
+  expect(byName["SKILL.md"].isJob).toBe(false);
   expect(byName["data.txt"].isJob).toBe(false);
 });
 

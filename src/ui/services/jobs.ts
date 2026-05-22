@@ -57,7 +57,7 @@ export interface JobFileEntry {
   name: string;
   size: number;
   mtime: string;
-  isJob: boolean;   // .md with valid frontmatter
+  isJob: boolean;   // .md whose frontmatter has a `schedule:` field
 }
 
 /** True when `relPath` is a safe relative path inside the jobs dir. */
@@ -106,9 +106,15 @@ export async function listJobFiles(dir: string = getJobsDir()): Promise<JobFileE
       const rel = sub ? `${sub}/${e.name}` : e.name;
       if (e.isDirectory()) { await walk(rel); continue; }
       const s = await stat(join(dir, rel));
+      // A job is a .md whose frontmatter has a `schedule:` field — that is
+      // what parseJobFile() requires. A SKILL.md has frontmatter too
+      // (name/description) but no schedule, so it is not a job.
       let isJob = false;
       if (e.name.endsWith(".md")) {
-        try { isJob = /^---\s*\n[\s\S]*?\n---/.test(await readFile(join(dir, rel), "utf-8")); } catch {}
+        try {
+          const fm = (await readFile(join(dir, rel), "utf-8")).match(/^---\s*\n([\s\S]*?)\n---/);
+          isJob = !!fm && /^[ \t]*schedule[ \t]*:/m.test(fm[1]);
+        } catch {}
       }
       out.push({ path: rel, name: e.name, size: s.size, mtime: s.mtime.toISOString(), isJob });
     }
