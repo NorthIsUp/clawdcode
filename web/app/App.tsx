@@ -1,3 +1,10 @@
+import { AppShell } from "../components/AppShell";
+import Router from "./Router";
+
 export default function App() {
-  return <div>ClaudeClaw — bootstrapping…</div>;
+  return (
+    <AppShell>
+      <Router />
+    </AppShell>
+  );
 }

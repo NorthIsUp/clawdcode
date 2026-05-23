@@ -1,0 +1,140 @@
+.shell {
+  display: flex;
+  width: 100%;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ── Desktop rail ── */
+.rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: var(--rail-width);
+  min-width: var(--rail-width);
+  height: 100vh;
+  background: #06101ccc;
+  border-right: 1px solid var(--border);
+  backdrop-filter: blur(10px);
+  z-index: 10;
+  padding: 10px 0;
+  gap: 4px;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.brand {
+  font-size: 22px;
+  padding: 8px 0 14px;
+  cursor: default;
+  user-select: none;
+  text-align: center;
+  width: 100%;
+}
+
+/* ── Rail nav buttons ── */
+.navBtn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  width: 58px;
+  padding: 8px 4px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--font-sans);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.navBtnIcon {
+  display: block;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.navBtnLabel {
+  display: block;
+  font-size: 9px;
+  line-height: 1;
+}
+
+.navBtn:hover {
+  background: #ffffff10;
+  color: var(--text);
+  border-color: var(--border);
+}
+
+.navBtnActive {
+  background: #0e2040cc;
+  border-color: #ffffff22;
+  color: #eef4ff;
+}
+
+/* ── Section host ── */
+.sectionHost {
+  flex: 1;
+  height: 100vh;
+  overflow: hidden;
+  position: relative;
+  min-width: 0;
+}
+
+/* ── Burger — hidden on desktop ── */
+.burger {
+  display: none;
+}
+
+/* ── Mobile overrides ── */
+@media (max-width: 760px) {
+  .rail {
+    display: none;
+  }
+
+  .burger {
+    display: inline-flex;
+    position: fixed;
+    top: 10px;
+    left: 10px;
+    z-index: 20;
+    width: 38px;
+    height: 38px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #0b1220cc;
+    color: var(--text);
+    font-size: 18px;
+    backdrop-filter: blur(8px);
+  }
+
+  .sectionHost {
+    width: 100vw;
+  }
+}
+
+/* ── Drawer inner layout ── */
+.drawerInner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 10px 0;
+  gap: 4px;
+  height: 100%;
+}
+
+.drawerBrand {
+  font-size: 22px;
+  padding: 8px 0 14px;
+  cursor: default;
+  user-select: none;
+  text-align: center;
+  width: 100%;
+}

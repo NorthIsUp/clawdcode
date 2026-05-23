@@ -1,0 +1,20 @@
+.footer {
+  margin-top: auto;
+  padding: 8px 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: #4a6a8a;
+  text-decoration: none;
+  text-align: center;
+  width: 100%;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  transition: color 0.15s ease;
+  flex-shrink: 0;
+  display: block;
+}
+
+.footer:hover {
+  color: #8aaccc;
+}
