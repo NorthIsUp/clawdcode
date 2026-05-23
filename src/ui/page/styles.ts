@@ -1113,6 +1113,68 @@ export const pageStyles = String.raw`    :root {
       color: #7dc5ff99;
     }
 
+    /* ── Jobs Plugin Repos: per-repo editable row in Settings ── */
+    .jobs-repos-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+
+    .jobs-repos-row {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #0b1422a8;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .jobs-repos-row-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid #ffffff10;
+      margin-bottom: 4px;
+    }
+
+    .jobs-repos-row-label {
+      font-family: "Space Grotesk", sans-serif;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .jobs-repos-remove-btn {
+      width: 26px;
+      height: 26px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 16px;
+      line-height: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: color 0.14s ease, background 0.14s ease, border-color 0.14s ease;
+    }
+
+    .jobs-repos-remove-btn:hover {
+      color: var(--bad);
+      border-color: rgba(255,127,127,0.4);
+      background: rgba(255,127,127,0.08);
+    }
+
     /* ── Slash-command autocomplete popover ── */
     .slash-popover {
       position: relative;
