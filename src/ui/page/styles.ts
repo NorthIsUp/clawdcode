@@ -207,25 +207,21 @@ export const pageStyles = String.raw`    :root {
       .section-host {
         width: 100vw;
       }
-      /* Minimal top padding — heading sits near burger's vertical centre */
-      .section {
-        padding-top: 12px;
+      /* Reserve the top 52px on every section so the fixed hamburger never overlaps content.
+         Double-class specificity beats later non-media single-class rules without !important. */
+      .section.section {
+        padding-top: 52px;
       }
-      /* Shift leading content right so heading text clears the 38px burger + 10px left + gap */
-      .home-grid {
-        padding-left: 56px;
-        padding-right: 20px;
-        padding-top: 4px;
+      /* Chat and Jobs use full-height flex layouts — override the top reserve so their
+         internal pane structure fills correctly, and clear the burger with left padding
+         on just the topmost header row instead. */
+      #section-chats, #section-jobs {
+        padding-top: 0;
       }
-      .settings-section {
-        padding-left: 56px;
-      }
-      /* Chats sidebar header */
-      .chat-sidebar-header {
-        padding-left: 56px;
-      }
-      /* Jobs list pane header */
-      .jobs-list-header {
+      /* Clear the burger (38px wide + 10px left + 8px gap = 56px) horizontally.
+         jobs-list-header placed here — non-media .jobs-list-header rule comes later,
+         so we use double-class for specificity. chat-sidebar-header is in a later block. */
+      .jobs-list-header.jobs-list-header {
         padding-left: 56px;
       }
     }
@@ -977,6 +973,9 @@ export const pageStyles = String.raw`    :root {
 
       .section-chats-detail .chat-list-pane { display: none; }
       .section-chats-detail .chat-back-btn { display: block; }
+
+      /* Placed here (after non-media .chat-sidebar-header rule) so padding-left wins the cascade */
+      .chat-sidebar-header.chat-sidebar-header { padding-left: 56px; }
     }
 
     /* ── Jobs section ── */
@@ -1373,6 +1372,9 @@ export const pageStyles = String.raw`    :root {
       .jobs-editor-pane { flex: 1; min-height: 0; }
       .jobs-back-btn { display: inline-flex !important; }
       .section-jobs-detail .jobs-list-pane { display: none; }
+      /* In detail view the editor header is topmost — clear burger horizontally.
+         Double-class on jobs-editor-header to beat non-media padding rule. */
+      .section-jobs-detail .jobs-editor-header.jobs-editor-header { padding-left: 56px; }
     }
 
     /* ── Settings section ── */
