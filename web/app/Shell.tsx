@@ -1,15 +1,7 @@
-import { Button, Tabs, TabsList, TabsTrigger } from "@pikoloo/darwin-ui";
-import {
-  Home,
-  ListChecks,
-  MessageSquare,
-  Monitor,
-  Moon,
-  Settings,
-  Sun,
-} from "lucide-react";
+import { Tabs, TabsList, TabsTrigger } from "@pikoloo/darwin-ui";
+import { Home, ListChecks, MessageSquare, Settings } from "lucide-react";
 import { useHash, type Section } from "../hooks/useHash";
-import { useTheme } from "../hooks/useSystemTheme";
+import { useSystemTheme } from "../hooks/useSystemTheme";
 import { ChatsSection } from "./sections/ChatsSection";
 import { HomeSection } from "./sections/HomeSection";
 import { RoutinesSection } from "./sections/RoutinesSection";
@@ -24,15 +16,7 @@ const NAV: { id: Section; label: string; Icon: typeof Home }[] = [
 
 export function Shell() {
   const { section, setSection } = useHash();
-  const { mode, isDark, toggle } = useTheme();
-
-  const ThemeIcon = mode === "system" ? Monitor : isDark ? Sun : Moon;
-  const themeLabel =
-    mode === "system"
-      ? "Theme: system (click for light)"
-      : mode === "light"
-        ? "Theme: light (click for dark)"
-        : "Theme: dark (click for system)";
+  useSystemTheme();
 
   return (
     <div className="min-h-screen">
@@ -56,11 +40,6 @@ export function Shell() {
               ))}
             </TabsList>
           </Tabs>
-          <div className="ml-auto">
-            <Button variant="ghost" onClick={toggle} aria-label={themeLabel}>
-              <ThemeIcon size={16} />
-            </Button>
-          </div>
         </div>
       </header>
 

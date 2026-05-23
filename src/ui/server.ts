@@ -56,31 +56,61 @@ export function startWebUi(opts: StartWebUiOptions): WebServerHandle {
         }
       }
 
-      // Serve the React web app from dist/web/ for all non-API routes.
-      // index.html is served for "/" and "/index.html"; built assets (app.js, app.css, etc.)
-      // are served directly by filename. Everything else falls through to /api/* handling.
-      if (url.pathname === "/" || url.pathname === "/index.html") {
-        const indexPath = join(import.meta.dir, "..", "..", "dist", "web", "index.html");
-        try {
-          const data = await Bun.file(indexPath).arrayBuffer();
-          return new Response(data, { headers: { "Content-Type": "text/html; charset=utf-8" } });
-        } catch {
-          return new Response("Web UI not built — run `bun run build:web`", { status: 404 });
-        }
-      }
-
-      // Serve built static assets (app.js, app.css, and any other dist/web/* files).
+      // Serve the React web app from dist/web/<bundle>/ for all non-API routes.
+      // Two bundles ship today: /darwin/ (default) and /os9/. The bare root
+      // 302s to /darwin/ so existing bookmarks keep working.
       {
-        const assetPath = join(import.meta.dir, "..", "..", "dist", "web", url.pathname.slice(1));
-        const assetFile = Bun.file(assetPath);
-        if (await assetFile.exists()) {
-          const rel = url.pathname.slice(1);
-          const type = rel.endsWith(".js") ? "application/javascript; charset=utf-8"
-            : rel.endsWith(".css") ? "text/css; charset=utf-8"
-            : rel.endsWith(".svg") ? "image/svg+xml"
-            : rel.endsWith(".json") ? "application/json"
-            : "application/octet-stream";
-          return new Response(await assetFile.arrayBuffer(), { headers: { "Content-Type": type } });
+        const webRoot = join(import.meta.dir, "..", "..", "dist", "web");
+
+        if (url.pathname === "/" || url.pathname === "/index.html") {
+          const target = new URL("/darwin/", url.origin);
+          // Preserve ?token=... when redirecting so the auth handshake survives.
+          for (const [k, v] of url.searchParams) target.searchParams.set(k, v);
+          return Response.redirect(target.toString(), 302);
+        }
+
+        const BUNDLES = ["darwin", "os9"] as const;
+        const match = url.pathname.match(/^\/([^/]+)(\/.*)?$/);
+        const bundle = match ? (BUNDLES as readonly string[]).includes(match[1] ?? "")
+          ? match[1]
+          : null
+          : null;
+
+        if (bundle) {
+          const rest = match?.[2] ?? "/";
+          // /darwin or /darwin/  →  serve the bundle's index.html
+          if (rest === "/" || rest === "") {
+            const indexPath = join(webRoot, bundle, "index.html");
+            try {
+              const data = await Bun.file(indexPath).arrayBuffer();
+              return new Response(data, {
+                headers: { "Content-Type": "text/html; charset=utf-8" },
+              });
+            } catch {
+              return new Response(
+                `${bundle} UI not built — run \`bun run build:web\``,
+                { status: 404 },
+              );
+            }
+          }
+          // /darwin/app.js, /os9/app.css, etc.
+          const assetRel = rest.replace(/^\//, "");
+          const assetPath = join(webRoot, bundle, assetRel);
+          const assetFile = Bun.file(assetPath);
+          if (await assetFile.exists()) {
+            const type = assetRel.endsWith(".js")
+              ? "application/javascript; charset=utf-8"
+              : assetRel.endsWith(".css")
+                ? "text/css; charset=utf-8"
+                : assetRel.endsWith(".svg")
+                  ? "image/svg+xml"
+                  : assetRel.endsWith(".json")
+                    ? "application/json"
+                    : "application/octet-stream";
+            return new Response(await assetFile.arrayBuffer(), {
+              headers: { "Content-Type": type },
+            });
+          }
         }
       }
 

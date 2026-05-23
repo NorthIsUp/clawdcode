@@ -34,6 +34,7 @@ import {
  type Settings,
 } from"../../api/settings";
 import { getState, type StateResponse } from"../../api/state";
+import { useTheme } from"../../hooks/useSystemTheme";
 import { buildTimezoneOptions } from"../../features/settings/timezones";
 
 const MODEL_OPTIONS = [
@@ -70,6 +71,26 @@ export function SettingsSection() {
  </TabsContent>
  </Tabs>
  </div>
+ );
+}
+
+function ThemeCard() {
+ const { mode, setMode } = useTheme();
+ return (
+ <Card>
+ <CardHeader>
+ <CardTitle>Theme</CardTitle>
+ </CardHeader>
+ <CardContent>
+ <Tabs value={mode} onValueChange={(v) => setMode(v as"system" |"light" |"dark")}>
+ <TabsList>
+ <TabsTrigger value="system">System</TabsTrigger>
+ <TabsTrigger value="light">Light</TabsTrigger>
+ <TabsTrigger value="dark">Dark</TabsTrigger>
+ </TabsList>
+ </Tabs>
+ </CardContent>
+ </Card>
  );
 }
 
@@ -182,6 +203,8 @@ function GeneralPanel() {
  />
  </CardContent>
  </Card>
+
+ <ThemeCard />
 
  <Card>
  <CardHeader>
