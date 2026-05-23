@@ -2467,7 +2467,9 @@ export const pageScript = String.raw`    // --- Token management ---
     function updateSlashAutocomplete() {
       if (!chatInput) return;
       var val = chatInput.value;
-      if (!val.startsWith("/")) {
+      // Dismiss once the user is past the command name — any whitespace after
+      // the leading `/` means they're writing a message, not picking a command.
+      if (!val.startsWith("/") || /\s/.test(val)) {
         hideSlashPopover();
         return;
       }
