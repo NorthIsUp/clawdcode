@@ -1,4 +1,5 @@
 import { useHash } from "../hooks/useHash";
+import { AboutSection } from "./sections/AboutSection";
 import { ChatsSection } from "./sections/ChatsSection";
 import { HomeSection } from "./sections/HomeSection";
 import { JobsSection } from "./sections/JobsSection";
@@ -20,6 +21,8 @@ export default function Router() {
       return <JobsSection initialFile={file} initialRepo={repo} />;
     case "settings":
       return <SettingsSection />;
+    case "about":
+      return <AboutSection />;
     default:
       return <HomeSection />;
   }

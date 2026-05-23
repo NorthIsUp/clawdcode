@@ -1,5 +1,5 @@
 import { Tabs, TabsList, TabsTrigger, useToast } from "@pikoloo/darwin-ui";
-import { FolderOpen, Home, MessageSquare, Settings } from "lucide-react";
+import { FolderOpen, Home, Info, MessageSquare, Settings } from "lucide-react";
 import type { ReactNode } from "react";
 import { useRef } from "react";
 import { useHash } from "../hooks/useHash";
@@ -7,13 +7,14 @@ import styles from "./AppShell.module.css";
 import { AppShellProvider, useAppShellSlot } from "./AppShellContext";
 import { GitFooter } from "./GitFooter";
 
-type Section = "home" | "chats" | "jobs" | "settings";
+type Section = "home" | "chats" | "jobs" | "settings" | "about";
 
 const NAV_ITEMS = [
   { id: "home" as Section, label: "Home", Icon: Home },
   { id: "chats" as Section, label: "Chats", Icon: MessageSquare },
   { id: "jobs" as Section, label: "Jobs", Icon: FolderOpen },
   { id: "settings" as Section, label: "Settings", Icon: Settings },
+  { id: "about" as Section, label: "About", Icon: Info },
 ] as const;
 
 interface Props {

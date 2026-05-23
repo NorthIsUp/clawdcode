@@ -30,6 +30,8 @@ export interface RuntimeGit {
   dirty?: boolean;
   branch?: string;
   commitUrl?: string;
+  tag?: string | null;
+  describe?: string | null;
 }
 
 export interface JobSummary {

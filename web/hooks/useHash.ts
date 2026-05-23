@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
-const VALID_SECTIONS = ["home", "chats", "jobs", "settings"] as const;
+const VALID_SECTIONS = ["home", "chats", "jobs", "settings", "about"] as const;
 type Section = (typeof VALID_SECTIONS)[number];
 
 export interface HashState {
