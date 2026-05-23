@@ -44,3 +44,17 @@
     padding: var(--space-3);
   }
 }
+
+.saveBar {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding: var(--space-3) 0;
+  margin-top: var(--space-4);
+  background: linear-gradient(to top, var(--bg, #0b1220) 60%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}

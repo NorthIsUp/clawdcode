@@ -6,6 +6,7 @@ import {
   TabsList,
   TabsTrigger,
 } from "@pikoloo/darwin-ui";
+import { Save } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { listRepos } from "../../api/repos";
 import { getHeartbeatSettings, updateSettings } from "../../api/settings";
@@ -166,20 +167,8 @@ export function SettingsSection() {
     }
   }
 
-  const actions = (
-    <Button
-      variant="primary"
-      disabled={!dirty || saving}
-      onClick={() => {
-        void saveChanges();
-      }}
-    >
-      {saving ? "Saving…" : "Save Changes"}
-    </Button>
-  );
-
   return (
-    <SectionFrame title="Settings" actions={actions}>
+    <SectionFrame title="Settings">
       {loading ? (
         <div className={styles.center}>
           <CircularProgress indeterminate size={32} strokeWidth={3} />
@@ -275,6 +264,28 @@ export function SettingsSection() {
               <McpFieldset />
             </TabsContent>
           </Tabs>
+
+          <div className={styles.saveBar}>
+            <Button
+              variant="primary"
+              disabled={!dirty || saving}
+              onClick={() => {
+                void saveChanges();
+              }}
+            >
+              {saving ? (
+                <>
+                  <CircularProgress indeterminate size={14} strokeWidth={2} />
+                  Saving…
+                </>
+              ) : (
+                <>
+                  <Save size={16} />
+                  Save Changes
+                </>
+              )}
+            </Button>
+          </div>
         </div>
       )}
     </SectionFrame>
