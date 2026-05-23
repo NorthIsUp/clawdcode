@@ -20,12 +20,12 @@ const NAV_ITEMS: NavItem[] = [
   { id: "settings", label: "Settings", icon: "⚙︎" },
 ];
 
-// Override settings icon to differentiate from jobs
+// Distinct, recognizable rail icons — JOBS and SETTINGS no longer share a gear.
 const ICONS: Record<string, string> = {
-  home: "⌂",
+  home: "🏠",
   chats: "💬",
-  jobs: "⚙",
-  settings: "⚙︎",
+  jobs: "🗂️",
+  settings: "⚙️",
 };
 
 interface Props {
