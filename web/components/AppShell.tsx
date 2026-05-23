@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useHash } from "../hooks/useHash";
+import { useMediaQuery } from "../hooks/useMediaQuery";
 import styles from "./AppShell.module.css";
 import { Drawer } from "./Drawer";
 import { GitFooter } from "./GitFooter";
@@ -79,29 +80,49 @@ function NavItems({
 export function AppShell({ children }: Props) {
   const { section, setHash } = useHash();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  // Conditionally render the burger ONLY on mobile so it can never appear next
+  // to the desktop rail (display:none alone leaked due to IconButton specificity).
+  const isMobile = useMediaQuery("(max-width: 760px)");
+  const brandRef = useRef<HTMLButtonElement>(null);
+  const wiggle = () => {
+    const el = brandRef.current;
+    if (!el) return;
+    el.classList.remove(styles.brandWiggle);
+    // force reflow so the animation restarts even on rapid re-clicks
+    void el.offsetWidth;
+    el.classList.add(styles.brandWiggle);
+  };
 
   return (
     <div className={styles.shell}>
       {/* Desktop rail */}
       <nav className={styles.rail} aria-label="Main navigation">
-        <div className={styles.brand} aria-hidden="true">
+        <button
+          ref={brandRef}
+          type="button"
+          className={styles.brand}
+          onClick={wiggle}
+          aria-label="ClaudeClaw"
+        >
           🦞
-        </div>
+        </button>
         <NavItems section={section} setHash={setHash} />
         <GitFooter />
       </nav>
 
       {/* Mobile burger — shell owns it, SectionFrame handles the safe-area */}
-      <IconButton
-        label="Open navigation"
-        size="lg"
-        variant="ghost"
-        className={styles.burger}
-        aria-expanded={drawerOpen}
-        onClick={() => setDrawerOpen(true)}
-      >
-        ☰
-      </IconButton>
+      {isMobile && (
+        <IconButton
+          label="Open navigation"
+          size="lg"
+          variant="ghost"
+          className={styles.burger}
+          aria-expanded={drawerOpen}
+          onClick={() => setDrawerOpen(true)}
+        >
+          ☰
+        </IconButton>
+      )}
 
       {/* Mobile drawer */}
       <Drawer

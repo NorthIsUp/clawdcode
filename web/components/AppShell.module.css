@@ -26,10 +26,30 @@
 .brand {
   font-size: 22px;
   padding: 8px 0 14px;
-  cursor: default;
+  cursor: pointer;
   user-select: none;
   text-align: center;
   width: 100%;
+  display: inline-block;
+  transform-origin: 50% 80%;
+}
+
+.brandWiggle {
+  animation: brandWiggle 1.4s ease-in-out;
+}
+
+@keyframes brandWiggle {
+  0%   { transform: rotate(0deg); }
+  10%  { transform: rotate(-18deg); }
+  20%  { transform: rotate(16deg); }
+  30%  { transform: rotate(-14deg); }
+  40%  { transform: rotate(12deg); }
+  50%  { transform: rotate(-10deg); }
+  60%  { transform: rotate(8deg); }
+  70%  { transform: rotate(-6deg); }
+  80%  { transform: rotate(4deg); }
+  90%  { transform: rotate(-2deg); }
+  100% { transform: rotate(0deg); }
 }
 
 /* ── Rail nav buttons ── */
