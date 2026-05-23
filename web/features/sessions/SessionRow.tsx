@@ -116,7 +116,7 @@ export function SessionRow({
             <span className={styles.agentName}>{displayName}</span>
           )}
           {channel && (
-            <Pill tone="muted" size="sm">
+            <Pill tone="good" size="sm">
               {channel}
             </Pill>
           )}

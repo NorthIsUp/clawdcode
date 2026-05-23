@@ -6,11 +6,12 @@ import type { SessionThread, ThreadKind } from "./groupSessionsIntoThreads";
 import { SessionRow } from "./SessionRow";
 import styles from "./ThreadGroup.module.css";
 
+// All thread-kind pills share the same outlined "good" visual the user prefers.
 const KIND_TONE: Record<ThreadKind, "warn" | "accent" | "good" | "muted"> = {
-  job: "warn",
+  job: "good",
   agent: "good",
-  web: "accent",
-  discord: "muted",
+  web: "good",
+  discord: "good",
 };
 
 const THREAD_PAGE = 10;

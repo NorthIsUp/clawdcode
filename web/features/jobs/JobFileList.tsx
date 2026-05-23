@@ -165,7 +165,7 @@ export function JobFileList({ activeFile, onSelect, refreshTick }: Props) {
                     }}
                   >
                     {f.isJob && (
-                      <Pill tone="accent" size="sm">
+                      <Pill tone="good" size="sm">
                         job
                       </Pill>
                     )}
