@@ -567,6 +567,16 @@ export function startWebUi(opts: StartWebUiOptions): WebServerHandle {
         }
       }
 
+      // --- Slash autocomplete registry ---
+      if (url.pathname === "/api/slash" && req.method === "GET") {
+        try {
+          const { listAllSlashEntries } = await import("../slashRegistry");
+          return json(await listAllSlashEntries());
+        } catch (err) {
+          return json({ ok: false, error: String(err instanceof Error ? err.message : err) }, 500);
+        }
+      }
+
       // --- MCP server management routes ---
       if (url.pathname === "/api/mcp" && req.method === "GET") {
         try {

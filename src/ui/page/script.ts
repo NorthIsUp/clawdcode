@@ -216,7 +216,7 @@ export const pageScript = String.raw`    // --- Token management ---
       // Track the active section in the URL #fragment so a refresh stays put.
       if (location.hash.replace(/^#/, "") !== name) location.hash = name;
       if (name === "home") loadHome();
-      if (name === "chats") { loadSessions(); refreshSlashCommands(); }
+      if (name === "chats") { loadSessions(); refreshSlashEntries(); }
       if (name === "jobs") loadJobsSection();
       if (name === "settings") loadSettingsSection();
     }
@@ -2378,24 +2378,15 @@ export const pageScript = String.raw`    // --- Token management ---
     }
 
     // ── Slash-command autocomplete ──
-    // Caches the discovered plugin commands from /api/jobs/repo/status.
-    // Refreshed when the Chats section is shown.
-    var slashCommands = []; // [{plugin, command}]
+    // Caches all slash-invokable entries from /api/slash.
+    // Refreshed when the Chats section is shown and on app load.
+    var slashEntries = []; // [{name, source, kind, description?}]
     var slashPopover = null;
     var slashSelectedIdx = -1;
 
-    function refreshSlashCommands() {
-      fetch("/api/jobs/repos").then(function(r) { return r.json(); }).then(function(repos) {
-        slashCommands = [];
-        var repoList = Array.isArray(repos) ? repos : [];
-        repoList.forEach(function(repo) {
-          var plugins = Array.isArray(repo.plugins) ? repo.plugins : [];
-          plugins.forEach(function(p) {
-            (p.commands || []).forEach(function(cmd) {
-              slashCommands.push({ plugin: p.name, command: cmd, text: "/" + cmd });
-            });
-          });
-        });
+    function refreshSlashEntries() {
+      fetch("/api/slash").then(function(r) { return r.json(); }).then(function(entries) {
+        slashEntries = Array.isArray(entries) ? entries : [];
       }).catch(function() {});
     }
 
@@ -2409,24 +2400,40 @@ export const pageScript = String.raw`    // --- Token management ---
 
     function showSlashPopover(items) {
       hideSlashPopover();
-      if (!items.length || !chatInput) return;
+      if (!chatInput) return;
 
       var popover = document.createElement("div");
       popover.className = "slash-popover";
       popover.setAttribute("role", "listbox");
 
-      items.forEach(function(item, idx) {
-        var opt = document.createElement("div");
-        opt.className = "slash-option";
-        opt.setAttribute("role", "option");
-        opt.dataset.idx = String(idx);
-        opt.textContent = item.text;
-        opt.addEventListener("mousedown", function(e) {
-          e.preventDefault(); // don't blur the input
-          applySlashCommand(item.text);
+      if (!items.length) {
+        var empty = document.createElement("div");
+        empty.className = "slash-option-empty";
+        empty.textContent = "No skills or commands found";
+        popover.appendChild(empty);
+      } else {
+        items.forEach(function(item, idx) {
+          var opt = document.createElement("div");
+          opt.className = "slash-option";
+          opt.setAttribute("role", "option");
+          opt.dataset.idx = String(idx);
+          var nameSpan = document.createElement("span");
+          nameSpan.className = "slash-option-name";
+          nameSpan.textContent = "/" + item.name;
+          var metaSpan = document.createElement("span");
+          metaSpan.className = "slash-option-meta";
+          var metaParts = "[" + escAttr(item.source) + "]";
+          if (item.description) metaParts += " · " + esc(item.description);
+          metaSpan.innerHTML = metaParts;
+          opt.appendChild(nameSpan);
+          opt.appendChild(metaSpan);
+          opt.addEventListener("mousedown", function(e) {
+            e.preventDefault(); // don't blur the input
+            applySlashCommand("/" + item.name);
+          });
+          popover.appendChild(opt);
         });
-        popover.appendChild(opt);
-      });
+      }
 
       // Insert the popover above the chat input
       var inputArea = chatInput.closest(".chat-input-area");
@@ -2460,18 +2467,14 @@ export const pageScript = String.raw`    // --- Token management ---
     function updateSlashAutocomplete() {
       if (!chatInput) return;
       var val = chatInput.value;
-      if (!val.startsWith("/") || slashCommands.length === 0) {
+      if (!val.startsWith("/")) {
         hideSlashPopover();
         return;
       }
       var query = val.slice(1).toLowerCase();
-      var filtered = slashCommands.filter(function(item) {
-        return item.command.toLowerCase().startsWith(query) || item.text.toLowerCase().startsWith("/" + query);
+      var filtered = slashEntries.filter(function(item) {
+        return item.name.toLowerCase().startsWith(query);
       });
-      if (filtered.length === 0) {
-        hideSlashPopover();
-        return;
-      }
       showSlashPopover(filtered);
     }
 
@@ -2490,7 +2493,10 @@ export const pageScript = String.raw`    // --- Token management ---
         } else if (e.key === "Enter" && slashSelectedIdx >= 0) {
           e.preventDefault();
           var selectedOpt = opts[slashSelectedIdx];
-          if (selectedOpt) applySlashCommand(selectedOpt.textContent || "");
+          if (selectedOpt) {
+            var nameEl = selectedOpt.querySelector(".slash-option-name");
+            applySlashCommand(nameEl ? nameEl.textContent || "" : selectedOpt.textContent || "");
+          }
         } else if (e.key === "Escape") {
           hideSlashPopover();
         }
@@ -2533,6 +2539,7 @@ export const pageScript = String.raw`    // --- Token management ---
     // --- Initial load ---
     renderChatHistory();
     loadSessions();
+    refreshSlashEntries();
 
     showSection(sectionFromHash());
     setInterval(function() {

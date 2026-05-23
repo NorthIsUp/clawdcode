@@ -1195,11 +1195,38 @@ export const pageStyles = String.raw`    :root {
       color: #b0cce8;
       cursor: pointer;
       border-radius: 4px;
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+    }
+
+    .slash-option-name {
+      flex-shrink: 0;
+      font-weight: 600;
+    }
+
+    .slash-option-meta {
+      flex: 1;
+      text-align: right;
+      font-size: 11px;
+      color: var(--muted, #637a8a);
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
     }
 
     .slash-option:hover, .slash-option-selected {
       background: #7dc5ff22;
       color: #e0f0ff;
+    }
+
+    .slash-option-empty {
+      padding: 6px 10px;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 12px;
+      color: var(--muted, #637a8a);
+      font-style: italic;
+      user-select: none;
     }
 
     .job-editor {
