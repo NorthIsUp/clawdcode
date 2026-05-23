@@ -11,6 +11,7 @@ import { getJobsRepoStatus, syncJobsRepo, pullJobsRepo, getAllRepoStatuses, sync
 import { loadJobs } from "../jobs";
 import { readLogs } from "./services/logs";
 import { listSessions, readSessionMessages, listAgents } from "./services/sessions";
+import { resetSession } from "../sessions";
 import { getSessionUsage } from "./services/usage";
 import { runUserMessage } from "../runner";
 import { listMcpServers, addMcpServer, removeMcpServer } from "../mcp";
@@ -560,6 +561,15 @@ export function startWebUi(opts: StartWebUiOptions): WebServerHandle {
             }).catch(() => {});
           }
           return json({ ok: true, result: result.stdout, exitCode: result.exitCode });
+        } catch (err) {
+          return json({ ok: false, error: String(err) }, 500);
+        }
+      }
+
+      if (url.pathname === "/api/chat/reset" && req.method === "POST") {
+        try {
+          await resetSession("chat");
+          return json({ ok: true });
         } catch (err) {
           return json({ ok: false, error: String(err) }, 500);
         }

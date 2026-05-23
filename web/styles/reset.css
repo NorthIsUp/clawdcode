@@ -9,29 +9,42 @@
 html,
 body,
 #root {
-  width: 100%;
-  height: 100%;
   margin: 0;
-  overflow: hidden;
+  min-height: 100%;
+}
+html {
+  /* Always reserve space for the scrollbar so layout doesn't shift when
+     switching between a long tab (Home) and a short one (Chats). */
+  scrollbar-gutter: stable;
+  /* Firefox: transparent track so the Vanta fog shows through. */
+  scrollbar-color: rgba(127, 127, 127, 0.4) transparent;
+  scrollbar-width: thin;
+}
+html, body { background: transparent; }
+
+/* WebKit (Safari, Chrome): scrollbar track sits on top of fixed elements by
+   default and renders an opaque background. Make it transparent so the fog
+   extends to the very edge of the window. */
+html::-webkit-scrollbar { width: 12px; }
+html::-webkit-scrollbar-track { background: transparent; }
+html::-webkit-scrollbar-thumb {
+  background: rgba(127, 127, 127, 0.4);
+  background-clip: padding-box;
+  border: 3px solid transparent;
+  border-radius: 8px;
+}
+html::-webkit-scrollbar-thumb:hover {
+  background: rgba(127, 127, 127, 0.6);
+  background-clip: padding-box;
+  border: 3px solid transparent;
 }
 body {
-  font-family: var(--font-sans);
-  color: var(--text);
-  background:
-    radial-gradient(1400px 700px at 15% -10%, var(--bg-spot-a), transparent 60%),
-    radial-gradient(900px 500px at 85% 10%, var(--bg-spot-b), transparent 65%),
-    linear-gradient(180deg, var(--bg-top) 0%, var(--bg-bottom) 100%);
-  overflow: hidden;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 /*
  * Button base reset lives in @layer base so Tailwind utility classes
  * (which live in @layer utilities, which has higher priority than @layer base)
  * can override padding, background, etc. on Darwin UI components.
- *
- * Unlayered CSS has HIGHER precedence than all @layer CSS in Tailwind v4 —
- * so `button { padding: 0 }` here (unlayered) would override `.px-3` from
- * `@layer utilities`, breaking Darwin's buttons. Moving it into @layer base
- * fixes this.
  */
 @layer base {
   button {

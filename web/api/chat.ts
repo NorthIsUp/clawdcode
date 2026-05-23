@@ -1,4 +1,11 @@
-import { apiFetch } from "./client";
+import { apiFetch, apiJSON } from "./client";
+
+/**
+ * Reset the daemon's "chat" agent session so the next chat starts fresh.
+ */
+export function resetChatSession(): Promise<{ ok: true }> {
+  return apiJSON<{ ok: true }>("/api/chat/reset", { method: "POST" });
+}
 
 // ---------------------------------------------------------------------------
 // Types

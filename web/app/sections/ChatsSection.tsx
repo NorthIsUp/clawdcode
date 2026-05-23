@@ -1,248 +1,290 @@
 import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-  Badge,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@pikoloo/darwin-ui";
-import { ChevronDown, Plus } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
-import type { SessionInfo } from "../../api/sessions";
-import { listSessions } from "../../api/sessions";
-import { SectionFrame } from "../../components/SectionFrame";
-import { ChatPane } from "../../features/chat/ChatPane";
+ Badge,
+ Button,
+ Card,
+ CardContent,
+ CircularProgress,
+ Input,
+} from"@pikoloo/darwin-ui";
+import { ArrowLeft, ChevronRight, Send } from"lucide-react";
+import { useCallback, useEffect, useRef, useState } from"react";
+import { resetChatSession, streamChat } from"../../api/chat";
 import {
-  getThreadKeyForSession,
-  groupSessionsIntoThreads,
-} from "../../features/sessions/groupSessionsIntoThreads";
-import { SessionsSidebar } from "../../features/sessions/SessionsSidebar";
-import { useFragmentState } from "../../hooks/useHash";
-import styles from "./ChatsSection.module.css";
+ getSessionMessages,
+ listSessions,
+ type ChatMessage,
+ type SessionInfo,
+} from"../../api/sessions";
+import { useHash } from"../../hooks/useHash";
 
-/**
- * Cross-section job-file open mechanism:
- * When the user clicks the 🗂 button on a job thread header, we navigate to
- * `#jobs?file=<jobName>.md`. JobsSection reads the `?file=` query
- * param via `window.location.search` on mount and when the hash changes, then
- * opens that file in the editor. This avoids global state and keeps the
- * communication through the URL — inspectable, bookmarkable, simple.
- *
- * Format: #jobs?file=<urlencoded-filename>[&repo=<urlencoded-slug>]
- */
-function openJobFile(jobName: string) {
-  const filename = `${jobName}.md`;
-  window.location.hash = `jobs?file=${encodeURIComponent(filename)}`;
+function fmtRelative(iso: string): string {
+ const d = new Date(iso).getTime();
+ const diff = Date.now() - d;
+ const s = Math.floor(diff / 1000);
+ if (s < 60) return `${s}s ago`;
+ const m = Math.floor(s / 60);
+ if (m < 60) return `${m}m ago`;
+ const h = Math.floor(m / 60);
+ if (h < 24) return `${h}h ago`;
+ return `${Math.floor(h / 24)}d ago`;
 }
 
-// Kind display labels for the dropdown group headers
-const KIND_LABELS: Record<string, string> = {
-  job: "Jobs",
-  web: "Web",
-  discord: "Discord",
-  agent: "Agents",
-};
-
 export function ChatsSection() {
-  // Persist active session ID in the hash: #chats?id=<sessionId>
-  const [activeIdRaw, setActiveIdFragment] = useFragmentState("id", "");
-  const activeId = activeIdRaw || null;
-  const setActiveId = useCallback(
-    (id: string | null) => setActiveIdFragment(id ?? ""),
-    [setActiveIdFragment],
-  );
+ const { params, setParam } = useHash();
+ const sessionId = params.get("id");
 
-  const [showDetail, setShowDetail] = useState(!!activeId);
+ if (sessionId) {
+ return (
+ <ChatView
+ sessionId={sessionId}
+ onBack={() => setParam("id", null)}
+ />
+ );
+ }
+ return <ChatList onOpen={(id) => setParam("id", id)} />;
+}
 
-  // All sessions for the dropdown switcher
-  const [allSessions, setAllSessions] = useState<SessionInfo[]>([]);
-  const [closedCount, setClosedCount] = useState(0);
+function ChatList({ onOpen }: { onOpen: (id: string) => void }) {
+ const [sessions, setSessions] = useState<SessionInfo[]>([]);
+ const [loading, setLoading] = useState(true);
+ const [draft, setDraft] = useState("");
+ const [sending, setSending] = useState(false);
 
-  const loadSessions = useCallback(async () => {
-    try {
-      const sessions = await listSessions(true);
-      const arr = Array.isArray(sessions) ? sessions : [];
-      setAllSessions(arr);
-      setClosedCount(arr.filter((s) => s.closed).length);
-    } catch {
-      // keep previous
-    }
-  }, []);
+ const reload = useCallback(async () => {
+ try {
+ const list = await listSessions(false);
+ setSessions(list.filter((s) => s.channel ==="web"));
+ } finally {
+ setLoading(false);
+ }
+ }, []);
 
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void loadSessions();
-  }, [loadSessions]);
+ useEffect(() => {
+ void reload();
+ }, [reload]);
 
-  const handleSelect = useCallback(
-    (id: string | null) => {
-      setActiveId(id);
-      if (id !== null) {
-        setShowDetail(true);
-      }
-    },
-    [setActiveId],
-  );
+ const handleSend = useCallback(async () => {
+ const message = draft.trim();
+ if (!message || sending) return;
+ setSending(true);
+ // Force the daemon's chat agent to start a fresh session.
+ try {
+ await resetChatSession();
+ } catch {
+ // Non-fatal — fall through and send anyway.
+ }
+ let newId: string | null = null;
+ await new Promise<void>((resolve) => {
+ streamChat(
+ { message },
+ {
+ onChunk: () => {},
+ onUnblock: () => {},
+ onDone: () => resolve(),
+ onError: () => resolve(),
+ },
+ );
+ setTimeout(resolve, 800);
+ });
+ const list = await listSessions(false);
+ const web = list.filter((s) => s.channel ==="web");
+ newId = web[0]?.id ?? null;
+ setDraft("");
+ setSending(false);
+ if (newId) onOpen(newId);
+ else void reload();
+ }, [draft, sending, onOpen, reload]);
 
-  const handleBack = useCallback(() => {
-    setShowDetail(false);
-  }, []);
+ return (
+ <div className="space-y-4 px-2 sm:px-0">
+ <div className="flex gap-2 px-1">
+ <Input
+ size="lg"
+ value={draft}
+ onChange={(e) => setDraft(e.target.value)}
+ onKeyDown={(e) => {
+ if (e.key ==="Enter" && !e.shiftKey) {
+ e.preventDefault();
+ void handleSend();
+ }
+ }}
+ placeholder="Start a new chat…"
+ />
+ <Button
+ variant="primary"
+ size="lg"
+ onClick={() => void handleSend()}
+ disabled={!draft.trim() || sending}
+ loading={sending}
+ leftIcon={<Send size={18} />}
+ >
+ <span className="hidden sm:inline">Send</span>
+ </Button>
+ </div>
 
-  // Active session label for the dropdown trigger
-  const activeSession = allSessions.find((s) => s.id === activeId);
-  const activeLabel = activeSession
-    ? (activeSession.title ?? activeSession.agent ?? "Session")
-    : null;
+ {loading ? (
+ <div className="flex justify-center py-16">
+ <CircularProgress indeterminate size={32} />
+ </div>
+ ) : sessions.length === 0 ? (
+ <p className="text-center text-sm text-muted-foreground py-12">No chat sessions yet.</p>
+ ) : (
+ <div className="space-y-2">
+ {sessions.map((s) => (
+ <button
+ key={s.id}
+ type="button"
+ className="w-full text-left"
+ onClick={() => onOpen(s.id)}
+ >
+ <Card className="cursor-pointer transition-opacity hover:opacity-80">
+ <CardContent className="py-3 flex items-center gap-3">
+ <div className="flex-1 min-w-0">
+ <div className="flex items-center gap-2 mb-1">
+ <span className="font-medium truncate">
+ {s.title || s.firstMessage ||"Untitled chat"}
+ </span>
+ {s.closed ? <Badge variant="secondary">closed</Badge> : null}
+ </div>
+ <div className="text-xs text-muted-foreground truncate">
+ {s.lastMessage}
+ </div>
+ <div className="text-xs text-muted-foreground mt-1">
+ {s.turnCount} turn{s.turnCount === 1 ?"" :"s"} · {fmtRelative(s.lastUsedAt)}
+ </div>
+ </div>
+ <ChevronRight size={18} className="text-muted-foreground" />
+ </CardContent>
+ </Card>
+ </button>
+ ))}
+ </div>
+ )}
+ </div>
+ );
+}
 
-  // Threads grouped by kind (for dropdown)
-  const openThreads = groupSessionsIntoThreads(
-    allSessions.filter((s) => !s.closed),
-  );
+function ChatView({ sessionId, onBack }: { sessionId: string; onBack: () => void }) {
+ const [messages, setMessages] = useState<ChatMessage[]>([]);
+ const [loading, setLoading] = useState(true);
+ const [draft, setDraft] = useState("");
+ const [sending, setSending] = useState(false);
+ const [streamingText, setStreamingText] = useState("");
+ const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Accordion: default-expanded when no active thread; collapsed when one is active
-  const _activeThreadKey = activeSession
-    ? getThreadKeyForSession(activeSession)
-    : null;
-  const accordionDefault = activeId ? "" : "threads";
+ const reload = useCallback(async () => {
+ try {
+ const res = await getSessionMessages(sessionId, 50, 0);
+ setMessages(res.messages);
+ } finally {
+ setLoading(false);
+ }
+ }, [sessionId]);
 
-  // Thread switcher dropdown — builds groups by kind
-  const threadsByKind = new Map<string, typeof openThreads>();
-  for (const thread of openThreads) {
-    const arr = threadsByKind.get(thread.kind) ?? [];
-    arr.push(thread);
-    threadsByKind.set(thread.kind, arr);
-  }
+ useEffect(() => {
+ void reload();
+ }, [reload]);
 
-  const totalThreads = openThreads.length;
+ useEffect(() => {
+ scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+ }, [messages, streamingText]);
 
-  return (
-    <SectionFrame title="Chats" bodyClassName={styles.body as string}>
-      <div
-        className={[styles.layout, showDetail ? styles.detail : undefined]
-          .filter(Boolean)
-          .join(" ")}
-      >
-        {/* ── Accordion thread picker (CL1) ───────────────────────────────── */}
-        <div className={styles.pickerRegion}>
-          <Accordion
-            type="single"
-            defaultValue={accordionDefault}
-            className={styles.accordion as string}
-          >
-            <AccordionItem value="threads">
-              <AccordionTrigger
-                itemValue="threads"
-                className={styles.accordionTrigger as string}
-              >
-                <span className={styles.accordionTitle}>
-                  Threads
-                  <Badge
-                    variant="secondary"
-                    className="ml-2 text-[10px] px-[5px] py-0"
-                  >
-                    {totalThreads}
-                  </Badge>
-                </span>
-              </AccordionTrigger>
-              <AccordionContent
-                itemValue="threads"
-                className={styles.accordionContent as string}
-              >
-                <SessionsSidebar
-                  activeId={activeId}
-                  onSelect={handleSelect}
-                  onOpenJob={openJobFile}
-                />
-              </AccordionContent>
-            </AccordionItem>
-          </Accordion>
+ const handleSend = useCallback(async () => {
+ const message = draft.trim();
+ if (!message || sending) return;
+ setSending(true);
+ setDraft("");
+ setMessages((prev) => [
+ ...prev,
+ { role:"user", text: message, timestamp: new Date().toISOString() },
+ ]);
+ setStreamingText("");
+ let acc ="";
+ await new Promise<void>((resolve) => {
+ streamChat(
+ { message, sessionId },
+ {
+ onChunk: (text) => {
+ acc += text;
+ setStreamingText(acc);
+ },
+ onDone: () => resolve(),
+ onError: () => resolve(),
+ },
+ );
+ });
+ setStreamingText("");
+ setSending(false);
+ void reload();
+ }, [draft, sending, sessionId, reload]);
 
-          {/* ── DropdownMenu thread switcher when a thread is active (CL2) ── */}
-          {activeId && activeLabel && (
-            <div className={styles.switcherRow}>
-              <DropdownMenu>
-                <DropdownMenuTrigger
-                  className={styles.switcherTrigger as string}
-                >
-                  <span className={styles.switcherLabel}>{activeLabel}</span>
-                  <ChevronDown size={14} className={styles.switcherChevron} />
-                </DropdownMenuTrigger>
-                <DropdownMenuContent
-                  glass
-                  align="start"
-                  className={styles.switcherMenu as string}
-                >
-                  <DropdownMenuItem
-                    onSelect={() => {
-                      handleSelect(null);
-                    }}
-                  >
-                    <Plus size={13} className="mr-1" />
-                    New
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
+ return (
+ <div className="flex flex-col h-[calc(100vh-7rem)] sm:h-[calc(100vh-9rem)] px-2 sm:px-0">
+ <div className="flex items-center gap-2 mb-3 px-1">
+ <Button variant="ghost" size="sm" onClick={onBack} leftIcon={<ArrowLeft size={16} />}>
+ Chats
+ </Button>
+ <span className="text-muted-foreground">/</span>
+ <span className="text-sm font-medium truncate">
+ {messages[0]?.text?.slice(0, 60) ||"Chat"}
+ </span>
+ </div>
 
-                  {Array.from(threadsByKind.entries()).map(
-                    ([kind, threads]) => (
-                      <div key={kind}>
-                        <DropdownMenuLabel>
-                          {KIND_LABELS[kind] ?? kind}
-                        </DropdownMenuLabel>
-                        {threads.flatMap((thread) =>
-                          thread.sessions.slice(0, 5).map((s) => (
-                            <DropdownMenuItem
-                              key={s.id}
-                              onSelect={() => {
-                                handleSelect(s.id);
-                              }}
-                            >
-                              <span
-                                className={[
-                                  styles.menuItem,
-                                  s.id === activeId
-                                    ? styles.menuItemActive
-                                    : undefined,
-                                ]
-                                  .filter(Boolean)
-                                  .join(" ")}
-                              >
-                                {s.title ?? s.agent ?? "Session"}
-                              </span>
-                            </DropdownMenuItem>
-                          )),
-                        )}
-                      </div>
-                    ),
-                  )}
+ <div
+ ref={scrollRef}
+ className="flex-1 overflow-y-auto space-y-3 px-1 pb-3"
+ >
+ {loading ? (
+ <div className="flex justify-center py-8">
+ <CircularProgress indeterminate size={28} />
+ </div>
+ ) : messages.length === 0 && !streamingText ? (
+ <p className="text-center text-sm text-muted-foreground py-12">No messages yet.</p>
+ ) : (
+ <>
+ {messages.map((m, i) => (
+ <MessageBubble key={`${m.timestamp}-${i}`} role={m.role} text={m.text} />
+ ))}
+ {streamingText ? <MessageBubble role="assistant" text={streamingText} /> : null}
+ </>
+ )}
+ </div>
 
-                  {closedCount > 0 && (
-                    <>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem disabled>
-                        Show closed ({closedCount}) — use Threads panel
-                      </DropdownMenuItem>
-                    </>
-                  )}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-          )}
-        </div>
+ <div className="pt-3 flex gap-2">
+ <Input
+ value={draft}
+ onChange={(e) => setDraft(e.target.value)}
+ onKeyDown={(e) => {
+ if (e.key ==="Enter" && !e.shiftKey) {
+ e.preventDefault();
+ void handleSend();
+ }
+ }}
+ placeholder="Reply…"
+ />
+ <Button
+ variant="primary"
+ onClick={() => void handleSend()}
+ disabled={!draft.trim() || sending}
+ loading={sending}
+ leftIcon={<Send size={16} />}
+ >
+ <span className="hidden sm:inline">Send</span>
+ </Button>
+ </div>
+ </div>
+ );
+}
 
-        {/* ── Chat conversation pane ───────────────────────────────────────── */}
-        <div className={styles.chatPane}>
-          <ChatPane
-            activeId={activeId}
-            onActiveIdChanged={setActiveId}
-            onBack={handleBack}
-          />
-        </div>
-      </div>
-    </SectionFrame>
-  );
+function MessageBubble({ role, text }: { role:"user" |"assistant"; text: string }) {
+ const isUser = role ==="user";
+ return (
+ <div className={isUser ?"flex justify-end" :"flex justify-start"}>
+ <Card className="max-w-[85%]">
+ <div className="px-3 py-2 text-sm whitespace-pre-wrap">
+ {isUser ? <strong>{text}</strong> : text}
+ </div>
+ </Card>
+ </div>
+ );
 }

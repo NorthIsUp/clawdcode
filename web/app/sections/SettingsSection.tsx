@@ -1,293 +1,467 @@
 import {
-  Button,
-  CircularProgress,
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@pikoloo/darwin-ui";
-import { Save } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
-import { listRepos } from "../../api/repos";
-import { getHeartbeatSettings, updateSettings } from "../../api/settings";
-import { getState } from "../../api/state";
-import { SectionFrame } from "../../components/SectionFrame";
-import { McpFieldset } from "../../features/mcp/McpFieldset";
-import { ClockFieldset } from "../../features/settings/ClockFieldset";
-import { HeartbeatFieldset } from "../../features/settings/HeartbeatFieldset";
+ Badge,
+ Button,
+ Card,
+ CardContent,
+ CardHeader,
+ CardTitle,
+ CircularProgress,
+ Input,
+ Select,
+ Switch,
+ Tabs,
+ TabsContent,
+ TabsList,
+ TabsTrigger,
+ Tooltip,
+ TooltipContent,
+ TooltipTrigger,
+ useToast,
+} from"@pikoloo/darwin-ui";
+import { HelpCircle, Trash2 } from"lucide-react";
+import { useCallback, useEffect, useState } from"react";
 import {
-  collectJobsRepos,
-  JobsReposFieldset,
-  mergeRepoStatus,
-  type RepoRow,
-} from "../../features/settings/JobsReposFieldset";
-import { ModelFieldset } from "../../features/settings/ModelFieldset";
-import { SecurityFieldset } from "../../features/settings/SecurityFieldset";
-import { useFragmentState } from "../../hooks/useHash";
-import styles from "./SettingsSection.module.css";
+ addMcpServer,
+ listMcpServers,
+ removeMcpServer,
+ type McpListResponse,
+ type McpServer,
+} from"../../api/mcp";
+import { listRepos, syncRepo, type RepoStatus } from"../../api/repos";
+import {
+ getSettings,
+ updateSettings,
+ type Settings,
+} from"../../api/settings";
+import { getState, type StateResponse } from"../../api/state";
+import { buildTimezoneOptions } from"../../features/settings/timezones";
 
-/** Read clock format from localStorage (matching the legacy claudeclaw.clock key). */
-function readClockFormat(): "12" | "24" {
-  try {
-    const v = localStorage.getItem("clock.format");
-    return v === "12" ? "12" : "24";
-  } catch {
-    return "24";
-  }
-}
+const MODEL_OPTIONS = [
+ { value:"claude-opus-4-7", label:"Opus 4.7" },
+ { value:"claude-sonnet-4-6", label:"Sonnet 4.6" },
+ { value:"claude-haiku-4-5", label:"Haiku 4.5" },
+];
 
-interface FormState {
-  model: string;
-  fallback: string;
-  hbEnabled: boolean;
-  hbInterval: number;
-  hbPrompt: string;
-  securityLevel: string;
-  clockFormat: "12" | "24";
-  timezone: string;
-  repos: RepoRow[];
-}
-
-const DEFAULT_FORM: FormState = {
-  model: "",
-  fallback: "",
-  hbEnabled: false,
-  hbInterval: 15,
-  hbPrompt: "",
-  securityLevel: "moderate",
-  clockFormat: "24",
-  timezone: "UTC",
-  repos: [],
-};
+const SECURITY_OPTIONS = [
+ { value:"default", label:"Default" },
+ { value:"acceptEdits", label:"Accept Edits" },
+ { value:"bypassPermissions", label:"Bypass Permissions" },
+ { value:"plan", label:"Plan" },
+];
 
 export function SettingsSection() {
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [form, setForm] = useState<FormState>(DEFAULT_FORM);
-  const [dirty, setDirty] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [saveStatus, setSaveStatus] = useState<{
-    msg: string;
-    kind: "ok" | "err";
-  } | null>(null);
-  const [activeTab, setActiveTab] = useFragmentState("tab", "model");
+ const [tab, setTab] = useState("general");
+ return (
+ <div className="px-2 sm:px-0">
+ <Tabs value={tab} onValueChange={setTab}>
+ <TabsList>
+ <TabsTrigger value="general">General</TabsTrigger>
+ <TabsTrigger value="repos">Repos</TabsTrigger>
+ <TabsTrigger value="mcps">MCPs</TabsTrigger>
+ </TabsList>
+ <TabsContent value="general">
+ <GeneralPanel />
+ </TabsContent>
+ <TabsContent value="repos">
+ <ReposPanel />
+ </TabsContent>
+ <TabsContent value="mcps">
+ <McpsPanel />
+ </TabsContent>
+ </Tabs>
+ </div>
+ );
+}
 
-  function patch(updates: Partial<FormState>) {
-    setForm((prev) => ({ ...prev, ...updates }));
-    setDirty(true);
-  }
+function TitleWithHint({ title, hint }: { title: string; hint: string }) {
+ return (
+ <CardTitle>
+ <span className="inline-flex items-center gap-1.5">
+ {title}
+ <Tooltip>
+ <TooltipTrigger asChild>
+ <HelpCircle size={14} className="opacity-60 cursor-help" />
+ </TooltipTrigger>
+ <TooltipContent>{hint}</TooltipContent>
+ </Tooltip>
+ </span>
+ </CardTitle>
+ );
+}
 
-  const load = useCallback(async () => {
-    setLoadError(null);
-    try {
-      const [state, hbRes, repoStatuses] = await Promise.all([
-        getState(),
-        getHeartbeatSettings(),
-        listRepos().catch(() => []),
-      ]);
+function GeneralPanel() {
+ const { showToast } = useToast();
+ const [settings, setSettings] = useState<Settings | null>(null);
+ const [state, setState] = useState<StateResponse | null>(null);
+ const [model, setModel] = useState("");
+ const [security, setSecurity] = useState("default");
+ const [tz, setTz] = useState("");
+ const [clock, setClock] = useState<"12" |"24">("24");
+ const [saving, setSaving] = useState(false);
+ const [loading, setLoading] = useState(true);
 
-      const hb = hbRes.heartbeat;
+ useEffect(() => {
+ void (async () => {
+ try {
+ const [s, st] = await Promise.all([getSettings(), getState()]);
+ setSettings(s);
+ setState(st);
+ setModel(st.model);
+ setSecurity(s.security.level);
+ setTz(s.timezone);
+ const stored = (localStorage.getItem("clawd.clockFormat") ??"24") as
+ |"12"
+ |"24";
+ setClock(stored);
+ } finally {
+ setLoading(false);
+ }
+ })();
+ }, []);
 
-      // Back-compat: prefer jobsRepos array; fall back to single jobsRepo
-      const configRepos =
-        Array.isArray(state.jobsRepos) && state.jobsRepos.length > 0
-          ? state.jobsRepos
-          : state.jobsRepo?.url
-            ? [state.jobsRepo]
-            : [];
+ const handleSave = useCallback(async () => {
+ setSaving(true);
+ try {
+ await updateSettings({
+ model,
+ security: { level: security },
+ timezone: tz,
+ });
+ localStorage.setItem("clawd.clockFormat", clock);
+ const [s, st] = await Promise.all([getSettings(), getState()]);
+ setSettings(s);
+ setState(st);
+ showToast("Settings saved", { type:"success" });
+ } catch (err) {
+ showToast(err instanceof Error ? err.message :"Save failed", {
+ type:"error",
+ });
+ } finally {
+ setSaving(false);
+ }
+ }, [model, security, tz, clock, showToast]);
 
-      const mergedRepos = mergeRepoStatus(configRepos, repoStatuses);
+ if (loading || !settings || !state) {
+ return (
+ <div className="flex justify-center py-16">
+ <CircularProgress indeterminate size={32} />
+ </div>
+ );
+ }
 
-      setForm({
-        model: state.model ?? "",
-        fallback:
-          typeof (state as unknown as { fallback: { model?: string } })
-            .fallback === "object" &&
-          (state as unknown as { fallback: { model?: string } }).fallback !==
-            null
-            ? ((state as unknown as { fallback: { model?: string } }).fallback
-                .model ?? "")
-            : "",
-        hbEnabled: Boolean(hb.enabled),
-        hbInterval: Number(hb.interval) || 15,
-        hbPrompt: typeof hb.prompt === "string" ? hb.prompt : "",
-        securityLevel: state.security?.level ?? "moderate",
-        clockFormat: readClockFormat(),
-        timezone: state.timezone ?? "UTC",
-        repos: mergedRepos,
-      });
-      setDirty(false);
-    } catch (err) {
-      setLoadError(
-        `Failed to load settings: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+ return (
+ <div className="space-y-4 mt-4">
+ <Card>
+ <CardHeader>
+ <TitleWithHint
+ title="Model"
+ hint="The default Claude model used for chats and routines."
+ />
+ </CardHeader>
+ <CardContent>
+ <Select
+ value={model}
+ onChange={(e) => setModel(e.target.value)}
+ options={MODEL_OPTIONS}
+ />
+ </CardContent>
+ </Card>
 
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void load();
-  }, [load]);
+ <Card>
+ <CardHeader>
+ <TitleWithHint
+ title="Security"
+ hint="Permission mode applied to every tool call. Default prompts before running anything risky; bypass disables prompts entirely."
+ />
+ </CardHeader>
+ <CardContent>
+ <Select
+ value={security}
+ onChange={(e) => setSecurity(e.target.value)}
+ options={SECURITY_OPTIONS}
+ />
+ </CardContent>
+ </Card>
 
-  async function saveChanges() {
-    setSaving(true);
-    setSaveStatus(null);
+ <Card>
+ <CardHeader>
+ <CardTitle>Clock</CardTitle>
+ </CardHeader>
+ <CardContent className="space-y-3">
+ <div>
+ <label className="text-xs text-muted-foreground mb-1 block">Timezone</label>
+ <Select
+ value={tz}
+ onChange={(e) => setTz(e.target.value)}
+ options={buildTimezoneOptions(settings.timezone)}
+ />
+ </div>
+ <div>
+ <label className="text-xs text-muted-foreground mb-2 block">Format</label>
+ <Tabs value={clock} onValueChange={(v) => setClock(v as"12" |"24")}>
+ <TabsList>
+ <TabsTrigger value="12">12-hour</TabsTrigger>
+ <TabsTrigger value="24">24-hour</TabsTrigger>
+ </TabsList>
+ </Tabs>
+ </div>
+ </CardContent>
+ </Card>
 
-    // Clock format is localStorage-only
-    try {
-      localStorage.setItem("clock.format", form.clockFormat);
-    } catch {
-      // ignore
-    }
+ <div className="flex justify-end">
+ <Button variant="primary" onClick={() => void handleSave()} loading={saving}>
+ Save
+ </Button>
+ </div>
+ </div>
+ );
+}
 
-    const payload: Record<string, unknown> = {
-      model: form.model.trim(),
-      fallback: { model: form.fallback.trim() },
-      security: { level: form.securityLevel },
-      timezone: form.timezone,
-      jobsRepos: collectJobsRepos(form.repos),
-    };
+function ReposPanel() {
+ const [repos, setRepos] = useState<RepoStatus[]>([]);
+ const [loading, setLoading] = useState(true);
+ const [syncing, setSyncing] = useState<string | null>(null);
 
-    try {
-      await updateSettings(payload);
-      setSaveStatus({ msg: "Saved.", kind: "ok" });
-      setDirty(false);
-      setTimeout(() => {
-        setSaveStatus(null);
-      }, 2000);
-    } catch (err) {
-      setSaveStatus({
-        msg: `Error: ${err instanceof Error ? err.message : String(err)}`,
-        kind: "err",
-      });
-    } finally {
-      setSaving(false);
-    }
-  }
+ const reload = useCallback(async () => {
+ try {
+ setRepos(await listRepos());
+ } finally {
+ setLoading(false);
+ }
+ }, []);
 
-  return (
-    <SectionFrame title="Settings">
-      {loading ? (
-        <div className={styles.center}>
-          <CircularProgress indeterminate size={32} strokeWidth={3} />
-        </div>
-      ) : loadError !== null ? (
-        <div className={styles.center}>
-          <p className={styles.loadError}>{loadError}</p>
-        </div>
-      ) : (
-        <div className={styles.content}>
-          {saveStatus !== null && (
-            <p
-              className={
-                saveStatus.kind === "err" ? styles.statusErr : styles.statusOk
-              }
-            >
-              {saveStatus.msg}
-            </p>
-          )}
+ useEffect(() => {
+ void reload();
+ }, [reload]);
 
-          <Tabs value={activeTab} onValueChange={setActiveTab} glass>
-            <TabsList className="flex-wrap h-auto gap-1">
-              <TabsTrigger value="model">Model</TabsTrigger>
-              <TabsTrigger value="heartbeat">Heartbeat</TabsTrigger>
-              <TabsTrigger value="security">Security</TabsTrigger>
-              <TabsTrigger value="clock">Clock</TabsTrigger>
-              <TabsTrigger value="repos">Repos</TabsTrigger>
-              <TabsTrigger value="mcp">MCP</TabsTrigger>
-            </TabsList>
+ const handleSync = useCallback(
+ async (slug: string) => {
+ setSyncing(slug);
+ try {
+ await syncRepo(slug);
+ await reload();
+ } finally {
+ setSyncing(null);
+ }
+ },
+ [reload],
+ );
 
-            <TabsContent value="model">
-              <ModelFieldset
-                model={form.model}
-                fallback={form.fallback}
-                onModelChange={(v) => {
-                  patch({ model: v });
-                }}
-                onFallbackChange={(v) => {
-                  patch({ fallback: v });
-                }}
-              />
-            </TabsContent>
+ if (loading) {
+ return (
+ <div className="flex justify-center py-16">
+ <CircularProgress indeterminate size={32} />
+ </div>
+ );
+ }
 
-            <TabsContent value="heartbeat">
-              <HeartbeatFieldset
-                enabled={form.hbEnabled}
-                interval={form.hbInterval}
-                prompt={form.hbPrompt}
-                onEnabledChange={(v) => {
-                  patch({ hbEnabled: v });
-                }}
-                onIntervalChange={(v) => {
-                  patch({ hbInterval: v });
-                }}
-                onPromptChange={(v) => {
-                  patch({ hbPrompt: v });
-                }}
-              />
-            </TabsContent>
+ return (
+ <div className="space-y-3 mt-4">
+ {repos.length === 0 ? (
+ <p className="text-sm text-muted-foreground text-center py-8">
+ No plugin repos configured.
+ </p>
+ ) : (
+ repos.map((r) => (
+ <Card key={r.slug}>
+ <CardContent className="py-4">
+ <div className="flex items-start gap-3">
+ <div className="flex-1 min-w-0">
+ <div className="flex items-center gap-2 mb-1 flex-wrap">
+ <span className="font-medium">{r.slug}</span>
+ {r.cloned ? (
+ <Badge variant="success">cloned</Badge>
+ ) : (
+ <Badge variant="secondary">not cloned</Badge>
+ )}
+ {r.dirty ? <Badge variant="warning">dirty</Badge> : null}
+ {r.ahead > 0 ? (
+ <Badge variant="secondary">{r.ahead}↑</Badge>
+ ) : null}
+ {r.behind > 0 ? (
+ <Badge variant="secondary">{r.behind}↓</Badge>
+ ) : null}
+ </div>
+ <div className="text-xs text-muted-foreground truncate font-mono">
+ {r.url}
+ </div>
+ {r.plugins.length > 0 ? (
+ <div className="text-xs text-muted-foreground mt-1">
+ plugins: {r.plugins.map((p) => p.name).join(",")}
+ </div>
+ ) : null}
+ {r.lastError ? (
+ <div className="text-xs text-muted-foreground mt-1">
+ {r.lastError}
+ </div>
+ ) : null}
+ </div>
+ <Button
+ variant="outline"
+ size="sm"
+ onClick={() => void handleSync(r.slug)}
+ loading={syncing === r.slug}
+ >
+ Sync
+ </Button>
+ </div>
+ </CardContent>
+ </Card>
+ ))
+ )}
+ </div>
+ );
+}
 
-            <TabsContent value="security">
-              <SecurityFieldset
-                level={form.securityLevel}
-                onChange={(v) => {
-                  patch({ securityLevel: v });
-                }}
-              />
-            </TabsContent>
+function McpsPanel() {
+ const { showToast } = useToast();
+ const [list, setList] = useState<McpListResponse | null>(null);
+ const [loading, setLoading] = useState(true);
+ const [adding, setAdding] = useState(false);
+ const [draft, setDraft] = useState<{
+ name: string;
+ transport: McpServer["transport"];
+ target: string;
+ }>({ name:"", transport:"stdio", target:"" });
 
-            <TabsContent value="clock">
-              <ClockFieldset
-                clockFormat={form.clockFormat}
-                timezone={form.timezone}
-                onClockFormatChange={(v) => {
-                  patch({ clockFormat: v });
-                }}
-                onTimezoneChange={(v) => {
-                  patch({ timezone: v });
-                }}
-              />
-            </TabsContent>
+ const reload = useCallback(async () => {
+ try {
+ setList(await listMcpServers());
+ } finally {
+ setLoading(false);
+ }
+ }, []);
 
-            <TabsContent value="repos">
-              <JobsReposFieldset
-                repos={form.repos}
-                onChange={(repos) => {
-                  patch({ repos });
-                }}
-              />
-            </TabsContent>
+ useEffect(() => {
+ void reload();
+ }, [reload]);
 
-            <TabsContent value="mcp">
-              <McpFieldset />
-            </TabsContent>
-          </Tabs>
+ const handleAdd = useCallback(async () => {
+ if (!draft.name.trim() || !draft.target.trim()) return;
+ setAdding(true);
+ try {
+ await addMcpServer({
+ name: draft.name.trim(),
+ transport: draft.transport,
+ target: draft.target.trim(),
+ scope:"user",
+ });
+ setDraft({ name:"", transport:"stdio", target:"" });
+ await reload();
+ showToast(`Added ${draft.name.trim()}`, { type:"success" });
+ } catch (err) {
+ showToast(err instanceof Error ? err.message :"Add failed", {
+ type:"error",
+ });
+ } finally {
+ setAdding(false);
+ }
+ }, [draft, reload, showToast]);
 
-          <div className={styles.saveBar}>
-            <Button
-              variant="primary"
-              disabled={!dirty || saving}
-              onClick={() => {
-                void saveChanges();
-              }}
-            >
-              {saving ? (
-                <>
-                  <CircularProgress indeterminate size={14} strokeWidth={2} />
-                  Saving…
-                </>
-              ) : (
-                <>
-                  <Save size={16} />
-                  Save Changes
-                </>
-              )}
-            </Button>
-          </div>
-        </div>
-      )}
-    </SectionFrame>
-  );
+ const handleRemove = useCallback(
+ async (name: string, scope: McpServer["scope"]) => {
+ try {
+ await removeMcpServer(name, scope);
+ await reload();
+ showToast(`Removed ${name}`, { type:"success" });
+ } catch (err) {
+ showToast(err instanceof Error ? err.message :"Remove failed", {
+ type:"error",
+ });
+ }
+ },
+ [reload, showToast],
+ );
+
+ if (loading || !list) {
+ return (
+ <div className="flex justify-center py-16">
+ <CircularProgress indeterminate size={32} />
+ </div>
+ );
+ }
+
+ const all = [
+ ...list.user.map((s) => ({ ...s, scope:"user" as const })),
+ ...list.project.map((s) => ({ ...s, scope:"project" as const })),
+ ];
+
+ return (
+ <div className="space-y-4 mt-4">
+ <Card>
+ <CardHeader>
+ <CardTitle>Add MCP server</CardTitle>
+ </CardHeader>
+ <CardContent>
+ <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+ <Input
+ placeholder="name"
+ value={draft.name}
+ onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+ />
+ <Select
+ value={draft.transport}
+ onChange={(e) =>
+ setDraft({
+ ...draft,
+ transport: e.target.value as McpServer["transport"],
+ })
+ }
+ options={[
+ { value:"stdio", label:"stdio" },
+ { value:"http", label:"http" },
+ { value:"sse", label:"sse" },
+ ]}
+ />
+ <Input
+ placeholder={draft.transport ==="stdio" ?"command args…" :"https://…"}
+ value={draft.target}
+ onChange={(e) => setDraft({ ...draft, target: e.target.value })}
+ />
+ <Button
+ variant="primary"
+ onClick={() => void handleAdd()}
+ loading={adding}
+ disabled={!draft.name.trim() || !draft.target.trim()}
+ >
+ Add
+ </Button>
+ </div>
+ </CardContent>
+ </Card>
+
+ {all.length === 0 ? (
+ <p className="text-sm text-muted-foreground text-center py-8">
+ No MCP servers configured.
+ </p>
+ ) : (
+ <div className="space-y-2">
+ {all.map((s) => (
+ <Card key={`${s.scope}:${s.name}`}>
+ <CardContent className="py-3 flex items-center gap-3">
+ <div className="flex-1 min-w-0">
+ <div className="flex items-center gap-2 mb-0.5">
+ <span className="font-medium">{s.name}</span>
+ <Badge variant="secondary">{s.scope}</Badge>
+ <Badge variant="secondary">{s.transport}</Badge>
+ </div>
+ <div className="text-xs font-mono text-muted-foreground truncate">
+ {s.target}
+ </div>
+ </div>
+ <Button
+ variant="ghost"
+ size="sm"
+ leftIcon={<Trash2 size={14} />}
+ onClick={() => void handleRemove(s.name, s.scope)}
+ >
+ <span className="hidden sm:inline">Remove</span>
+ </Button>
+ </CardContent>
+ </Card>
+ ))}
+ </div>
+ )}
+ </div>
+ );
 }
