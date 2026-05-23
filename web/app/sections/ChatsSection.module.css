@@ -1,0 +1,30 @@
+.layout {
+  display: flex;
+  height: 100%;
+  overflow: hidden;
+}
+
+/*
+ * Mobile: sidebar takes full width; chat pane is hidden until a session is selected.
+ * When .detail is applied to the layout, sidebar hides and pane shows.
+ */
+@media (max-width: 760px) {
+  .sidebar {
+    flex: 1;
+    width: 100%;
+  }
+
+  .chatPane {
+    display: none;
+    flex: 1;
+  }
+
+  .layout.detail .sidebar {
+    display: none;
+  }
+
+  .layout.detail .chatPane {
+    display: flex;
+    flex-direction: column;
+  }
+}

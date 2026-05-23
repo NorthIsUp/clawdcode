@@ -1,0 +1,88 @@
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  width: 260px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  background: rgba(11, 18, 32, 0.5);
+  height: 100%;
+  overflow: hidden;
+}
+
+.sidebarTop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.newBtn {
+  flex: 1;
+  font-size: 12px;
+  padding: 5px 10px;
+  background: rgba(155, 231, 255, 0.1);
+  border: 1px solid rgba(155, 231, 255, 0.25);
+  border-radius: var(--radius-sm);
+  color: var(--accent);
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+  white-space: nowrap;
+}
+
+.newBtn:hover {
+  background: rgba(155, 231, 255, 0.18);
+  border-color: rgba(155, 231, 255, 0.4);
+}
+
+.closedToggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--muted);
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.closedToggle input[type="checkbox"] {
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.list {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: #3a5a80 transparent;
+  padding: 4px 0;
+}
+
+.list::-webkit-scrollbar {
+  width: 4px;
+}
+.list::-webkit-scrollbar-track {
+  background: transparent;
+}
+.list::-webkit-scrollbar-thumb {
+  background: #3a5a80;
+  border-radius: 999px;
+}
+
+.empty {
+  padding: 20px 12px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.loading {
+  display: flex;
+  justify-content: center;
+  padding: 20px;
+}

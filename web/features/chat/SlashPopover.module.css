@@ -1,0 +1,58 @@
+.popoverContent {
+  min-width: 300px;
+  max-width: 420px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 4px 0;
+  scrollbar-width: thin;
+  scrollbar-color: #3a5a80 transparent;
+}
+
+.popoverContent::-webkit-scrollbar {
+  width: 4px;
+}
+.popoverContent::-webkit-scrollbar-thumb {
+  background: #3a5a80;
+  border-radius: 999px;
+}
+
+.option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  cursor: pointer;
+  gap: 8px;
+  transition: background 0.1s;
+}
+
+.option:hover,
+.optionSelected {
+  background: rgba(155, 231, 255, 0.1);
+}
+
+.optionName {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--accent);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.optionMeta {
+  font-size: 11px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  text-align: right;
+}
+
+.empty {
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--muted);
+  opacity: 0.6;
+  font-style: italic;
+}
