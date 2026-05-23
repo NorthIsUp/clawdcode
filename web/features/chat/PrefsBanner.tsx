@@ -1,3 +1,5 @@
+import { CloseButton } from "@pikoloo/darwin-ui";
+
 interface BannerRowProps {
   label: string;
   onClose: () => void;
@@ -33,23 +35,7 @@ function BannerRow({ label, onClose, children }: BannerRowProps) {
       >
         {children}
       </span>
-      <button
-        type="button"
-        onClick={onClose}
-        aria-label={`Clear ${label}`}
-        style={{
-          background: "none",
-          border: "none",
-          cursor: "pointer",
-          color: "var(--muted, #a8b4c5)",
-          fontSize: "14px",
-          lineHeight: 1,
-          padding: "0 2px",
-          opacity: 0.7,
-        }}
-      >
-        ×
-      </button>
+      <CloseButton onClick={onClose} aria-label={`Clear ${label}`} />
     </div>
   );
 }

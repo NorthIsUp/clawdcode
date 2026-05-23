@@ -1,5 +1,6 @@
 import {
   Badge,
+  Button,
   Card,
   CardContent,
   CardHeader,
@@ -87,9 +88,14 @@ export function GitSyncCard({ repos, onOpenJobs }: Props) {
             <RepoRow key={repo.slug || repo.url} repo={repo} />
           ))
         )}
-        <button type="button" className={styles.linkBtn} onClick={onOpenJobs}>
+        <Button
+          variant="ghost"
+          size="sm"
+          className={styles.linkBtn ?? ""}
+          onClick={onOpenJobs}
+        >
           Open Jobs →
-        </button>
+        </Button>
       </CardContent>
     </Card>
   );

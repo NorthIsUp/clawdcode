@@ -1,4 +1,4 @@
-import { Textarea } from "@pikoloo/darwin-ui";
+import { Button, Textarea } from "@pikoloo/darwin-ui";
 import * as RadixPopover from "@radix-ui/react-popover";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChatAttachment } from "../../api/chat";
@@ -186,16 +186,17 @@ export function ChatInput({ busy, slashEntries, onSend, onCancel }: Props) {
               <span className={styles.chipName} title={att.name}>
                 {att.name}
               </span>
-              <button
-                type="button"
-                className={styles.chipRemove}
+              <Button
+                variant="ghost"
+                size="icon"
+                className={styles.chipRemove ?? ""}
                 aria-label={`Remove ${att.name}`}
                 onClick={() => {
                   removeAttachment(idx);
                 }}
               >
                 ×
-              </button>
+              </Button>
             </span>
           ))}
         </div>
@@ -206,9 +207,10 @@ export function ChatInput({ busy, slashEntries, onSend, onCancel }: Props) {
       <RadixPopover.Root open={showPopover} onOpenChange={setSlashOpen}>
         <div className={styles.inputRow}>
           {/* Attach button */}
-          <button
-            type="button"
-            className={styles.iconBtn}
+          <Button
+            variant="ghost"
+            size="icon"
+            className={styles.iconBtn ?? ""}
             disabled={busy}
             title="Attach file"
             onClick={() => {
@@ -216,7 +218,7 @@ export function ChatInput({ busy, slashEntries, onSend, onCancel }: Props) {
             }}
           >
             📎
-          </button>
+          </Button>
 
           {/* Textarea — the popover trigger is a zero-size span next to it */}
           <RadixPopover.Anchor asChild>
@@ -237,27 +239,29 @@ export function ChatInput({ busy, slashEntries, onSend, onCancel }: Props) {
 
           {/* Cancel button (visible while busy) */}
           {busy && (
-            <button
-              type="button"
-              className={`${styles.iconBtn} ${styles.cancelBtn}`}
+            <Button
+              variant="ghost"
+              size="icon"
+              className={`${styles.iconBtn ?? ""} ${styles.cancelBtn ?? ""}`}
               onClick={onCancel}
               title="Cancel"
             >
               ✕
-            </button>
+            </Button>
           )}
 
           {/* Send button */}
           {!busy && (
-            <button
-              type="button"
-              className={`${styles.iconBtn} ${styles.sendBtn}`}
+            <Button
+              variant="primary"
+              size="icon"
+              className={`${styles.iconBtn ?? ""} ${styles.sendBtn ?? ""}`}
               disabled={busy || (!value.trim() && attachments.length === 0)}
               onClick={submit}
               title="Send (Enter)"
             >
               ↑
-            </button>
+            </Button>
           )}
         </div>
 

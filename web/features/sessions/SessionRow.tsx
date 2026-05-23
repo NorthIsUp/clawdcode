@@ -1,4 +1,4 @@
-import { Badge } from "@pikoloo/darwin-ui";
+import { Badge, Button, Input } from "@pikoloo/darwin-ui";
 import { useRef, useState } from "react";
 import type { SessionInfo } from "../../api/sessions";
 import { setSessionClosed, setSessionTitle } from "../../api/sessions";
@@ -97,7 +97,7 @@ export function SessionRow({
       {!isJobSession && (
         <div className={styles.headerRow}>
           {renaming ? (
-            <input
+            <Input
               ref={inputRef}
               className={styles.titleInput}
               value={titleValue}
@@ -136,23 +136,25 @@ export function SessionRow({
         </span>
         <div className={styles.actions}>
           {!isJobSession && (
-            <button
-              type="button"
-              className={styles.renameBtn}
+            <Button
+              variant="ghost"
+              size="icon"
+              className={styles.renameBtn ?? ""}
               title="Rename"
               onClick={startRename}
             >
               ✎
-            </button>
+            </Button>
           )}
-          <button
-            type="button"
-            className={styles.closeBtn}
+          <Button
+            variant="ghost"
+            size="icon"
+            className={styles.closeBtn ?? ""}
             title={s.closed ? "Reopen" : "Close"}
             onClick={toggleClose}
           >
             {s.closed ? "↺" : "×"}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

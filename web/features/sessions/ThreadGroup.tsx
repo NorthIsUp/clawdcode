@@ -4,6 +4,7 @@ import {
   AccordionItem,
   AccordionTrigger,
   Badge,
+  Button,
 } from "@pikoloo/darwin-ui";
 import { useState } from "react";
 import type { SessionInfo } from "../../api/sessions";
@@ -87,9 +88,10 @@ export function ThreadGroup({
             <Badge variant={KIND_VARIANT[thread.kind]}>{thread.kind}</Badge>
 
             {thread.kind === "job" && onOpenJob && (
-              <button
-                type="button"
-                className={styles.jobLink}
+              <Button
+                variant="ghost"
+                size="icon"
+                className={styles.jobLink ?? ""}
                 title="Open job file"
                 onClick={(e) => {
                   e.stopPropagation();
@@ -97,7 +99,7 @@ export function ThreadGroup({
                 }}
               >
                 🗂
-              </button>
+              </Button>
             )}
 
             <div className={styles.summary}>
@@ -128,9 +130,10 @@ export function ThreadGroup({
 
           {sessions.length > THREAD_PAGE && (
             <div className={styles.paginator}>
-              <button
-                type="button"
-                className={styles.pageBtn}
+              <Button
+                variant="ghost"
+                size="sm"
+                className={styles.pageBtn ?? ""}
                 disabled={safePageIdx === 0}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -138,13 +141,14 @@ export function ThreadGroup({
                 }}
               >
                 ‹ prev
-              </button>
+              </Button>
               <span className={styles.pageInfo}>
                 {safePageIdx + 1} / {pageCount}
               </span>
-              <button
-                type="button"
-                className={styles.pageBtn}
+              <Button
+                variant="ghost"
+                size="sm"
+                className={styles.pageBtn ?? ""}
                 disabled={safePageIdx >= pageCount - 1}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -152,7 +156,7 @@ export function ThreadGroup({
                 }}
               >
                 next ›
-              </button>
+              </Button>
             </div>
           )}
         </AccordionContent>

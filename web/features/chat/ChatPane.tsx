@@ -1,3 +1,4 @@
+import { Button } from "@pikoloo/darwin-ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChatAttachment } from "../../api/chat";
 import { streamChat } from "../../api/chat";
@@ -540,9 +541,14 @@ export function ChatPane({
       {activeId && (
         <div className={styles.historyBanner}>
           {onBack && (
-            <button type="button" className={styles.backBtn} onClick={onBack}>
+            <Button
+              variant="ghost"
+              size="sm"
+              className={styles.backBtn ?? ""}
+              onClick={onBack}
+            >
               ← Back
-            </button>
+            </Button>
           )}
           <span className={styles.historyBannerLabel}>
             Browsing session history
@@ -553,15 +559,16 @@ export function ChatPane({
       {/* Load older button */}
       {showLoadMore && (
         <div className={styles.loadMore}>
-          <button
-            type="button"
-            className={styles.loadMoreBtn}
+          <Button
+            variant="ghost"
+            size="sm"
+            className={styles.loadMoreBtn ?? ""}
             onClick={() => {
               void loadMore();
             }}
           >
             Load older ({browseOffset} more)
-          </button>
+          </Button>
         </div>
       )}
 

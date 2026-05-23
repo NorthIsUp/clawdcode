@@ -1,4 +1,5 @@
 import {
+  Button,
   Card,
   CardContent,
   CardHeader,
@@ -223,14 +224,15 @@ function GroupRow({ row, maxCost, isExpanded, onToggle }: GroupRowProps) {
         style={{ cursor: "pointer" }}
       >
         <td className={styles.labelCell ?? ""}>
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="icon"
             className={styles.caret ?? ""}
             aria-expanded={isExpanded}
             aria-label={isExpanded ? "Collapse group" : "Expand group"}
           >
             {isExpanded ? "▼" : "▶"}
-          </button>{" "}
+          </Button>{" "}
           ⚙️ {row.data.label}{" "}
           <span className={styles.groupCount ?? ""}>
             ({row.children.length} runs)
