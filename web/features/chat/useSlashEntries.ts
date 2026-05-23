@@ -2,7 +2,7 @@
  * Fetches /api/slash and prepends CLIENT_SLASH_ENTRIES.
  * Ported from src/ui/page/script.ts `refreshSlashEntries` + CLIENT_SLASH_ENTRIES.
  */
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { SlashEntry } from "../../api/slash";
 import { listSlashEntries } from "../../api/slash";
 
@@ -59,10 +59,13 @@ export function useSlashEntries(): {
     };
   }, [tick]);
 
+  // Stable reference — safe to include in useEffect dependency arrays.
+  const refresh = useCallback(() => {
+    setTick((t) => t + 1);
+  }, []);
+
   return {
     entries: [...CLIENT_SLASH_ENTRIES, ...serverEntries],
-    refresh: () => {
-      setTick((t) => t + 1);
-    },
+    refresh,
   };
 }

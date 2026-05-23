@@ -1,5 +1,4 @@
 import { join } from "node:path";
-import { htmlPage } from "./page/html";
 import { clampInt, json } from "./http";
 import { checkToken } from "./auth";
 import type { StartWebUiOptions, WebServerHandle } from "./types";
@@ -56,28 +55,31 @@ export function startWebUi(opts: StartWebUiOptions): WebServerHandle {
         }
       }
 
+      // Serve the React web app from dist/web/ for all non-API routes.
+      // index.html is served for "/" and "/index.html"; built assets (app.js, app.css, etc.)
+      // are served directly by filename. Everything else falls through to /api/* handling.
       if (url.pathname === "/" || url.pathname === "/index.html") {
-        return new Response(htmlPage(), {
-          headers: { "Content-Type": "text/html; charset=utf-8" },
-        });
+        const indexPath = join(import.meta.dir, "..", "..", "dist", "web", "index.html");
+        try {
+          const data = await Bun.file(indexPath).arrayBuffer();
+          return new Response(data, { headers: { "Content-Type": "text/html; charset=utf-8" } });
+        } catch {
+          return new Response("Web UI not built — run `bun run build:web`", { status: 404 });
+        }
       }
 
-      // Dev preview of the React rewrite — serves `dist/web/` under /v2/.
-      // Removed in the Phase 9 cutover when `/` itself becomes the React app.
-      if (url.pathname === "/v2" || url.pathname === "/v2/" || url.pathname.startsWith("/v2/")) {
-        const rel = url.pathname === "/v2" || url.pathname === "/v2/" ? "index.html" : url.pathname.slice("/v2/".length);
-        const distPath = join(import.meta.dir, "..", "..", "dist", "web", rel);
-        try {
-          const data = await Bun.file(distPath).arrayBuffer();
-          const type = rel.endsWith(".html") ? "text/html; charset=utf-8"
-            : rel.endsWith(".js") ? "application/javascript; charset=utf-8"
+      // Serve built static assets (app.js, app.css, and any other dist/web/* files).
+      {
+        const assetPath = join(import.meta.dir, "..", "..", "dist", "web", url.pathname.slice(1));
+        const assetFile = Bun.file(assetPath);
+        if (await assetFile.exists()) {
+          const rel = url.pathname.slice(1);
+          const type = rel.endsWith(".js") ? "application/javascript; charset=utf-8"
             : rel.endsWith(".css") ? "text/css; charset=utf-8"
             : rel.endsWith(".svg") ? "image/svg+xml"
             : rel.endsWith(".json") ? "application/json"
             : "application/octet-stream";
-          return new Response(data, { headers: { "Content-Type": type } });
-        } catch {
-          return new Response("Not found — run `bun run build:web`", { status: 404 });
+          return new Response(await assetFile.arrayBuffer(), { headers: { "Content-Type": type } });
         }
       }
 

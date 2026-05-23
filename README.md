@@ -168,6 +168,18 @@ See [docs/MULTI_SESSION.md](docs/MULTI_SESSION.md) for technical details.
 - **Security Levels:** Four access levels from read-only to full system access.
 - **Model Selection:** Switch models based on your workload.
 
+## Web UI
+
+The web dashboard is a React + TypeScript app (`web/`) built with Bun's built-in bundler and served by the daemon from `dist/web/`.
+
+**Build:** `bun run build:web` → outputs `dist/web/{index.html,app.js,app.css}`.
+
+**Dev (watch mode):** `bun run dev:web` → rebuilds on file changes for fast iteration.
+
+**Served at:** `/` — the daemon serves `index.html` there; `/app.js` and `/app.css` are served directly. All `/api/*` routes are unchanged and token-gated as before.
+
+**Stack:** React 18, CSS Modules + tokens.css, Radix UI primitives (Dialog/Popover/Tooltip/Toast), hash routing, plain fetch + typed wrappers. Biome (strict) + ESLint (strict React rules) enforced via hk pre-commit hooks.
+
 ## FAQ
 
 <details open>
