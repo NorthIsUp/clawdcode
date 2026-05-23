@@ -3,6 +3,7 @@ import { SectionFrame } from "../components/SectionFrame";
 import { useHash } from "../hooks/useHash";
 import { ChatsSection } from "./sections/ChatsSection";
 import { HomeSection } from "./sections/HomeSection";
+import { JobsSection } from "./sections/JobsSection";
 
 function Placeholder({ name }: { name: string }) {
   return (
@@ -14,11 +15,11 @@ function Placeholder({ name }: { name: string }) {
 
 /**
  * Router reads the URL hash via useHash() and renders the matching section
- * inside a SectionFrame. Phases 5–8 will replace the placeholder bodies with
- * real section components.
+ * inside a SectionFrame. Phases 7–8 will replace the remaining placeholder
+ * bodies with real section components.
  */
 export default function Router() {
-  const { section } = useHash();
+  const { section, file, repo } = useHash();
 
   switch (section) {
     case "home":
@@ -26,7 +27,7 @@ export default function Router() {
     case "chats":
       return <ChatsSection />;
     case "jobs":
-      return <Placeholder name="Jobs" />;
+      return <JobsSection initialFile={file} initialRepo={repo} />;
     case "settings":
       return <Placeholder name="Settings" />;
     default:
