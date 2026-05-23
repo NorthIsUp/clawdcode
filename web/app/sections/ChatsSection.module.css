@@ -4,6 +4,19 @@
   overflow: hidden;
 }
 
+/* Desktop: sidebar fixed-width column, chat pane fills the rest. */
+.sidebar {
+  width: 280px;
+  flex: 0 0 280px;
+  min-width: 0;
+  border-right: 1px solid var(--border);
+}
+
+.chatPane {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 /*
  * Mobile: sidebar takes full width; chat pane is hidden until a session is selected.
  * When .detail is applied to the layout, sidebar hides and pane shows.
