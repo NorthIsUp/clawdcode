@@ -1,4 +1,6 @@
-import { Button, CircularProgress, MdEditor } from "@pikoloo/darwin-ui";
+import { Button, CircularProgress } from "@pikoloo/darwin-ui";
+import MDEditor from "@uiw/react-md-editor";
+import "@uiw/react-md-editor/markdown-editor.css";
 import { useCallback, useEffect, useState } from "react";
 import {
   autoNameJobFile,
@@ -192,11 +194,14 @@ export function JobEditor({
             <CircularProgress indeterminate size={14} strokeWidth={2} />
           </div>
         ) : (
-          <MdEditor
+          <MDEditor
             key={fileKey.path}
             value={content}
-            onChange={handleChange}
-            placeholder="Write your job instructions here (Markdown + YAML frontmatter)…"
+            onChange={(val) => handleChange(val ?? "")}
+            preview="edit"
+            visibleDragbar={false}
+            height="100%"
+            className={styles.mdEditor}
           />
         )}
       </div>
