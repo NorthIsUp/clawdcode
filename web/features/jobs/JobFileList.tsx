@@ -1,4 +1,13 @@
-import { Badge, CircularProgress } from "@pikoloo/darwin-ui";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+  Badge,
+  Button,
+  CircularProgress,
+} from "@pikoloo/darwin-ui";
+import { FolderOpen, Puzzle } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import type { JobFileEntry } from "../../api/jobs";
 import { listJobFiles } from "../../api/jobs";
@@ -102,80 +111,130 @@ export function JobFileList({ activeFile, onSelect, refreshTick }: Props) {
   const totalFiles = groups.reduce((n, g) => n + g.files.length, 0);
   const showGroupHeaders = groups.length > 1;
 
+  if (loading) {
+    return (
+      <div className={styles.loading}>
+        <CircularProgress indeterminate size={14} strokeWidth={2} />
+      </div>
+    );
+  }
+
+  if (error) {
+    return <div className={styles.empty}>{error}</div>;
+  }
+
+  if (totalFiles === 0 && groups.every((g) => g.files.length === 0)) {
+    return (
+      <div className={styles.empty}>No job files yet. Click + New to create one.</div>
+    );
+  }
+
+  // When only one group, skip accordion — just render a flat list.
+  if (!showGroupHeaders) {
+    const group = groups[0];
+    if (!group) return null;
+    return (
+      <div className={styles.list}>
+        {group.files.length === 0 ? (
+          <div className={styles.groupEmpty}>No files</div>
+        ) : (
+          group.files.map((f) => {
+            const isActive =
+              activeFile !== null &&
+              f.path === activeFile.path &&
+              (group.slug ?? null) === activeFile.repo;
+            return (
+              <Button
+                key={f.path}
+                variant="ghost"
+                className={[styles.fileRow, isActive ? styles.active : undefined]
+                  .filter(Boolean)
+                  .join(" ")}
+                onClick={() => onSelect({ path: f.path, repo: group.slug ?? null })}
+              >
+                {f.isJob && (
+                  <Badge
+                    variant="success"
+                    className="text-[9px] px-[5px] py-[1px] font-mono uppercase tracking-widest border border-current"
+                  >
+                    job
+                  </Badge>
+                )}
+                <span className={styles.fileName}>{f.path}</span>
+              </Button>
+            );
+          })
+        )}
+      </div>
+    );
+  }
+
+  // Multiple groups — use Accordion, first expanded by default.
+  const defaultOpen = groups[0]?.slug ?? "local";
+
   return (
     <div className={styles.list}>
-      {loading ? (
-        <div className={styles.loading}>
-          <CircularProgress indeterminate size={14} strokeWidth={2} />
-        </div>
-      ) : error ? (
-        <div className={styles.empty}>{error}</div>
-      ) : totalFiles === 0 && groups.every((g) => g.files.length === 0) ? (
-        <div className={styles.empty}>
-          No job files yet. Click + New to create one.
-        </div>
-      ) : (
-        groups.map((group) => (
-          <div key={group.slug ?? "local"}>
-            {showGroupHeaders && (
-              <div className={styles.groupHeader}>
-                {group.plugins > 0 && (
-                  <span
-                    className={styles.pluginIcon}
-                    title={`provides ${group.plugins} plugin(s)`}
-                  >
-                    🧩
-                  </span>
-                )}
-                <p className={styles.groupLabel}>{group.label}</p>
-              </div>
-            )}
-            {group.files.length === 0 ? (
-              <div className={styles.groupEmpty}>No files</div>
-            ) : (
-              group.files.map((f) => {
-                const isActive =
-                  activeFile !== null &&
-                  f.path === activeFile.path &&
-                  (group.slug ?? null) === activeFile.repo;
-                return (
-                  // biome-ignore lint/a11y/useSemanticElements: contains no child buttons, purely a list item
-                  <div
-                    key={f.path}
-                    role="button"
-                    tabIndex={0}
-                    className={[
-                      styles.fileItem,
-                      isActive ? styles.active : undefined,
-                    ]
-                      .filter(Boolean)
-                      .join(" ")}
-                    onClick={() =>
-                      onSelect({ path: f.path, repo: group.slug ?? null })
-                    }
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        onSelect({ path: f.path, repo: group.slug ?? null });
-                      }
-                    }}
-                  >
-                    {f.isJob && (
-                      <Badge
-                        variant="success"
-                        className="text-[9px] px-[5px] py-[1px] font-mono uppercase tracking-widest border border-current"
+      <Accordion type="single" defaultValue={defaultOpen}>
+        {groups.map((group) => {
+          const groupKey = group.slug ?? "local";
+          const count = group.files.length;
+          return (
+            <AccordionItem key={groupKey} value={groupKey}>
+              <AccordionTrigger itemValue={groupKey} className={styles.groupTrigger ?? ""}>
+                <span className={styles.groupTriggerInner}>
+                  {group.plugins > 0 ? (
+                    <Puzzle size={13} className={styles.groupIcon} />
+                  ) : (
+                    <FolderOpen size={13} className={styles.groupIcon} />
+                  )}
+                  <span className={styles.groupLabel}>{group.label}</span>
+                  <Badge variant="secondary" className="text-[10px] px-[5px] py-0 ml-1">
+                    {count}
+                  </Badge>
+                </span>
+              </AccordionTrigger>
+
+              <AccordionContent itemValue={groupKey}>
+                {count === 0 ? (
+                  <div className={styles.groupEmpty}>No files</div>
+                ) : (
+                  group.files.map((f) => {
+                    const isActive =
+                      activeFile !== null &&
+                      f.path === activeFile.path &&
+                      (group.slug ?? null) === activeFile.repo;
+                    return (
+                      <Button
+                        key={f.path}
+                        variant="ghost"
+                        className={[
+                          styles.fileRow,
+                          isActive ? styles.active : undefined,
+                        ]
+                          .filter(Boolean)
+                          .join(" ")}
+                        onClick={() =>
+                          onSelect({ path: f.path, repo: group.slug ?? null })
+                        }
                       >
-                        job
-                      </Badge>
-                    )}
-                    {f.path}
-                  </div>
-                );
-              })
-            )}
-          </div>
-        ))
-      )}
+                        {f.isJob && (
+                          <Badge
+                            variant="success"
+                            className="text-[9px] px-[5px] py-[1px] font-mono uppercase tracking-widest border border-current"
+                          >
+                            job
+                          </Badge>
+                        )}
+                        <span className={styles.fileName}>{f.path}</span>
+                      </Button>
+                    );
+                  })
+                )}
+              </AccordionContent>
+            </AccordionItem>
+          );
+        })}
+      </Accordion>
     </div>
   );
 }

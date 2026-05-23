@@ -20,10 +20,31 @@
   z-index: 10;
 }
 
+.topbarLeft {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sectionTitle {
+  font-size: 17px;
+  font-weight: 600;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .topbarActions {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.sectionActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 /* On mobile, the topbar brand can shift right to make room for the sidebar burger */

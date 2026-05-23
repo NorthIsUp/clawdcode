@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
-import { Header } from "./Header";
+import { useEffect } from "react";
+import { AppShellContext } from "./AppShellContext";
+import { useContext } from "react";
 import styles from "./SectionFrame.module.css";
 
 interface Props {
@@ -10,14 +12,11 @@ interface Props {
 }
 
 /**
- * SectionFrame is the SOLE owner of:
- * - The section header row layout (title + actions via Header).
- * - The scrollable body region.
- * - The mobile safe-area top reserve (--burger-safe) so the burger never
- *   overlaps any content inside any section.
+ * SectionFrame — registers the section title + actions into the AppShell
+ * topbar (via AppShellContext) and provides the scrollable body region.
  *
- * Every section renders into a SectionFrame. No section solves the burger
- * safe-area or header layout on its own.
+ * The per-section header strip (Header component) is gone; the topbar is
+ * now the single owner of the title + actions row.
  */
 export function SectionFrame({
   title,
@@ -25,9 +24,18 @@ export function SectionFrame({
   children,
   bodyClassName,
 }: Props) {
+  const { setSlot } = useContext(AppShellContext);
+
+  useEffect(() => {
+    setSlot({ title, actions: actions ?? null });
+    return () => {
+      setSlot(null);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [setSlot, title, actions]);
+
   return (
     <div className={styles.frame}>
-      <Header title={title} actions={actions} />
       <div className={[styles.body, bodyClassName].filter(Boolean).join(" ")}>
         {children}
       </div>

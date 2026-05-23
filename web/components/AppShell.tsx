@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { useRef } from "react";
 import { useHash } from "../hooks/useHash";
 import styles from "./AppShell.module.css";
+import { AppShellProvider, useAppShellSlot } from "./AppShellContext";
 import { GitFooter } from "./GitFooter";
 
 type Section = "home" | "chats" | "jobs" | "settings";
@@ -35,10 +36,11 @@ interface Props {
  * We override it to sit in the upper-left instead via the .sidebarBurgerLeft
  * CSS rule in AppShell.module.css.
  */
-export function AppShell({ children }: Props) {
+function AppShellInner({ children }: Props) {
   const { section, setHash } = useHash();
   const { showToast } = useToast();
   const brandRef = useRef<HTMLButtonElement>(null);
+  const slot = useAppShellSlot();
 
   const wiggle = () => {
     const el = brandRef.current;
@@ -63,16 +65,24 @@ export function AppShell({ children }: Props) {
     <div className={styles.shell}>
       {/* Simple brand bar — no Darwin Topbar so no second mobile burger */}
       <header className={styles.topbar}>
-        <button
-          ref={brandRef}
-          type="button"
-          className={styles.brand}
-          onClick={wiggle}
-          aria-label="ClaudeClaw"
-        >
-          🦞
-        </button>
+        <div className={styles.topbarLeft}>
+          <button
+            ref={brandRef}
+            type="button"
+            className={styles.brand}
+            onClick={wiggle}
+            aria-label="ClaudeClaw"
+          >
+            🦞
+          </button>
+          {slot?.title !== undefined && slot.title !== null && (
+            <span className={styles.sectionTitle}>{slot.title}</span>
+          )}
+        </div>
         <div className={styles.topbarActions}>
+          {slot?.actions !== null && slot?.actions !== undefined && (
+            <div className={styles.sectionActions}>{slot.actions}</div>
+          )}
           <GitFooter />
         </div>
       </header>
@@ -99,5 +109,13 @@ export function AppShell({ children }: Props) {
         <main className={styles.sectionHost}>{children}</main>
       </div>
     </div>
+  );
+}
+
+export function AppShell({ children }: Props) {
+  return (
+    <AppShellProvider>
+      <AppShellInner>{children}</AppShellInner>
+    </AppShellProvider>
   );
 }
