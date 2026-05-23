@@ -23,6 +23,14 @@ export interface Job {
   retry?: number;
   /** Seconds to wait between retry attempts. Defaults to 300 (5 min). */
   retryDelay?: number;
+  /** When true, resume the same session across all runs. Default false (fresh session per run). */
+  reuseSession: boolean;
+}
+
+/** Thread ID for a job run. reuseSession → stable base (one resumed session);
+ *  otherwise base + ":" + runId (fresh session per run). */
+export function buildJobThreadId(base: string, reuseSession: boolean, runId: string): string {
+  return reuseSession ? base : `${base}:${runId}`;
 }
 
 function parseFrontmatterValue(raw: string): string {
@@ -96,7 +104,13 @@ function parseJobFile(name: string, content: string): Job | null {
   const retryDelayLine = lines.find((l) => l.startsWith("retry_delay:"));
   const retryDelay = retryDelayLine ? parseInt(parseFrontmatterValue(retryDelayLine.replace("retry_delay:", "")), 10) || undefined : undefined;
 
-  return { name, schedule, prompt, recurring, notify, model, timeoutSeconds, agent, label, enabled, retry, retryDelay };
+  const reuseSessionLine = lines.find((l) => l.startsWith("reuse_session:"));
+  const reuseSessionRaw = reuseSessionLine
+    ? parseFrontmatterValue(reuseSessionLine.replace("reuse_session:", "")).toLowerCase()
+    : "";
+  const reuseSession = reuseSessionRaw === "true" || reuseSessionRaw === "yes" || reuseSessionRaw === "1";
+
+  return { name, schedule, prompt, recurring, notify, model, timeoutSeconds, agent, label, enabled, retry, retryDelay, reuseSession };
 }
 
 export async function loadJobs(): Promise<Job[]> {

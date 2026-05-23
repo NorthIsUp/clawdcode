@@ -4,6 +4,7 @@ import { existsSync } from "fs";
 import { normalizeTimezoneName, resolveTimezoneOffsetMinutes } from "./timezone";
 import { parseWatchdogConfig, type WatchdogConfig } from "./watchdog";
 import { parsePlugins, type PluginEntry } from "./plugins";
+import { applyEnvOverrides } from "./env-overrides";
 
 /** Re-exported under the name used in the Settings interface. */
 export type WatchdogSettings = WatchdogConfig;
@@ -11,6 +12,10 @@ export type WatchdogSettings = WatchdogConfig;
 const HEARTBEAT_DIR = join(process.cwd(), ".claude", "claudeclaw");
 const SETTINGS_FILE = join(HEARTBEAT_DIR, "settings.json");
 const DEFAULT_JOBS_DIR = join(HEARTBEAT_DIR, "jobs");
+/** Legacy single-repo clone dir — kept for migration compatibility. */
+const JOBS_REPO_DIR = join(HEARTBEAT_DIR, "jobs-repo");
+/** New multi-repo parent dir — each repo lives under <slug>/. */
+const JOBS_REPOS_DIR = join(HEARTBEAT_DIR, "jobs-repos");
 const LOGS_DIR = join(HEARTBEAT_DIR, "logs");
 
 /** Default Claude session timeout (30 minutes). Exported so runner.ts can reference the same value. */
@@ -19,10 +24,82 @@ export const DEFAULT_SESSION_TIMEOUT_MS = 30 * 60 * 1000;
 export const DEFAULT_IMAGE_OUTPUT_ROOT = join(HEARTBEAT_DIR, "outbox", "discord");
 
 export function getJobsDir(): string {
+  return getJobsDirs()[0];
+}
+
+/**
+ * Return the list of job directories in priority order.
+ * When repos are configured each repo's clone dir comes first,
+ * then the default local-only jobs dir is appended last.
+ * When no repos are configured (or jobsDir override is set) falls back to a single dir.
+ */
+export function getJobsDirs(): string[] {
+  // Legacy jobsDir override wins as a single dir.
   if (cached?.jobsDir) {
-    return isAbsolute(cached.jobsDir) ? cached.jobsDir : join(process.cwd(), cached.jobsDir);
+    const d = cached.jobsDir;
+    return [isAbsolute(d) ? d : join(process.cwd(), d)];
   }
-  return DEFAULT_JOBS_DIR;
+  const repos = cached?.jobsRepos ?? [];
+  if (repos.length > 0) {
+    const repoDirs = repos
+      .filter((r) => r.url)
+      .map((r) => getJobsRepoDirForRepo(r));
+    return [...repoDirs, DEFAULT_JOBS_DIR];
+  }
+  // Legacy single-repo field fallback (pre-migration, no jobsRepos yet)
+  if (cached?.jobsRepo?.url) return [JOBS_REPO_DIR];
+  return [DEFAULT_JOBS_DIR];
+}
+
+/**
+ * Derive a filesystem-safe slug from a git URL.
+ * - strip trailing .git
+ * - take the last path segment
+ * - lowercase, replace non-[a-z0-9-] with -, collapse runs of -
+ * - if empty, use a short sha256 hash of the URL
+ */
+export function slugForRepo(url: string, existingSlugs: Set<string> = new Set()): string {
+  const noGit = url.replace(/\.git$/i, "");
+  const segment = noGit.split(/[\\/]/).filter(Boolean).pop() ?? "";
+  let slug = segment.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
+  if (!slug) slug = shortHash(url);
+  if (existingSlugs.has(slug)) {
+    slug = slug + "-" + shortHash(url);
+  }
+  return slug;
+}
+
+function shortHash(s: string): string {
+  // Simple deterministic short hash — not crypto-strength, just for collision avoidance.
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(16).padStart(8, "0").slice(0, 8);
+}
+
+/** Return the clone directory for a given repo config. */
+export function getJobsRepoDirForRepo(repo: JobsRepoConfig | string): string {
+  const url = typeof repo === "string" ? repo : repo.url;
+  const slug = slugForRepo(url);
+  return join(JOBS_REPOS_DIR, slug);
+}
+
+/** Legacy single-repo clone dir — kept so existing code that calls getJobsRepoDir() still works. */
+export function getJobsRepoDir(): string {
+  return JOBS_REPO_DIR;
+}
+
+/** Legacy single-repo dir constant — exported for migration code. */
+export const LEGACY_JOBS_REPO_DIR = JOBS_REPO_DIR;
+
+/** The parent directory for multi-repo clones. */
+export const JOBS_REPOS_PARENT_DIR = JOBS_REPOS_DIR;
+
+/** Return the first configured jobs repo, or null. */
+export function firstJobsRepo(): JobsRepoConfig | null {
+  return cached?.jobsRepos?.[0] ?? (cached?.jobsRepo?.url ? cached.jobsRepo : null);
 }
 
 /** Returns the root directory for agent-scoped sessions and jobs. */
@@ -72,7 +149,7 @@ const DEFAULT_SETTINGS: Settings = {
   timezone: "UTC",
   timezoneOffsetMinutes: 0,
   heartbeat: {
-    enabled: false,
+    enabled: true,
     interval: 15,
     prompt: "",
     excludeWindows: [],
@@ -89,6 +166,8 @@ const DEFAULT_SETTINGS: Settings = {
   watchdog: { maxConsecutiveTimeouts: null, maxRuntimeSeconds: null },
   session: { autoRotate: false, maxMessages: 50, maxAgeHours: 24, summaryPath: "" },
   plugins: {},
+  jobsRepo: { url: "", branch: "main", intervalSeconds: 300 },
+  jobsRepos: [],
 };
 
 export interface HeartbeatExcludeWindow {
@@ -187,6 +266,11 @@ export interface Settings {
   plugins: Record<string, PluginEntry>;
   session: SessionConfig;
   jobsDir?: string;
+  /** @deprecated single-repo form; migrated into `jobsRepos[0]` at parse time. The on-disk
+   *  JSON may still carry this key until the user saves from the Settings UI. */
+  jobsRepo: JobsRepoConfig;
+  /** Multi-repo list. Takes precedence over legacy `jobsRepo` when non-empty. */
+  jobsRepos: JobsRepoConfig[];
 }
 
 
@@ -236,6 +320,15 @@ export interface SessionConfig {
   maxAgeHours: number;
   /** Directory to write markdown summaries before rotation. Empty string disables summaries. */
   summaryPath: string;
+}
+
+export interface JobsRepoConfig {
+  /** Git remote URL; empty string disables the jobs-repo feature. */
+  url: string;
+  /** Branch to track. Default "main". */
+  branch: string;
+  /** Seconds between automatic pulls. Default 300; 0 disables periodic pull. */
+  intervalSeconds: number;
 }
 
 let cached: Settings | null = null;
@@ -307,6 +400,36 @@ function parseAgenticConfig(raw: any): AgenticConfig {
   };
 }
 
+function parseJobsRepoConfig(raw: any): JobsRepoConfig {
+  return {
+    url: typeof raw?.url === "string" ? raw.url.trim() : "",
+    branch: typeof raw?.branch === "string" && raw.branch.trim() ? raw.branch.trim() : "main",
+    intervalSeconds: Number.isFinite(raw?.intervalSeconds) && Number(raw.intervalSeconds) >= 0
+      ? Number(raw.intervalSeconds) : 300,
+  };
+}
+
+/**
+ * Parse and migrate jobsRepo/jobsRepos.
+ * - jobsRepos (array) wins if non-empty.
+ * - Otherwise, if legacy jobsRepo.url is set, lift it into jobsRepos[0].
+ * - Otherwise jobsRepos = [].
+ */
+function parseJobsRepos(raw: Record<string, any>): JobsRepoConfig[] {
+  // New array form wins if present and non-empty
+  if (Array.isArray(raw.jobsRepos) && raw.jobsRepos.length > 0) {
+    return raw.jobsRepos
+      .filter((r: any) => typeof r?.url === "string" && r.url.trim())
+      .map(parseJobsRepoConfig);
+  }
+  // Legacy single-repo form: lift into array
+  const legacyUrl = typeof raw.jobsRepo?.url === "string" ? raw.jobsRepo.url.trim() : "";
+  if (legacyUrl) {
+    return [parseJobsRepoConfig(raw.jobsRepo)];
+  }
+  return [];
+}
+
 function parseSettings(
   raw: Record<string, any>,
   discordUserIds?: string[],
@@ -337,7 +460,7 @@ function parseSettings(
       forwardToTelegram: raw.heartbeat?.forwardToTelegram ?? false,
     },
     telegram: {
-      token: process.env.TELEGRAM_TOKEN?.trim() || (typeof raw.telegram?.token === "string" ? raw.telegram.token.trim() : ""),
+      token: typeof raw.telegram?.token === "string" ? raw.telegram.token.trim() : "",
       allowedUserIds: raw.telegram?.allowedUserIds ?? [],
       listenChats: Array.isArray(raw.telegram?.listenChats) ? raw.telegram.listenChats.map(Number) : [],
       receiveEnabled: raw.telegram?.receiveEnabled !== false,
@@ -347,7 +470,7 @@ function parseSettings(
         : {}),
     },
     discord: {
-      token: process.env.DISCORD_TOKEN?.trim() || (typeof raw.discord?.token === "string" ? raw.discord.token.trim() : ""),
+      token: typeof raw.discord?.token === "string" ? raw.discord.token.trim() : "",
       allowedUserIds: Array.isArray(discordUserIds) && discordUserIds.length > 0
         ? discordUserIds
         : Array.isArray(raw.discord?.allowedUserIds)
@@ -373,8 +496,8 @@ function parseSettings(
       streaming: raw.discord?.streaming === true,
     },
     slack: {
-      botToken: process.env.SLACK_BOT_TOKEN?.trim() || (typeof raw.slack?.botToken === "string" ? raw.slack.botToken.trim() : ""),
-      appToken: process.env.SLACK_APP_TOKEN?.trim() || (typeof raw.slack?.appToken === "string" ? raw.slack.appToken.trim() : ""),
+      botToken: typeof raw.slack?.botToken === "string" ? raw.slack.botToken.trim() : "",
+      appToken: typeof raw.slack?.appToken === "string" ? raw.slack.appToken.trim() : "",
       allowedUserIds: Array.isArray(raw.slack?.allowedUserIds) ? raw.slack.allowedUserIds.map(String) : [],
       listenChannels: Array.isArray(raw.slack?.listenChannels) ? raw.slack.listenChannels.map(String) : [],
       allowBots: Array.isArray(raw.slack?.allowBots) ? raw.slack.allowBots.map(String) : [],
@@ -420,6 +543,14 @@ function parseSettings(
     },
     apiToken: typeof raw.apiToken === "string" && raw.apiToken.trim() ? raw.apiToken.trim() : undefined,
     ...(typeof raw.jobsDir === "string" && raw.jobsDir.trim() ? { jobsDir: raw.jobsDir.trim() } : {}),
+    jobsRepo: {
+      url: typeof raw.jobsRepo?.url === "string" ? raw.jobsRepo.url.trim() : "",
+      branch: typeof raw.jobsRepo?.branch === "string" && raw.jobsRepo.branch.trim()
+        ? raw.jobsRepo.branch.trim() : "main",
+      intervalSeconds: Number.isFinite(raw.jobsRepo?.intervalSeconds) && Number(raw.jobsRepo.intervalSeconds) >= 0
+        ? Number(raw.jobsRepo.intervalSeconds) : 300,
+    },
+    jobsRepos: parseJobsRepos(raw),
   };
 }
 
@@ -477,11 +608,20 @@ function extractDiscordUserIds(rawText: string): string[] {
   return items;
 }
 
+/** Clamp an env-overridden security level back to a valid value. */
+function validateSecurityLevel(settings: Settings): Settings {
+  if (!VALID_LEVELS.has(settings.security.level)) {
+    console.warn(`[config] Invalid security level "${settings.security.level}" — falling back to "moderate"`);
+    settings.security.level = "moderate";
+  }
+  return settings;
+}
+
 export async function loadSettings(): Promise<Settings> {
   if (cached) return cached;
   const rawText = await Bun.file(SETTINGS_FILE).text();
   const raw = JSON.parse(rawText);
-  cached = parseSettings(raw, extractDiscordUserIds(rawText));
+  cached = validateSecurityLevel(applyEnvOverrides(parseSettings(raw, extractDiscordUserIds(rawText))));
   return cached;
 }
 
@@ -489,7 +629,7 @@ export async function loadSettings(): Promise<Settings> {
 export async function reloadSettings(): Promise<Settings> {
   const rawText = await Bun.file(SETTINGS_FILE).text();
   const raw = JSON.parse(rawText);
-  cached = parseSettings(raw, extractDiscordUserIds(rawText));
+  cached = validateSecurityLevel(applyEnvOverrides(parseSettings(raw, extractDiscordUserIds(rawText))));
   return cached;
 }
 

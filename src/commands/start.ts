@@ -5,8 +5,9 @@ import { fileURLToPath } from "url";
 import { run, runUserMessage, streamUserMessage, bootstrap, ensureProjectClaudeMd, loadHeartbeatPromptTemplate, isRateLimited, getRateLimitResetAt, wasRateLimitNotified, markRateLimitNotified } from "../runner";
 import { writeState, type StateData } from "../statusline";
 import { cronMatches, nextCronMatch } from "../cron";
-import { clearJobSchedule, loadJobs, snapshotJobFrontmatter } from "../jobs";
+import { buildJobThreadId, clearJobSchedule, loadJobs, snapshotJobFrontmatter } from "../jobs";
 import { writePidFile, cleanupPidFile, checkExistingDaemon } from "../pid";
+import { pruneJobSessions } from "../sessionManager";
 import { initConfig, loadSettings, reloadSettings, resolvePrompt, type HeartbeatConfig, type Settings } from "../config";
 import { getDayAndMinuteAtOffset, buildClockPromptPrefix } from "../timezone";
 import { startWebUi, type WebServerHandle } from "../web";
@@ -14,6 +15,7 @@ import { getOrCreateWebToken } from "../ui/auth";
 import type { Job } from "../jobs";
 import { isWizardTrigger, hasActiveWizard, handleWizardInput } from "./plugin-wizard";
 import { PluginManager, setPluginManager } from "../plugins";
+import { ensureAllRepos, pullRepo } from "../jobsRepo";
 
 const CLAUDE_DIR = join(process.cwd(), ".claude");
 const HEARTBEAT_DIR = join(CLAUDE_DIR, "claudeclaw");
@@ -336,6 +338,7 @@ export async function start(args: string[] = []) {
 
   await initConfig();
   const settings = await loadSettings();
+  await ensureAllRepos();
   await ensureProjectClaudeMd();
   const jobs = await loadJobs();
   const webEnabled = webFlag || webPortFlag !== null || settings.web.enabled;
@@ -562,13 +565,13 @@ export async function start(args: string[] = []) {
             updateState();
             console.log(`[${ts()}] Jobs reloaded from Web UI`);
           },
-          onChat: async (message, onChunk, onUnblock, onAgentEvent) => {
+          onChat: async (message, onChunk, onUnblock, onAgentEvent, opts) => {
             const wizardCtx = { iface: "web" as const, scopeId: "default" };
             if (isWizardTrigger(message) || hasActiveWizard(wizardCtx)) {
               onChunk(await handleWizardInput(wizardCtx, message));
               return;
             }
-            await streamUserMessage("chat", message, onChunk, onUnblock, onAgentEvent);
+            await streamUserMessage("chat", message, onChunk, onUnblock, onAgentEvent, opts?.modelOverride, opts?.effortOverride);
           },
         });
       } catch (err) {
@@ -822,6 +825,22 @@ export async function start(args: string[] = []) {
     }
   }, 30_000);
 
+  // --- Jobs repos periodic pull (one interval per repo) ---
+  for (const repo of currentSettings.jobsRepos) {
+    if (repo.url && repo.intervalSeconds > 0) {
+      const repoUrl = repo.url;
+      const intervalMs = repo.intervalSeconds * 1000;
+      setInterval(async () => {
+        try {
+          const status = await pullRepo(repo);
+          if (status.lastError) console.warn(`[${ts()}] jobsRepo[${repoUrl}]: ${status.lastError}`);
+        } catch (e) {
+          console.warn(`[${ts()}] jobsRepo[${repoUrl}] pull error: ${String(e)}`);
+        }
+      }, intervalMs);
+    }
+  }
+
   // --- Cron tick (every 60s) ---
   function updateState() {
     const now = new Date();
@@ -863,6 +882,19 @@ export async function start(args: string[] = []) {
 
   function runJob(job: (typeof currentJobs)[0]) {
     const timeoutMs = job.timeoutSeconds ? job.timeoutSeconds * 1000 : undefined;
+    const base = job.agent ? `agent:${job.agent}` : job.name;
+    const reuse = job.agent ? true : job.reuseSession;
+    const now = new Date();
+    const runId = [
+      now.getUTCFullYear(),
+      String(now.getUTCMonth() + 1).padStart(2, "0"),
+      String(now.getUTCDate()).padStart(2, "0"),
+      String(now.getUTCHours()).padStart(2, "0"),
+      String(now.getUTCMinutes()).padStart(2, "0"),
+      String(now.getUTCSeconds()).padStart(2, "0"),
+      String(now.getUTCMilliseconds()).padStart(3, "0"),
+    ].join("");
+    const threadId = buildJobThreadId(base, reuse, runId);
     snapshotJobFrontmatter(job.name)
       .then((restoreFrontmatter) =>
         resolvePrompt(job.prompt)
@@ -871,7 +903,7 @@ export async function start(args: string[] = []) {
             return run(
               job.name,
               `${clock}\n${prompt}`,
-              job.agent ? `agent:${job.agent}` : job.name,
+              threadId,
               job.model,
               timeoutMs,
               job.agent,
@@ -900,6 +932,9 @@ export async function start(args: string[] = []) {
                 jobRetryState.delete(job.name);
                 console.log(`[${ts()}] Job ${job.name} exhausted ${job.retry} retries`);
               }
+            }
+            if (!reuse) {
+              pruneJobSessions(job.name).catch(() => {/* best-effort */});
             }
             if (job.notify === false) return;
             if (job.notify === "error" && r.exitCode === 0) return;

@@ -2,6 +2,7 @@ import { readFile } from "fs/promises";
 import { peekSession } from "../../sessions";
 import { SESSION_FILE, SETTINGS_FILE, STATE_FILE } from "../constants";
 import type { WebSnapshot } from "../types";
+import { getRuntimeGit } from "../../runtime";
 
 export function sanitizeSettings(snapshot: WebSnapshot["settings"]) {
   return {
@@ -31,6 +32,12 @@ export async function buildState(snapshot: WebSnapshot) {
       startedAt: snapshot.startedAt,
       uptimeMs: now - snapshot.startedAt,
     },
+    model: snapshot.settings.model,
+    fallback: snapshot.settings.fallback,
+    jobsRepo: snapshot.settings.jobsRepo,           // back-compat
+    jobsRepos: snapshot.settings.jobsRepos ?? [],   // new multi-repo field
+    timezone: snapshot.settings.timezone,
+    timezoneOffsetMinutes: snapshot.settings.timezoneOffsetMinutes,
     heartbeat: {
       enabled: snapshot.settings.heartbeat.enabled,
       intervalMinutes: snapshot.settings.heartbeat.interval,
@@ -59,6 +66,9 @@ export async function buildState(snapshot: WebSnapshot) {
         }
       : null,
     web: snapshot.settings.web,
+    runtime: {
+      git: await getRuntimeGit(),
+    },
   };
 }
 

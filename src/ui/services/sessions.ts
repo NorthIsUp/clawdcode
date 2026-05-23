@@ -3,16 +3,21 @@ import { join, basename } from "node:path";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { getAgentsDir } from "../../config";
+import { getSessionMeta, mergeMeta } from "./session-meta";
 
 export interface SessionInfo {
   id: string;
   agent: string;
-  channel: "web" | "discord" | "agent" | "unknown";
+  channel: "web" | "discord" | "agent" | "job" | "unknown";
   lastUsedAt: string;
   createdAt: string;
   turnCount: number;
   firstMessage: string;
   lastMessage: string;
+  title?: string;
+  closed: boolean;
+  /** Set when this session is a standalone job's thread — the job file is `<jobName>.md`. */
+  jobName?: string;
 }
 
 export interface ChatMessage {
@@ -78,7 +83,7 @@ async function peekMessages(sessionId: string): Promise<{ first: string; last: s
   return { first, last };
 }
 
-export async function listSessions(): Promise<SessionInfo[]> {
+export async function listSessions(includeClosed = false): Promise<SessionInfo[]> {
   const cwd = process.cwd();
   const sessionFile = join(cwd, ".claude", "claudeclaw", "session.json");
   const sessionsFile = join(cwd, ".claude", "claudeclaw", "sessions.json");
@@ -101,6 +106,7 @@ export async function listSessions(): Promise<SessionInfo[]> {
           turnCount: data.turnCount ?? 0,
           firstMessage: first,
           lastMessage: last,
+          closed: false,
         });
         knownIds.add(data.sessionId);
       }
@@ -128,30 +134,40 @@ export async function listSessions(): Promise<SessionInfo[]> {
           turnCount: data.turnCount ?? 0,
           firstMessage: first,
           lastMessage: last,
+          closed: false,
         });
         knownIds.add(data.sessionId);
       } catch {}
     }
   } catch {}
 
-  // Thread sessions (Discord snowflakes; skip unrecognised thread ID formats)
+  // Thread sessions. A thread ID is either a Discord snowflake, an
+  // "agent:<name>" agent-job thread, or a plain job name (standalone job —
+  // runJob passes threadId = job.name). Job threads were previously dropped.
   try {
     if (existsSync(sessionsFile)) {
       const data = JSON.parse(await readFile(sessionsFile, "utf-8"));
       for (const [threadId, thread] of Object.entries(data.threads ?? {})) {
         const t = thread as any;
         if (!UUID_RE.test(t.sessionId) || knownIds.has(t.sessionId)) continue;
-        if (!DISCORD_SNOWFLAKE_RE.test(threadId)) continue;
+        const isSnowflake = DISCORD_SNOWFLAKE_RE.test(threadId);
+        const isAgentJob = threadId.startsWith("agent:");
         const { first, last } = await peekMessages(t.sessionId);
         sessions.push({
           id: t.sessionId,
-          agent: "global",
-          channel: "discord",
+          agent: isAgentJob ? threadId.slice("agent:".length) : "global",
+          channel: isSnowflake ? "discord" : "job",
           lastUsedAt: t.lastUsedAt || t.createdAt,
           createdAt: t.createdAt,
           turnCount: t.turnCount ?? 0,
           firstMessage: first,
           lastMessage: last,
+          closed: false,
+          // A standalone job's thread ID is its job name or <name>:<runId> (per-run).
+          // Strip the :<runId> suffix so all runs of a job group under the same name,
+          // and <name>.md keeps working as the file link.
+          // Agent jobs share one thread across multiple files, so they get no single-file link.
+          ...(isSnowflake || isAgentJob ? {} : { jobName: threadId.split(":")[0] }),
         });
         knownIds.add(t.sessionId);
       }
@@ -179,13 +195,16 @@ export async function listSessions(): Promise<SessionInfo[]> {
           turnCount: 0,
           firstMessage: first,
           lastMessage: last,
+          closed: false,
         });
       } catch {}
     }
   } catch {}
 
-  sessions.sort((a, b) => new Date(b.lastUsedAt).getTime() - new Date(a.lastUsedAt).getTime());
-  return sessions;
+  const meta = await getSessionMeta();
+  const merged = sessions.map((s) => mergeMeta(s, meta));
+  merged.sort((a, b) => new Date(b.lastUsedAt).getTime() - new Date(a.lastUsedAt).getTime());
+  return includeClosed ? merged : merged.filter((s) => !s.closed);
 }
 
 export interface MessagesResult {

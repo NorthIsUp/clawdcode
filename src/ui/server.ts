@@ -4,11 +4,16 @@ import { checkToken } from "./auth";
 import type { StartWebUiOptions, WebServerHandle } from "./types";
 import { buildState, buildTechnicalInfo, sanitizeSettings } from "./services/state";
 import { readHeartbeatSettings, updateHeartbeatSettings } from "./services/settings";
-import { createQuickJob, deleteJob } from "./services/jobs";
+import { createQuickJob, deleteJob, listJobFiles, readJobFile, writeJobFile, createJobFile, deleteJobFile, renameJobFile, isSafeJobPath } from "./services/jobs";
+import { generateJobName, isDateFilename } from "../haiku";
+import { setSessionTitle, setSessionClosed, normalizeTitle, setSessionGoal, getSessionGoal, getSessionModel, setSessionModel, getSessionEffort, setSessionEffort, isValidEffort } from "./services/session-meta";
+import { getJobsRepoStatus, syncJobsRepo, pullJobsRepo, getAllRepoStatuses, syncRepo, pullRepo, findRepoBySlug } from "../jobsRepo";
+import { loadJobs } from "../jobs";
 import { readLogs } from "./services/logs";
 import { listSessions, readSessionMessages, listAgents } from "./services/sessions";
 import { getSessionUsage } from "./services/usage";
 import { runUserMessage } from "../runner";
+import { listMcpServers, addMcpServer, removeMcpServer } from "../mcp";
 import { tmpdir } from "os";
 import { randomUUID } from "crypto";
 
@@ -40,7 +45,7 @@ export function startWebUi(opts: StartWebUiOptions): WebServerHandle {
 
       // Task 1.3: CSRF defense — reject cross-origin requests for state-changing methods.
       // Accept both http and https origins for validated hosts.
-      if (req.method === "POST" || req.method === "DELETE") {
+      if (req.method === "POST" || req.method === "PUT" || req.method === "DELETE") {
         const origin = req.headers.get("origin");
         if (origin) {
           const allowedOrigins = new Set([`http://${host}`, `https://${host}`]);
@@ -80,8 +85,51 @@ export function startWebUi(opts: StartWebUiOptions): WebServerHandle {
         return json(await buildState(opts.getSnapshot()));
       }
 
-      if (url.pathname === "/api/settings") {
+      if (url.pathname === "/api/settings" && req.method === "GET") {
         return json(sanitizeSettings(opts.getSnapshot().settings));
+      }
+
+      if (url.pathname === "/api/settings" && req.method === "PUT") {
+        try {
+          const body = await req.json().catch(() => ({})) as Record<string, unknown>;
+          const { readFile, writeFile } = await import("fs/promises");
+          const { SETTINGS_FILE } = await import("./constants");
+          const raw = await readFile(SETTINGS_FILE, "utf-8").catch(() => "{}");
+          const data = JSON.parse(raw) as Record<string, unknown>;
+          // Allow shallow-merge of these top-level keys
+          const allowed = ["model", "fallback", "security", "timezone", "jobsRepo"] as const;
+          for (const key of allowed) {
+            if (key in body && body[key] !== undefined) {
+              if (typeof body[key] === "object" && body[key] !== null && !Array.isArray(body[key])) {
+                // Deep merge objects one level
+                data[key] = Object.assign({}, typeof data[key] === "object" ? data[key] : {}, body[key]);
+              } else if (typeof body[key] === "string") {
+                data[key] = body[key];
+              }
+            }
+          }
+          // jobsRepos: accept an array directly, drop rows with empty URLs
+          if ("jobsRepos" in body && Array.isArray(body.jobsRepos)) {
+            data["jobsRepos"] = (body.jobsRepos as unknown[])
+              .filter((r: unknown) => r && typeof r === "object" && typeof (r as Record<string, unknown>).url === "string" && String((r as Record<string, unknown>).url).trim())
+              .map((r: unknown) => {
+                const row = r as Record<string, unknown>;
+                return {
+                  url: String(row.url).trim(),
+                  branch: typeof row.branch === "string" && row.branch.trim() ? row.branch.trim() : "main",
+                  intervalSeconds: Number.isFinite(Number(row.intervalSeconds)) && Number(row.intervalSeconds) >= 0
+                    ? Number(row.intervalSeconds) : 300,
+                };
+              });
+          }
+          await writeFile(SETTINGS_FILE, JSON.stringify(data, null, 2) + "\n");
+          // Refresh the in-memory settings cache so the next /api/state read is current.
+          const { reloadSettings } = await import("../config");
+          await reloadSettings();
+          return json({ ok: true });
+        } catch (err) {
+          return json({ ok: false, error: String(err instanceof Error ? err.message : err) }, 500);
+        }
       }
 
       if (url.pathname === "/api/settings/heartbeat" && req.method === "POST") {
@@ -175,7 +223,8 @@ export function startWebUi(opts: StartWebUiOptions): WebServerHandle {
         }
       }
 
-      if (url.pathname.startsWith("/api/jobs/") && req.method === "DELETE") {
+      if (url.pathname.startsWith("/api/jobs/") && req.method === "DELETE"
+          && url.pathname !== "/api/jobs/file") {
         try {
           const encodedName = url.pathname.slice("/api/jobs/".length);
           const name = decodeURIComponent(encodedName);
@@ -196,6 +245,116 @@ export function startWebUi(opts: StartWebUiOptions): WebServerHandle {
         return json({ jobs });
       }
 
+      // --- Job file editor routes ---
+      // Resolve the target dir: ?repo=<slug> selects a specific repo's dir; no param = first repo (back-compat).
+      async function resolveJobsDir(repoSlug?: string | null): Promise<string> {
+        const { getJobsDirs, getJobsRepoDirForRepo } = await import("../config");
+        if (repoSlug) {
+          const repo = findRepoBySlug(repoSlug);
+          if (repo) return getJobsRepoDirForRepo(repo);
+        }
+        return getJobsDirs()[0];
+      }
+
+      if (url.pathname === "/api/jobs/files" && req.method === "GET") {
+        const repoSlug = url.searchParams.get("repo");
+        const dir = await resolveJobsDir(repoSlug);
+        return json(await listJobFiles(dir));
+      }
+      if (url.pathname === "/api/jobs/file" && req.method === "GET") {
+        const p = url.searchParams.get("path") ?? "";
+        const repoSlug = url.searchParams.get("repo");
+        const dir = await resolveJobsDir(repoSlug);
+        try { return json({ path: p, content: await readJobFile(p, dir) }); }
+        catch (e) { return json({ error: String(e instanceof Error ? e.message : e) }, 400); }
+      }
+      if (url.pathname === "/api/jobs/file" && req.method === "PUT") {
+        const body = await req.json().catch(() => ({}));
+        const repoSlug = url.searchParams.get("repo") ?? String(body.repo ?? "");
+        const dir = await resolveJobsDir(repoSlug || null);
+        try { await writeJobFile(String(body.path ?? ""), String(body.content ?? ""), dir); return json({ ok: true }); }
+        catch (e) { return json({ error: String(e instanceof Error ? e.message : e) }, 400); }
+      }
+      if (url.pathname === "/api/jobs/file" && req.method === "POST") {
+        const body = await req.json().catch(() => ({}));
+        const repoSlug = url.searchParams.get("repo") ?? String(body.repo ?? "");
+        const dir = await resolveJobsDir(repoSlug || null);
+        try { await createJobFile(String(body.path ?? ""), dir); return json({ ok: true }); }
+        catch (e) { return json({ error: String(e instanceof Error ? e.message : e) }, 400); }
+      }
+      if (url.pathname === "/api/jobs/file" && req.method === "DELETE") {
+        const p = url.searchParams.get("path") ?? "";
+        const repoSlug = url.searchParams.get("repo");
+        const dir = await resolveJobsDir(repoSlug);
+        try { await deleteJobFile(p, dir); return json({ ok: true }); }
+        catch (e) { return json({ error: String(e instanceof Error ? e.message : e) }, 400); }
+      }
+
+      // --- Auto-name route: POST /api/jobs/file/auto-name ---
+      // Reads a date-pattern file, asks Haiku for a pithy kebab-case name,
+      // renames the file, and returns the new relative path.
+      if (url.pathname === "/api/jobs/file/auto-name" && req.method === "POST") {
+        try {
+          const body = await req.json().catch(() => ({})) as Record<string, unknown>;
+          const path = String(body.path ?? "");
+          // Only operates on date-stamp filenames (no subdirectory prefix expected here,
+          // but support the basename check in case path has a folder prefix).
+          const basename = path.split("/").pop() ?? "";
+          if (!isDateFilename(basename)) {
+            return json({ error: "path does not match date-stamp pattern" }, 400);
+          }
+          const content = await readJobFile(path);
+          const name = await generateJobName(content);
+
+          // Collision avoidance: find a free filename.
+          const jobsDir = (await import("../config")).getJobsDir();
+          const { existsSync } = await import("fs");
+          const { join } = await import("path");
+          let candidate = `${name}.md`;
+          let suffix = 2;
+          while (existsSync(join(jobsDir, candidate)) && suffix <= 20) {
+            candidate = `${name}-${suffix}.md`;
+            suffix++;
+          }
+          if (suffix > 20) {
+            return json({ error: "could not find a free filename after 20 attempts" }, 400);
+          }
+
+          await renameJobFile(path, candidate);
+          return json({ ok: true, newPath: candidate });
+        } catch (e) {
+          return json({ error: String(e instanceof Error ? e.message : e) }, 400);
+        }
+      }
+
+      // --- Jobs repos routes (new multi-repo API) ---
+      if (url.pathname === "/api/jobs/repos" && req.method === "GET") {
+        return json(await getAllRepoStatuses());
+      }
+      // POST /api/jobs/repos/<slug>/pull or /sync
+      {
+        const repoActionMatch = url.pathname.match(/^\/api\/jobs\/repos\/([^/]+)\/(pull|sync)$/);
+        if (repoActionMatch && req.method === "POST") {
+          const slug = decodeURIComponent(repoActionMatch[1]);
+          const action = repoActionMatch[2];
+          const repo = findRepoBySlug(slug);
+          if (!repo) return json({ ok: false, error: "repo not found" }, 404);
+          if (action === "pull") return json(await pullRepo(repo));
+          if (action === "sync") return json(await syncRepo(repo));
+        }
+      }
+
+      // --- Legacy Jobs repo routes (back-compat aliases) ---
+      if (url.pathname === "/api/jobs/repo/status" && req.method === "GET") {
+        return json(await getJobsRepoStatus());
+      }
+      if (url.pathname === "/api/jobs/repo/sync" && req.method === "POST") {
+        return json(await syncJobsRepo());
+      }
+      if (url.pathname === "/api/jobs/repo/pull" && req.method === "POST") {
+        return json(await pullJobsRepo());
+      }
+
       if (url.pathname === "/api/logs") {
         const tail = clampInt(url.searchParams.get("tail"), 200, 20, 2000);
         return json(await readLogs(tail));
@@ -203,7 +362,8 @@ export function startWebUi(opts: StartWebUiOptions): WebServerHandle {
 
       if (url.pathname === "/api/sessions" && req.method === "GET") {
         try {
-          return json(await listSessions());
+          const includeClosed = url.searchParams.get("includeClosed") === "1";
+          return json(await listSessions(includeClosed));
         } catch (err) {
           return json({ ok: false, error: String(err) });
         }
@@ -236,6 +396,70 @@ export function startWebUi(opts: StartWebUiOptions): WebServerHandle {
         } catch (err) {
           return json({ ok: false, error: String(err) });
         }
+      }
+
+      // --- Session title / close routes ---
+      {
+        const titleMatch = url.pathname.match(/^\/api\/sessions\/([0-9a-f-]+)\/title$/i);
+        if (titleMatch && req.method === "PUT") {
+          const body = await req.json().catch(() => ({}));
+          await setSessionTitle(titleMatch[1], normalizeTitle(String(body.title ?? "")));
+          return json({ ok: true });
+        }
+        const closeMatch = url.pathname.match(/^\/api\/sessions\/([0-9a-f-]+)\/(close|reopen)$/i);
+        if (closeMatch && req.method === "POST") {
+          await setSessionClosed(closeMatch[1], closeMatch[2].toLowerCase() === "close");
+          return json({ ok: true });
+        }
+        const goalMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/goal$/i);
+        if (goalMatch && req.method === "GET") {
+          return json({ goal: await getSessionGoal(decodeURIComponent(goalMatch[1])) });
+        }
+        if (goalMatch && req.method === "PUT") {
+          const body = await req.json().catch(() => ({}));
+          await setSessionGoal(decodeURIComponent(goalMatch[1]), String(body.goal ?? ""));
+          return json({ ok: true });
+        }
+        const modelMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/model$/i);
+        if (modelMatch && req.method === "GET") {
+          return json({ model: await getSessionModel(decodeURIComponent(modelMatch[1])) });
+        }
+        if (modelMatch && req.method === "PUT") {
+          const body = await req.json().catch(() => ({}));
+          await setSessionModel(decodeURIComponent(modelMatch[1]), String(body.model ?? ""));
+          return json({ ok: true });
+        }
+        const effortMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/effort$/i);
+        if (effortMatch && req.method === "GET") {
+          return json({ effort: await getSessionEffort(decodeURIComponent(effortMatch[1])) });
+        }
+        if (effortMatch && req.method === "PUT") {
+          try {
+            const body = await req.json().catch(() => ({}));
+            const effort = String(body.effort ?? "").trim();
+            if (effort && !isValidEffort(effort)) {
+              return json({ ok: false, error: `Invalid effort level: "${effort}". Use: low, medium, high, xhigh, max` }, 400);
+            }
+            await setSessionEffort(decodeURIComponent(effortMatch[1]), effort);
+            return json({ ok: true });
+          } catch (err) {
+            return json({ ok: false, error: String(err instanceof Error ? err.message : err) }, 400);
+          }
+        }
+      }
+
+      // --- Home aggregator ---
+      if (url.pathname === "/api/home" && req.method === "GET") {
+        const snapshot = opts.getSnapshot();
+        const jobs = await loadJobs();
+        const repos = await getAllRepoStatuses();
+        return json({
+          server: await buildState(snapshot),
+          jobs: jobs.map((j) => ({ name: j.name, schedule: j.schedule, recurring: j.recurring })),
+          repos,                      // new multi-repo field
+          repo: repos[0] ?? null,     // back-compat alias (first repo)
+          logs: await readLogs(20),
+        });
       }
 
       if (url.pathname === "/api/inject" && req.method === "POST") {
@@ -330,9 +554,26 @@ export function startWebUi(opts: StartWebUiOptions): WebServerHandle {
             }
           }
 
-          const enrichedMessage = attachmentBlocks.length > 0
+          // Prepend session goal if present; also fetch model/effort overrides
+          const chatSessionId = typeof body?.sessionId === "string" ? body.sessionId.trim() : "";
+          let baseMessage = attachmentBlocks.length > 0
             ? attachmentBlocks.join("\n\n") + (message ? "\n\n" + message : "")
             : message;
+          let chatModelOverride = "";
+          let chatEffortOverride = "";
+          if (chatSessionId) {
+            const [sessionGoal, sessionModel, sessionEffort] = await Promise.all([
+              getSessionGoal(chatSessionId),
+              getSessionModel(chatSessionId),
+              getSessionEffort(chatSessionId),
+            ]);
+            if (sessionGoal) {
+              baseMessage = `Goal: ${sessionGoal}\n\n${baseMessage}`;
+            }
+            chatModelOverride = sessionModel;
+            chatEffortOverride = sessionEffort;
+          }
+          const enrichedMessage = baseMessage;
 
           const encoder = new TextEncoder();
           const onChat = opts.onChat;
@@ -346,7 +587,8 @@ export function startWebUi(opts: StartWebUiOptions): WebServerHandle {
                   enrichedMessage,
                   (chunk) => send({ type: "chunk", text: chunk }),
                   () => send({ type: "unblock" }),
-                  (ev) => send({ type: ev.type === "spawn" ? "agent_spawn" : "agent_done", id: ev.id, description: ev.description, result: ev.result })
+                  (ev) => send({ type: ev.type === "spawn" ? "agent_spawn" : "agent_done", id: ev.id, description: ev.description, result: ev.result }),
+                  { modelOverride: chatModelOverride || undefined, effortOverride: chatEffortOverride || undefined }
                 );
                 send({ type: "done" });
               } catch (err) {
@@ -375,6 +617,62 @@ export function startWebUi(opts: StartWebUiOptions): WebServerHandle {
           });
         } catch (err) {
           return json({ ok: false, error: String(err) });
+        }
+      }
+
+      // --- Slash autocomplete registry ---
+      if (url.pathname === "/api/slash" && req.method === "GET") {
+        try {
+          const { listAllSlashEntries } = await import("../slashRegistry");
+          return json(await listAllSlashEntries());
+        } catch (err) {
+          return json({ ok: false, error: String(err instanceof Error ? err.message : err) }, 500);
+        }
+      }
+
+      // --- MCP server management routes ---
+      if (url.pathname === "/api/mcp" && req.method === "GET") {
+        try {
+          const [userServers, projectServers] = await Promise.all([
+            listMcpServers("user"),
+            listMcpServers("project"),
+          ]);
+          return json({ user: userServers, project: projectServers });
+        } catch (err) {
+          return json({ ok: false, error: String(err instanceof Error ? err.message : err) }, 500);
+        }
+      }
+
+      if (url.pathname === "/api/mcp" && req.method === "POST") {
+        try {
+          const body = await req.json().catch(() => ({})) as Record<string, unknown>;
+          const name = String(body.name ?? "").trim();
+          const scope = (body.scope === "project" ? "project" : "user") as "user" | "project";
+          const transport = (["http", "sse"].includes(String(body.transport))
+            ? body.transport
+            : "stdio") as "stdio" | "http" | "sse";
+          const target = String(body.target ?? "").trim();
+          const rawHeaders = Array.isArray(body.headers) ? body.headers.map(String) : [];
+
+          if (!name) return json({ error: "name is required" }, 400);
+          if (!target) return json({ error: "target is required" }, 400);
+
+          await addMcpServer({ name, scope, transport, target, headers: rawHeaders });
+          return json({ ok: true });
+        } catch (err) {
+          return json({ error: String(err instanceof Error ? err.message : err) }, 400);
+        }
+      }
+
+      if (url.pathname === "/api/mcp" && req.method === "DELETE") {
+        try {
+          const name = url.searchParams.get("name") ?? "";
+          const scope = (url.searchParams.get("scope") === "project" ? "project" : "user") as "user" | "project";
+          if (!name) return json({ error: "name is required" }, 400);
+          await removeMcpServer(name, scope);
+          return json({ ok: true });
+        } catch (err) {
+          return json({ error: String(err instanceof Error ? err.message : err) }, 400);
         }
       }
 

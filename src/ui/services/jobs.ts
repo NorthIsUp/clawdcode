@@ -1,5 +1,5 @@
-import { mkdir, writeFile } from "fs/promises";
-import { join } from "path";
+import { mkdir, writeFile, readdir, readFile, stat, unlink, realpath, rename } from "fs/promises";
+import { join, resolve, relative, sep, dirname, basename } from "path";
 import { getJobsDir } from "../../config";
 
 export interface QuickJobInput {
@@ -50,4 +50,122 @@ export async function deleteJob(name: string): Promise<void> {
   }
   const path = join(getJobsDir(), `${jobName}.md`);
   await Bun.file(path).delete();
+}
+
+export interface JobFileEntry {
+  path: string;     // relative to jobs dir
+  name: string;
+  size: number;
+  mtime: string;
+  isJob: boolean;   // .md whose frontmatter has a `schedule:` field
+}
+
+/** True when `relPath` is a safe relative path inside the jobs dir. */
+export function isSafeJobPath(relPath: string): boolean {
+  if (!relPath || relPath.length > 200) return false;
+  if (!/^[A-Za-z0-9._/-]+$/.test(relPath)) return false;
+  if (relPath.startsWith("/") || relPath.endsWith("/") || relPath.includes("..")) return false;
+  return true;
+}
+
+async function resolveSafe(relPath: string, dir: string): Promise<string> {
+  if (!isSafeJobPath(relPath)) throw new Error("Invalid job path.");
+  const realDir = await realpath(dir).catch(() => resolve(dir));
+  const full = resolve(realDir, relPath);
+  if (full !== realDir && !full.startsWith(realDir + sep)) throw new Error("Invalid job path.");
+  // If the target already exists, verify it doesn't symlink outside the jobs dir.
+  try {
+    const realFull = await realpath(full);
+    if (realFull !== realDir && !realFull.startsWith(realDir + sep)) throw new Error("Invalid job path.");
+  } catch (e) {
+    if (e instanceof Error && e.message === "Invalid job path.") throw e;
+    // ENOENT — target doesn't exist yet (create / write-new).
+    // Also verify the parent directory doesn't escape via a symlink.
+    const parent = dirname(full);
+    if (parent !== realDir && parent !== full) {
+      try {
+        const realParent = await realpath(parent);
+        if (realParent !== realDir && !realParent.startsWith(realDir + sep)) throw new Error("Invalid job path.");
+      } catch (pe) {
+        if (pe instanceof Error && pe.message === "Invalid job path.") throw pe;
+        // Parent also doesn't exist yet — lexical check above is sufficient.
+      }
+    }
+  }
+  return full;
+}
+
+/** List all files in the jobs dir (recursive), relative paths. */
+export async function listJobFiles(dir: string = getJobsDir()): Promise<JobFileEntry[]> {
+  const out: JobFileEntry[] = [];
+  async function walk(sub: string): Promise<void> {
+    let entries: import("fs").Dirent[] = [];
+    try { entries = await readdir(join(dir, sub), { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      if (e.name.startsWith(".")) continue;
+      const rel = sub ? `${sub}/${e.name}` : e.name;
+      if (e.isDirectory()) { await walk(rel); continue; }
+      const s = await stat(join(dir, rel));
+      // A job is a .md whose frontmatter has a `schedule:` field — that is
+      // what parseJobFile() requires. A SKILL.md has frontmatter too
+      // (name/description) but no schedule, so it is not a job.
+      let isJob = false;
+      if (e.name.endsWith(".md")) {
+        try {
+          const fm = (await readFile(join(dir, rel), "utf-8")).match(/^---\s*\n([\s\S]*?)\n---/);
+          isJob = !!fm && /^[ \t]*schedule[ \t]*:/m.test(fm[1]);
+        } catch {}
+      }
+      out.push({ path: rel, name: e.name, size: s.size, mtime: s.mtime.toISOString(), isJob });
+    }
+  }
+  await walk("");
+  out.sort((a, b) => a.path.localeCompare(b.path));
+  return out;
+}
+
+export async function readJobFile(relPath: string, dir: string = getJobsDir()): Promise<string> {
+  return readFile(await resolveSafe(relPath, dir), "utf-8");
+}
+
+export async function writeJobFile(relPath: string, content: string, dir: string = getJobsDir()): Promise<void> {
+  if (content.length > 100_000) throw new Error("File too large.");
+  const full = await resolveSafe(relPath, dir);
+  await mkdir(join(full, ".."), { recursive: true });
+  await writeFile(full, content, "utf-8");
+}
+
+export async function createJobFile(relPath: string, dir: string = getJobsDir()): Promise<void> {
+  const full = await resolveSafe(relPath, dir);
+  if (await Bun.file(full).exists()) throw new Error("File already exists.");
+  await mkdir(join(full, ".."), { recursive: true });
+  await writeFile(full, "---\nschedule: \"0 9 * * *\"\nrecurring: true\nreuse_session: false\n---\n", "utf-8");
+}
+
+export async function deleteJobFile(relPath: string, dir: string = getJobsDir()): Promise<void> {
+  await unlink(await resolveSafe(relPath, dir));
+}
+
+/**
+ * Rename a job file within the jobs dir.  Both `oldRelPath` and `newRelPath`
+ * are validated to stay inside `dir` via resolveSafe.
+ * Returns the new relative path.
+ */
+export async function renameJobFile(
+  oldRelPath: string,
+  newRelPath: string,
+  dir: string = getJobsDir()
+): Promise<string> {
+  const oldFull = await resolveSafe(oldRelPath, dir);
+  // For the destination we can't call resolveSafe directly (it realpaths the
+  // path which requires it to exist), so we do a lexical safety check instead.
+  if (!isSafeJobPath(newRelPath)) throw new Error("Invalid destination job path.");
+  const realDir = await realpath(dir).catch(() => resolve(dir));
+  const newFull = resolve(realDir, newRelPath);
+  if (newFull !== realDir && !newFull.startsWith(realDir + sep)) {
+    throw new Error("Invalid destination job path.");
+  }
+  await mkdir(join(newFull, ".."), { recursive: true });
+  await rename(oldFull, newFull);
+  return newRelPath;
 }

@@ -29,6 +29,7 @@ import { buildClockPromptPrefix } from "./timezone";
 import { selectModel } from "./model-router";
 import { recordResult, abortReason, clearSession, startSession } from "./watchdog";
 import { getPluginManager, type EventContext } from "./plugins";
+import { getJobsRepoSpawnArgs } from "./jobsRepoPlugins";
 
 const LOGS_DIR = join(process.cwd(), ".claude/claudeclaw/logs");
 const ACTIVE_RUNS_FILE = join(process.cwd(), ".claude/claudeclaw/active-runs");
@@ -1084,6 +1085,7 @@ async function execClaude(
     api: fallback?.api ?? "",
   };
   const securityArgs = buildSecurityArgs(security);
+  const repoArgs = await getJobsRepoSpawnArgs();
   const timeoutMs = timeoutMsOverride ?? resolveTimeoutMs(timeoutCategory ?? name);
 
   console.log(
@@ -1100,7 +1102,7 @@ async function execClaude(
   // blocking until all spawned agents finish. --verbose is required for stream-json in
   // print (-p) mode. Session ID is captured from the system/init event; the final result
   // text comes from the result event — no separate output format needed for new vs resumed.
-  const args = [CLAUDE_EXECUTABLE, "-p", prompt, "--output-format", "stream-json", "--verbose", ...securityArgs];
+  const args = [CLAUDE_EXECUTABLE, "-p", prompt, "--output-format", "stream-json", "--verbose", ...securityArgs, ...repoArgs];
 
   if (!isNew) {
     args.push("--resume", existing.sessionId);
@@ -1150,7 +1152,7 @@ async function execClaude(
       `[${new Date().toLocaleTimeString()}] Claude limit reached; retrying with fallback${fallbackConfig.model ? ` (${fallbackConfig.model})` : ""}...`
     );
     const fallbackSession = await getFallbackSession(agentName, threadId);
-    const fallbackArgs = [CLAUDE_EXECUTABLE, "-p", prompt, "--output-format", "stream-json", "--verbose", ...securityArgs];
+    const fallbackArgs = [CLAUDE_EXECUTABLE, "-p", prompt, "--output-format", "stream-json", "--verbose", ...securityArgs, ...repoArgs];
     if (fallbackSession) {
       fallbackArgs.push("--resume", fallbackSession.sessionId);
     }
@@ -1449,7 +1451,9 @@ async function streamClaude(
   prompt: string,
   onChunk: (text: string) => void,
   onUnblock: () => void,
-  onAgentEvent?: (ev: AgentStreamEvent) => void
+  onAgentEvent?: (ev: AgentStreamEvent) => void,
+  modelOverride?: string,
+  effortOverride?: string
 ): Promise<void> {
   await mkdir(LOGS_DIR, { recursive: true });
 
@@ -1466,6 +1470,7 @@ async function streamClaude(
   const existing = await getSession();
   const { security, model, api } = getSettings();
   const securityArgs = buildSecurityArgs(security);
+  const repoArgs = await getJobsRepoSpawnArgs();
 
   // Plugins: before_agent_start
   const streamPm = getPluginManager();
@@ -1475,7 +1480,7 @@ async function streamClaude(
   // stream-json gives us events as they happen — text before tool calls,
   // so we can unblock the UI as soon as Claude acknowledges, not after sub-agents finish.
   // --verbose is required for stream-json to produce output in -p (print) mode.
-  const args = [CLAUDE_EXECUTABLE, "-p", prompt, "--output-format", "stream-json", "--verbose", ...securityArgs];
+  const args = [CLAUDE_EXECUTABLE, "-p", prompt, "--output-format", "stream-json", "--verbose", ...securityArgs, ...repoArgs];
 
   if (existing) args.push("--resume", existing.sessionId);
 
@@ -1502,10 +1507,18 @@ async function streamClaude(
     args.push("--append-system-prompt", appendParts.join("\n\n"));
   }
 
-  const normalizedModel = model.trim().toLowerCase();
-  if (model.trim() && normalizedModel !== "glm") args.push("--model", model.trim());
+  const effectiveModel = modelOverride?.trim() || model;
+  const normalizedModel = effectiveModel.trim().toLowerCase();
+  if (effectiveModel.trim() && normalizedModel !== "glm") args.push("--model", effectiveModel.trim());
+  if (modelOverride?.trim()) {
+    console.log(`[${new Date().toLocaleTimeString()}] Chat model override: ${modelOverride.trim()}`);
+  }
+  if (effortOverride?.trim()) {
+    args.push("--effort", effortOverride.trim());
+    console.log(`[${new Date().toLocaleTimeString()}] Chat effort override: ${effortOverride.trim()}`);
+  }
 
-  const childEnv = buildChildEnv(cleanSpawnEnv(), model, api);
+  const childEnv = buildChildEnv(cleanSpawnEnv(), effectiveModel, api);
 
   console.log(`[${new Date().toLocaleTimeString()}] Running: ${name} (stream-json, session: ${existing?.sessionId?.slice(0, 8) ?? "new"})`);
 
@@ -1632,7 +1645,7 @@ async function streamClaude(
       `[${new Date().toLocaleTimeString()}] Stale session ${existing.sessionId.slice(0, 8)} for ${name} (stream); recovering with a new session...`
     );
     await backupSession();
-    await streamClaude(name, prompt, onChunk, onUnblock, onAgentEvent);
+    await streamClaude(name, prompt, onChunk, onUnblock, onAgentEvent, modelOverride, effortOverride);
     return;
   }
 
@@ -1653,9 +1666,11 @@ export async function streamUserMessage(
   prompt: string,
   onChunk: (text: string) => void,
   onUnblock: () => void,
-  onAgentEvent?: (ev: AgentStreamEvent) => void
+  onAgentEvent?: (ev: AgentStreamEvent) => void,
+  modelOverride?: string,
+  effortOverride?: string
 ): Promise<void> {
-  return enqueue(() => streamClaude(name, prefixUserMessageWithClock(prompt), onChunk, onUnblock, onAgentEvent));
+  return enqueue(() => streamClaude(name, prefixUserMessageWithClock(prompt), onChunk, onUnblock, onAgentEvent, modelOverride, effortOverride));
 }
 
 function prefixUserMessageWithClock(prompt: string): string {
