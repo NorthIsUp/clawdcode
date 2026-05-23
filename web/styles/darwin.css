@@ -1,0 +1,3 @@
+/* Darwin UI base — Tailwind v4 + Darwin design tokens */
+@import "tailwindcss";
+@import "@pikoloo/darwin-ui/styles.css";

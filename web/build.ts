@@ -1,8 +1,22 @@
+import { spawnSync } from "node:child_process";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 
 const outdir = "dist/web";
 await rm(outdir, { recursive: true, force: true });
 await mkdir(outdir, { recursive: true });
+
+// Pre-process Tailwind CSS (Darwin UI uses @import "tailwindcss" which Bun can't handle natively)
+const twBin = join("node_modules", ".bin", "tailwindcss");
+const twResult = spawnSync(
+  twBin,
+  ["-i", "web/styles/darwin.css", "-o", "web/styles/darwin.gen.css"],
+  { encoding: "utf8" },
+);
+if (twResult.status !== 0) {
+  console.error("Tailwind CSS build failed:", twResult.stderr);
+  process.exit(1);
+}
 
 const result = await Bun.build({
   entrypoints: ["web/index.tsx"],

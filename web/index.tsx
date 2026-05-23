@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import App from "./app/App";
 import "./styles/reset.css";
 import "./styles/tokens.css";
+import "./styles/darwin.gen.css";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("#root missing");
