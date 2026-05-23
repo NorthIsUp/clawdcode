@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import styles from "./Field.module.css";
+import { Label } from "./Label";
 
 interface Props {
   label: string;
@@ -26,9 +27,14 @@ export function Field({
         .filter(Boolean)
         .join(" ")}
     >
-      <label className={styles.label} htmlFor={htmlFor}>
+      <Label
+        variant="field"
+        as="label"
+        {...(htmlFor !== undefined ? { htmlFor } : {})}
+        className={styles.label}
+      >
         {label}
-      </label>
+      </Label>
       <div className={styles.control}>{children}</div>
     </div>
   );

@@ -3,6 +3,7 @@ import type { JobFileEntry } from "../../api/jobs";
 import { listJobFiles } from "../../api/jobs";
 import type { RepoStatus } from "../../api/repos";
 import { listRepos } from "../../api/repos";
+import { Label } from "../../components/Label";
 import { Spinner } from "../../components/Spinner";
 import styles from "./JobFileList.module.css";
 
@@ -127,7 +128,9 @@ export function JobFileList({ activeFile, onSelect, refreshTick }: Props) {
                     🧩
                   </span>
                 )}
-                {group.label}
+                <Label variant="section" size="sm">
+                  {group.label}
+                </Label>
               </div>
             )}
             {group.files.length === 0 ? (

@@ -5,6 +5,7 @@ import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
 import { Field } from "../../components/Field";
 import { Input } from "../../components/Input";
+import { Label } from "../../components/Label";
 import styles from "./JobsReposFieldset.module.css";
 
 export interface RepoRow extends JobsRepoConfig {
@@ -43,7 +44,7 @@ function RepoRowCard({
   return (
     <div className={styles.repoCard}>
       <div className={styles.repoCardHeader}>
-        <span className={styles.repoLabel}>
+        <Label variant="section" as="span" className={styles.repoLabel}>
           Repo {index + 1}
           {(repo.pluginCount ?? 0) > 0 && (
             <span
@@ -53,7 +54,7 @@ function RepoRowCard({
               🧩
             </span>
           )}
-        </span>
+        </Label>
         <Button
           variant="ghost"
           size="sm"

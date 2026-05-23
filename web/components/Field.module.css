@@ -17,9 +17,6 @@
 }
 
 .label {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--muted);
   min-width: 160px;
   flex-shrink: 0;
 }

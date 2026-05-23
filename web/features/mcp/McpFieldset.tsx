@@ -4,6 +4,7 @@ import { listMcpServers } from "../../api/mcp";
 import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
 import { EmptyState } from "../../components/EmptyState";
+import { Label } from "../../components/Label";
 import { Spinner } from "../../components/Spinner";
 import { McpAddForm } from "./McpAddForm";
 import styles from "./McpFieldset.module.css";
@@ -77,7 +78,14 @@ export function McpFieldset() {
         <div className={styles.list}>
           {userServers.length > 0 ? (
             <>
-              <p className={styles.scopeLabel}>user</p>
+              <Label
+                variant="section"
+                size="sm"
+                as="p"
+                className={styles.scopeLabel}
+              >
+                user
+              </Label>
               {userServers.map((s) => (
                 <McpRow
                   key={`user-${s.name}`}
@@ -90,7 +98,14 @@ export function McpFieldset() {
           ) : null}
           {projectServers.length > 0 ? (
             <>
-              <p className={styles.scopeLabel}>project</p>
+              <Label
+                variant="section"
+                size="sm"
+                as="p"
+                className={styles.scopeLabel}
+              >
+                project
+              </Label>
               {projectServers.map((s) => (
                 <McpRow
                   key={`project-${s.name}`}

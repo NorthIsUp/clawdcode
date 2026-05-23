@@ -6,12 +6,6 @@
 
 .scopeLabel {
   margin: var(--space-2) 0 var(--space-1);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--muted);
   opacity: 0.6;
 }
 
