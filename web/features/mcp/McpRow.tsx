@@ -51,7 +51,7 @@ export function McpRow({ server, onRemoved, onError }: Props) {
         {targetShort}
       </span>
       <Button
-        variant="destructive"
+        variant="ghost"
         size="icon"
         className={styles.removeBtn ?? ""}
         onClick={() => {
@@ -60,7 +60,7 @@ export function McpRow({ server, onRemoved, onError }: Props) {
         disabled={removing}
         aria-label={`Remove ${server.name}`}
       >
-        <Trash2 className="h-4 w-4" />
+        <Trash2 className="h-4 w-4 text-red-500" />
       </Button>
     </div>
   );

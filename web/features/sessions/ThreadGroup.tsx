@@ -6,6 +6,7 @@ import {
   Badge,
   Button,
 } from "@pikoloo/darwin-ui";
+import { FileText } from "lucide-react";
 import { useState } from "react";
 import type { SessionInfo } from "../../api/sessions";
 import { formatSessionTime } from "../chat/formatClockTime";
@@ -103,7 +104,7 @@ export function ThreadGroup({
                   onOpenJob(thread.label);
                 }}
               >
-                🗂
+                <FileText size={14} />
               </Button>
             )}
 
