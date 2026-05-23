@@ -77,9 +77,16 @@ export function startWebUi(opts: StartWebUiOptions): WebServerHandle {
           : null;
 
         if (bundle) {
-          const rest = match?.[2] ?? "/";
-          // /darwin or /darwin/  →  serve the bundle's index.html
-          if (rest === "/" || rest === "") {
+          const rest = match?.[2] ?? "";
+          // /darwin (no trailing slash) → 301 to /darwin/ so relative HTML
+          // paths like ./app.js resolve under the bundle prefix.
+          if (rest === "") {
+            const target = new URL(`/${bundle}/`, url.origin);
+            for (const [k, v] of url.searchParams) target.searchParams.set(k, v);
+            return Response.redirect(target.toString(), 301);
+          }
+          // /darwin/ → serve the bundle's index.html
+          if (rest === "/") {
             const indexPath = join(webRoot, bundle, "index.html");
             try {
               const data = await Bun.file(indexPath).arrayBuffer();

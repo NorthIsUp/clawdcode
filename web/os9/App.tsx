@@ -1,18 +1,31 @@
-import {
-  MenuBar,
-  MenuItem,
-  TabPanel,
-  Tabs,
-  Window,
-} from "@liiift-studio/mac-os9-ui";
-import { useState } from "react";
+import { MenuBar, MenuItem, Window } from "@liiift-studio/mac-os9-ui";
+import { useEffect, useState } from "react";
+import { Os9Scroll } from "./components/Os9Scroll";
 import { ChatsSection } from "./sections/ChatsSection";
 import { HomeSection } from "./sections/HomeSection";
 import { RoutinesSection } from "./sections/RoutinesSection";
 import { SettingsSection } from "./sections/SettingsSection";
 
+type SectionId = "home" | "chats" | "routines" | "settings";
+
+const SECTIONS: { id: SectionId; label: string }[] = [
+  { id: "home", label: "Home" },
+  { id: "chats", label: "Chats" },
+  { id: "routines", label: "Routines" },
+  { id: "settings", label: "Settings" },
+];
+
 export default function App() {
-  const [activeTab, setActiveTab] = useState(0);
+  const [section, setSection] = useState<SectionId>("home");
+  const [viewportH, setViewportH] = useState(() => window.innerHeight);
+
+  useEffect(() => {
+    const onResize = () => setViewportH(window.innerHeight);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  const current = SECTIONS.find((s) => s.id === section);
 
   const menus = [
     {
@@ -36,36 +49,35 @@ export default function App() {
       label: "View",
       items: (
         <>
-          <MenuItem label="Home" onClick={() => setActiveTab(0)} />
-          <MenuItem label="Chats" onClick={() => setActiveTab(1)} />
-          <MenuItem label="Routines" onClick={() => setActiveTab(2)} />
-          <MenuItem label="Settings" onClick={() => setActiveTab(3)} />
+          {SECTIONS.map((s) => (
+            <MenuItem
+              key={s.id}
+              label={s.label}
+              checked={s.id === section}
+              onClick={() => setSection(s.id)}
+            />
+          ))}
         </>
       ),
     },
   ];
 
+  // Page menu bar (~28) + window title (~22) + borders + margin.
+  const scrollHeight = Math.max(240, viewportH - 130);
+
   return (
-    <div style={{ display: "flex", justifyContent: "center" }}>
-      <div style={{ width: "100%", maxWidth: 980 }}>
-        <Window title="ClaudeClaw">
-          <MenuBar menus={menus} />
-          <div style={{ padding: 8, minHeight: 480 }}>
-            <Tabs activeTab={activeTab} onChange={setActiveTab}>
-              <TabPanel label="Home">
-                <HomeSection />
-              </TabPanel>
-              <TabPanel label="Chats">
-                <ChatsSection />
-              </TabPanel>
-              <TabPanel label="Routines">
-                <RoutinesSection />
-              </TabPanel>
-              <TabPanel label="Settings">
-                <SettingsSection />
-              </TabPanel>
-            </Tabs>
-          </div>
+    <div style={{ width: "100%" }}>
+      <MenuBar menus={menus} />
+      <div style={{ width: "100%", maxWidth: 980, margin: "16px auto 0" }}>
+        <Window title={`🦞 ClaudeClaw — ${current?.label ?? ""}`}>
+          <Os9Scroll height={scrollHeight}>
+            <div style={{ padding: 8 }}>
+              {section === "home" ? <HomeSection /> : null}
+              {section === "chats" ? <ChatsSection /> : null}
+              {section === "routines" ? <RoutinesSection /> : null}
+              {section === "settings" ? <SettingsSection /> : null}
+            </div>
+          </Os9Scroll>
         </Window>
       </div>
     </div>

@@ -1,4 +1,5 @@
-import { Button, ListView, Select, TextField } from "@liiift-studio/mac-os9-ui";
+import { Button, ListView, TextField } from "@liiift-studio/mac-os9-ui";
+import { Os9Select } from "../components/Os9Select";
 import { useCallback, useEffect, useState } from "react";
 import {
   addMcpServer,
@@ -82,17 +83,13 @@ export function SettingsSection() {
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <label>
             <div style={{ fontSize: 11, marginBottom: 2 }}>Model</div>
-            <Select
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-              options={MODELS}
-            />
+            <Os9Select value={model} onChange={setModel} options={MODELS} />
           </label>
           <label>
             <div style={{ fontSize: 11, marginBottom: 2 }}>Security</div>
-            <Select
+            <Os9Select
               value={security}
-              onChange={(e) => setSecurity(e.target.value)}
+              onChange={setSecurity}
               options={SECURITY}
             />
           </label>
@@ -263,13 +260,10 @@ function McpsPanel() {
             placeholder="name"
             fullWidth
           />
-          <Select
+          <Os9Select
             value={draft.transport}
-            onChange={(e) =>
-              setDraft({
-                ...draft,
-                transport: e.target.value as McpServer["transport"],
-              })
+            onChange={(v) =>
+              setDraft({ ...draft, transport: v as McpServer["transport"] })
             }
             options={[
               { value: "stdio", label: "stdio" },

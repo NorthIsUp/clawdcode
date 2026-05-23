@@ -1,4 +1,5 @@
 import { Button, ListView, TextField } from "@liiift-studio/mac-os9-ui";
+import { Os9Scroll } from "../components/Os9Scroll";
 import { useCallback, useEffect, useState } from "react";
 import { resetChatSession, streamChat } from "../../api/chat";
 import {
@@ -172,31 +173,31 @@ function ChatView({ sessionId, onBack }: { sessionId: string; onBack: () => void
 
       <fieldset style={{ padding: 8 }}>
         <legend>Messages</legend>
-        <div
-          style={{
-            maxHeight: 400,
-            overflowY: "auto",
-            padding: 4,
-            display: "flex",
-            flexDirection: "column",
-            gap: 6,
-          }}
-        >
-          {loading ? (
-            <p>Loading…</p>
-          ) : messages.length === 0 && !streamingText ? (
-            <p style={{ color: "#555" }}>No messages yet.</p>
-          ) : (
-            <>
-              {messages.map((m, i) => (
-                <MessageBubble key={`${m.timestamp}-${i}`} role={m.role} text={m.text} />
-              ))}
-              {streamingText ? (
-                <MessageBubble role="assistant" text={streamingText} />
-              ) : null}
-            </>
-          )}
-        </div>
+        <Os9Scroll height={400}>
+          <div
+            style={{
+              padding: 4,
+              display: "flex",
+              flexDirection: "column",
+              gap: 6,
+            }}
+          >
+            {loading ? (
+              <p>Loading…</p>
+            ) : messages.length === 0 && !streamingText ? (
+              <p style={{ color: "#555" }}>No messages yet.</p>
+            ) : (
+              <>
+                {messages.map((m, i) => (
+                  <MessageBubble key={`${m.timestamp}-${i}`} role={m.role} text={m.text} />
+                ))}
+                {streamingText ? (
+                  <MessageBubble role="assistant" text={streamingText} />
+                ) : null}
+              </>
+            )}
+          </div>
+        </Os9Scroll>
       </fieldset>
 
       <div style={{ display: "flex", gap: 6 }}>
