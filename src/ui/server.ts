@@ -20,7 +20,7 @@ import { addMcpServer, listMcpServers, removeMcpServer } from "../mcp";
 import { runUserMessage } from "../runner";
 import { resetSession } from "../sessions";
 import { attachAuthCookie, authenticate, checkToken } from "./auth";
-import { clampInt, json } from "./http";
+import { clampInt, json, withJson } from "./http";
 import {
   createJobFile,
   createQuickJob,
@@ -37,7 +37,6 @@ import {
   getSessionEffort,
   getSessionGoal,
   getSessionModel,
-  isValidEffort,
   normalizeTitle,
   setSessionClosed,
   setSessionEffort,
@@ -775,48 +774,32 @@ export function startWebUi(opts: StartWebUiOptions): WebServerHandle {
           await setSessionClosed(closeMatch[1], closeMatch[2].toLowerCase() === "close");
           return json({ ok: true });
         }
-        const goalMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/goal$/i);
-        if (goalMatch && req.method === "GET") {
-          return json({ goal: await getSessionGoal(decodeURIComponent(goalMatch[1])) });
-        }
-        if (goalMatch && req.method === "PUT") {
-          const body = await req.json().catch(() => ({}));
-          await setSessionGoal(decodeURIComponent(goalMatch[1]), String(body.goal ?? ""));
-          return json({ ok: true });
-        }
-        const modelMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/model$/i);
-        if (modelMatch && req.method === "GET") {
-          return json({ model: await getSessionModel(decodeURIComponent(modelMatch[1])) });
-        }
-        if (modelMatch && req.method === "PUT") {
-          const body = await req.json().catch(() => ({}));
-          await setSessionModel(decodeURIComponent(modelMatch[1]), String(body.model ?? ""));
-          return json({ ok: true });
-        }
-        const effortMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/effort$/i);
-        if (effortMatch && req.method === "GET") {
-          return json({ effort: await getSessionEffort(decodeURIComponent(effortMatch[1])) });
-        }
-        if (effortMatch && req.method === "PUT") {
-          try {
-            const body = await req.json().catch(() => ({}));
-            const effort = String(body.effort ?? "").trim();
-            if (effort && !isValidEffort(effort)) {
-              return json(
-                {
-                  ok: false,
-                  error: `Invalid effort level: "${effort}". Use: low, medium, high, xhigh, max`,
-                },
-                400,
-              );
-            }
-            await setSessionEffort(decodeURIComponent(effortMatch[1]), effort);
-            return json({ ok: true });
-          } catch (err) {
-            return json(
-              { ok: false, error: String(err instanceof Error ? err.message : err) },
-              400,
-            );
+        // Per-session string fields: goal, model, effort. Each exposes a
+        // matching GET/PUT pair. Adding a new field is a single line below.
+        type FieldDef = {
+          get: (id: string) => Promise<string>;
+          set: (id: string, value: string) => Promise<void>;
+        };
+        const fields: Record<string, FieldDef> = {
+          goal: { get: getSessionGoal, set: setSessionGoal },
+          model: { get: getSessionModel, set: setSessionModel },
+          effort: { get: getSessionEffort, set: setSessionEffort },
+        };
+        const fieldMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/([a-z]+)$/i);
+        const field = fieldMatch ? fields[(fieldMatch[2] ?? "").toLowerCase()] : null;
+        if (fieldMatch && field) {
+          const id = decodeURIComponent(fieldMatch[1] ?? "");
+          const name = (fieldMatch[2] ?? "").toLowerCase();
+          if (req.method === "GET") {
+            return json({ [name]: await field.get(id) });
+          }
+          if (req.method === "PUT") {
+            return withJson(async () => {
+              const body = await req.json().catch(() => ({}));
+              const value = String(body[name] ?? "");
+              await field.set(id, value);
+              return { ok: true };
+            }, 400);
           }
         }
       }
