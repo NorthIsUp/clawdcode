@@ -155,16 +155,24 @@ export async function pullRepo(repo: JobsRepoConfig): Promise<RepoStatus> {
   return getRepoStatus(repo);
 }
 
-/** Stage everything, commit, and push. */
+/** Clone-if-missing, then stage / commit / push. The "Sync" button is the
+ *  catch-all "push my edits" affordance, so it has to be end-to-end safe
+ *  on a fresh repo too — no separate Clone step. We deliberately don't
+ *  pull here: callers like the save+push button expect a dirty tree, and
+ *  pullRepo skips on dirty. */
 export async function syncRepo(repo: JobsRepoConfig): Promise<SyncResult> {
   const slug = slugForRepo(repo.url);
   const state = getRepoState(slug);
   if (!repo.url) {
     return { ok: false, committed: false, pushed: false, message: "", error: "jobs repo not configured" };
   }
-  const dir = await resolveRepoDir(repo);
+  let dir = await resolveRepoDir(repo);
   if (!existsSync(join(dir, ".git"))) {
-    return { ok: false, committed: false, pushed: false, message: "", error: "jobs repo not configured" };
+    await ensureRepo(repo);
+    dir = await resolveRepoDir(repo);
+    if (!existsSync(join(dir, ".git"))) {
+      return { ok: false, committed: false, pushed: false, message: "", error: state.lastError ?? "clone failed" };
+    }
   }
   await runGit(dir, ["add", "-A"]);
   const status = await runGit(dir, ["status", "--porcelain"]);

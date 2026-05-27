@@ -256,7 +256,10 @@ function FileView({ slug, file, back }: { slug: string; file: string; back: () =
     setPushing(true);
     setErr(null);
     try {
-      await syncRepo(slug);
+      const result = await syncRepo(slug);
+      if (!result.ok) {
+        setErr(new Error(result.error ?? "sync failed"));
+      }
     } catch (e) {
       setErr(e);
     } finally {
