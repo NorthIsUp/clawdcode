@@ -29,7 +29,31 @@ export interface AuthResult {
   viaQuery: boolean;
 }
 
-export function authenticate(req: Request, expected: string): AuthResult {
+export interface AuthOptions {
+  /**
+   * If true, requests carrying a non-empty `Tailscale-User-Login` header are
+   * treated as authenticated. The Tailscale operator's Ingress proxy stamps
+   * this header for tailnet-originated requests and omits it for funnel
+   * (public) traffic, so this is safe when the proxy is the only upstream
+   * that can reach the daemon (e.g. enforced by NetworkPolicy).
+   */
+  trustTailnet?: boolean;
+}
+
+/** True iff a trusted upstream marked this request as a tailnet visitor. */
+export function isTailnetRequest(req: Request): boolean {
+  const v = req.headers.get("tailscale-user-login");
+  return !!v && v.trim().length > 0;
+}
+
+export function authenticate(req: Request, expected: string, opts: AuthOptions = {}): AuthResult {
+  // 0) Tailnet bypass (opt-in). The Tailscale operator Ingress strips this
+  //    header on funnel-origin requests, so a non-empty value means the
+  //    visitor is authenticated against the tailnet.
+  if (opts.trustTailnet && isTailnetRequest(req)) {
+    return { valid: true, viaQuery: false };
+  }
+
   // 1) Signed cookie (preferred — set after the first ?token= handshake).
   const cookie = getCookieValue(req, AUTH_COOKIE_NAME);
   if (cookie && verifyAuthCookie(cookie, expected)) {
@@ -57,8 +81,8 @@ export function authenticate(req: Request, expected: string): AuthResult {
 }
 
 /** Back-compat thin wrapper. Use `authenticate` for the cookie-aware result. */
-export function checkToken(req: Request, expected: string): boolean {
-  return authenticate(req, expected).valid;
+export function checkToken(req: Request, expected: string, opts: AuthOptions = {}): boolean {
+  return authenticate(req, expected, opts).valid;
 }
 
 export function signAuthCookie(token: string): string {

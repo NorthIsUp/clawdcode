@@ -122,7 +122,7 @@ export function startWebUi(opts: StartWebUiOptions): WebServerHandle {
           // cookie and strip the token from the redirected URL. Otherwise we
           // just pass query params through so an invalid attempt still lands
           // at /ui/ for the SPA to react to.
-          const authResult = authenticate(req, opts.token);
+          const authResult = authenticate(req, opts.token, { trustTailnet: opts.trustTailnet });
           if (authResult.valid && authResult.viaQuery) {
             for (const [k, v] of url.searchParams) {
               if (k !== "token") target.searchParams.set(k, v);
@@ -160,7 +160,7 @@ export function startWebUi(opts: StartWebUiOptions): WebServerHandle {
               const headers = new Headers({ "Content-Type": "text/html; charset=utf-8" });
               // If they arrived with ?token=, upgrade to a signed cookie now
               // so the SPA can immediately drop the token from its URL.
-              const authResult = authenticate(req, opts.token);
+              const authResult = authenticate(req, opts.token, { trustTailnet: opts.trustTailnet });
               if (authResult.valid && authResult.viaQuery) {
                 attachAuthCookie(headers, req, opts.token);
               }
@@ -217,7 +217,7 @@ export function startWebUi(opts: StartWebUiOptions): WebServerHandle {
       // legacy settings.apiToken so existing automation isn't broken.
       if (url.pathname.startsWith("/api/")) {
         const apiToken = opts.getSnapshot().settings.apiToken;
-        const validWebToken = checkToken(req, opts.token);
+        const validWebToken = checkToken(req, opts.token, { trustTailnet: opts.trustTailnet });
         const validApiToken =
           url.pathname === "/api/inject" && !!apiToken && checkToken(req, apiToken);
         if (!(validWebToken || validApiToken)) {

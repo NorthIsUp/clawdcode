@@ -380,6 +380,7 @@ export async function start(args: string[] = []) {
   let replaceExistingFlag = false;
   let webPortFlag: number | null = null;
   let webHostFlag: string | null = null;
+  let webTrustTailnetFlag = false;
   const payloadParts: string[] = [];
 
   for (let i = 0; i < args.length; i++) {
@@ -421,6 +422,13 @@ export async function start(args: string[] = []) {
       }
       webHostFlag = raw;
       i++;
+    } else if (arg === "--web-trust-tailnet") {
+      // Treat requests carrying a non-empty Tailscale-User-Login header as
+      // authenticated. Safe only when the daemon is fronted by the Tailscale
+      // operator's Ingress proxy and that proxy is the only upstream that
+      // can reach the port (e.g. enforced by NetworkPolicy). Funnel-origin
+      // requests do not carry this header.
+      webTrustTailnetFlag = true;
     } else {
       payloadParts.push(arg);
     }
@@ -686,6 +694,7 @@ export async function start(args: string[] = []) {
     host: string,
     preferredPort: number,
     token: string,
+    trustTailnet: boolean,
   ): WebServerHandle {
     const maxAttempts = 10;
     let lastError: unknown;
@@ -696,6 +705,7 @@ export async function start(args: string[] = []) {
           host,
           port: candidatePort,
           token,
+          trustTailnet,
           getSnapshot: () => ({
             pid: process.pid,
             startedAt: daemonStartedAt,
@@ -859,7 +869,7 @@ export async function start(args: string[] = []) {
     }
     await ensureWebBundleBuilt();
     const webToken = await getOrCreateWebToken();
-    web = startWebWithFallback(currentSettings.web.host, webPort, webToken);
+    web = startWebWithFallback(currentSettings.web.host, webPort, webToken, webTrustTailnetFlag);
     currentSettings.web.port = web.port;
     console.log(`[${ts()}] Web UI: http://${web.host}:${web.port}/?token=${webToken}`);
   }
