@@ -1,6 +1,6 @@
 import { AlertTriangle, CheckCircle2, Download, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useState } from "react";
-import { listRepos, pullRepo, type RepoStatus, syncRepo } from "../../api/repos";
+import { listRepos, type RepoStatus, syncRepo } from "../../api/repos";
 import { applyUpdate, checkForUpdate, type UpdateCheck } from "../../api/runtime";
 import {
   getHeartbeatSettings,
@@ -232,11 +232,15 @@ function ReposPanel() {
     setSyncAllError(null);
     try {
       // Run sequentially so we don't pile concurrent git operations on the
-      // same daemon. pullRepo now clones first if missing (see jobsRepo.ts),
-      // so this works on freshly-added repos too.
+      // same daemon. syncRepo clones-if-missing before staging, so this
+      // works on freshly-added repos too. Surface per-repo errors as the
+      // first failure we hit, since one bad URL shouldn't silently swallow
+      // its result.
       for (const r of repos.data) {
-        await pullRepo(r.slug);
-        await syncRepo(r.slug);
+        const result = await syncRepo(r.slug);
+        if (!result.ok) {
+          throw new Error(`${r.slug}: ${result.error ?? "sync failed"}`);
+        }
       }
       repos.reload();
     } catch (e) {
@@ -351,10 +355,11 @@ function RepoStatusRow({ repo, onChanged }: { repo: RepoStatus; onChanged: () =>
     setBusy(true);
     setErr(null);
     try {
-      // Pull then sync (commit/push) matches what the Jobs tab's Sync
-      // button does — a single operation that converges local + remote.
-      await pullRepo(repo.slug);
-      await syncRepo(repo.slug);
+      // syncRepo clones-if-missing, then commits + pushes any local edits.
+      const result = await syncRepo(repo.slug);
+      if (!result.ok) {
+        throw new Error(result.error ?? "sync failed");
+      }
       onChanged();
     } catch (e) {
       setErr(e);
