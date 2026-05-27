@@ -1,4 +1,6 @@
+import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { spawnSync } from "node:child_process";
 import { randomUUID } from "crypto";
 import { tmpdir } from "os";
 import { generateJobName, isDateFilename } from "../haiku";
@@ -49,7 +51,28 @@ import { buildState, buildTechnicalInfo, sanitizeSettings } from "./services/sta
 import { getSessionUsage } from "./services/usage";
 import type { StartWebUiOptions, WebServerHandle } from "./types";
 
+// When clawdcode is installed via `claude plugin install` the source is
+// extracted to ~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/
+// without a dist/web/ — `bun run build:web` is a dev-time step that the
+// plugin tarball doesn't carry. Without it the /ui/, /darwin/, /os9/,
+// /osish/ routes 404 with "UI not built". Detect that on startup and
+// build once, blocking until dist/web/ui/index.html exists.
+function ensureWebBuilt(): void {
+  const pkgRoot = join(import.meta.dir, "..", "..");
+  const sentinel = join(pkgRoot, "dist", "web", "ui", "index.html");
+  if (existsSync(sentinel)) return;
+  console.error("[clawdcode] dist/web missing — running `bun run build:web`...");
+  const r = spawnSync("bun", ["run", "build:web"], {
+    cwd: pkgRoot,
+    stdio: "inherit",
+  });
+  if (r.status !== 0) {
+    console.error("[clawdcode] build:web failed — /ui/ will 404 until you fix it.");
+  }
+}
+
 export function startWebUi(opts: StartWebUiOptions): WebServerHandle {
+  ensureWebBuilt();
   const server = Bun.serve({
     hostname: opts.host,
     port: opts.port,
