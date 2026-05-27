@@ -30,6 +30,14 @@ export interface StartWebUiOptions {
   host: string;
   port: number;
   token: string;
+  /**
+   * If true, requests carrying a non-empty `Tailscale-User-Login` header
+   * are treated as authenticated and bypass the token/cookie gate. Intended
+   * for deployments behind the Tailscale operator's Ingress proxy, which
+   * sets that header for tailnet-originated requests and omits it for
+   * funnel (public-internet) traffic. Defaults to false.
+   */
+  trustTailnet?: boolean;
   getSnapshot: () => WebSnapshot;
   onHeartbeatEnabledChanged?: (enabled: boolean) => void | Promise<void>;
   onHeartbeatSettingsChanged?: (patch: {
