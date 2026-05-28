@@ -14,11 +14,11 @@ export interface AsyncState<T> {
  * so the request re-fires without us having to call the closure ourselves
  * from outside the effect (which would otherwise need refs).
  */
-export function useAsync<T>(fn: () => Promise<T>, _key = ""): AsyncState<T> {
+export function useAsync<T>(fn: () => Promise<T>, key = ""): AsyncState<T> {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
-  const [_nonce, setNonce] = useState(0);
+  const [nonce, setNonce] = useState(0);
 
   const reload = useCallback(() => {
     setNonce((n) => n + 1);
@@ -53,7 +53,7 @@ export function useAsync<T>(fn: () => Promise<T>, _key = ""): AsyncState<T> {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [key, nonce]);
 
   return { data, error, loading, reload };
 }
