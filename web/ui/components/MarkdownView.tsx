@@ -83,6 +83,27 @@ function parse(source: string): Block[] {
       i++;
       while (i < lines.length) {
         const next = lines[i] ?? "";
+        // Allow a single blank line between items — common markdown style
+        // (`1. foo\n\n2. bar`). Peek ahead; if the next non-blank line is
+        // another list marker of the same kind, treat the list as continuing.
+        if (/^\s*$/.test(next)) {
+          let k = i + 1;
+          while (k < lines.length && /^\s*$/.test(lines[k] ?? "")) {
+            k++;
+          }
+          const peek = lines[k] ?? "";
+          const pm = /^(\s*)([-*+]|\d+\.)\s+(.*)$/.exec(peek);
+          if (!pm) {
+            break;
+          }
+          const peekMarker = pm[2] ?? "";
+          const peekOrdered = /\d+\./.test(peekMarker);
+          if (peekOrdered !== ordered) {
+            break;
+          }
+          i = k;
+          continue;
+        }
         const m = /^(\s*)([-*+]|\d+\.)\s+(.*)$/.exec(next);
         if (!m) {
           break;
