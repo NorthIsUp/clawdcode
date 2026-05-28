@@ -147,7 +147,13 @@ function UpdatesCard() {
 
       {data && (
         <div className="space-y-2 text-sm">
-          {data.error && <ErrorBanner error={new Error(data.error)} />}
+          {data.error && (
+            <div className="alert alert-warning text-sm">
+              <span>
+                Can't check for updates: {data.error}. Pull a newer image / binary to update.
+              </span>
+            </div>
+          )}
 
           {updatedSha && (
             <div className="alert alert-success">
@@ -159,7 +165,7 @@ function UpdatesCard() {
             </div>
           )}
 
-          {!updatedSha && data.behind === 0 && (
+          {!data.error && !updatedSha && data.behind === 0 && (
             <div className="flex items-center gap-2 text-base-content/70">
               <CheckCircle2 size={16} className="text-success" />
               Up to date on <code className="font-mono">{data.branch}</code>.

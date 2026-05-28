@@ -44,14 +44,17 @@ export interface SyncResult {
 }
 
 /** Run a git command in `cwd`. Never throws — returns ok=false on failure.
- *  Injects `-c user.name=... -c user.email=...` from settings.git so commits
- *  work in containerized deployments where the global git config is empty. */
+ *  Always injects `-c user.name=... -c user.email=...` so commits work in
+ *  containerized deployments where the global git config is empty. Settings
+ *  override the fallback; leaving Settings → Git identity blank just attributes
+ *  commits to the generic ClawdCode bot identity. */
 export async function runGit(cwd: string, args: string[]): Promise<GitResult> {
   try {
     const { name, email } = getSettings().git;
-    const identity: string[] = [];
-    if (name) identity.push("-c", `user.name=${name}`);
-    if (email) identity.push("-c", `user.email=${email}`);
+    const identity = [
+      "-c", `user.name=${name || "ClawdCode"}`,
+      "-c", `user.email=${email || "clawdcode@localhost"}`,
+    ];
     const proc = Bun.spawn(["git", ...identity, ...args], { cwd, stdout: "pipe", stderr: "pipe" });
     const stdout = await new Response(proc.stdout).text();
     const stderr = await new Response(proc.stderr).text();
