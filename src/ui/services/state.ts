@@ -1,5 +1,6 @@
 import { readFile } from "fs/promises";
 import { peekSession } from "../../sessions";
+import type { TailnetIdentity } from "../auth";
 import { SESSION_FILE, SETTINGS_FILE, STATE_FILE } from "../constants";
 import type { WebSnapshot } from "../types";
 import { getRuntimeGit, getRuntimeVersion } from "../../runtime";
@@ -23,7 +24,14 @@ export function sanitizeSettings(snapshot: WebSnapshot["settings"]) {
   };
 }
 
-export async function buildState(snapshot: WebSnapshot) {
+export interface BuildStateOptions {
+  /** When the request was authenticated via the tailnet header bypass, this
+   *  carries the attribution surface the UI uses to render "Signed in as
+   *  @user". Null/undefined when the request used the token/cookie path. */
+  tailnet?: TailnetIdentity | null;
+}
+
+export async function buildState(snapshot: WebSnapshot, opts: BuildStateOptions = {}) {
   const now = Date.now();
   const session = await peekSession();
   return {
@@ -71,6 +79,13 @@ export async function buildState(snapshot: WebSnapshot) {
       : null,
     web: snapshot.settings.web,
     git: snapshot.settings.git,
+    tailnet: opts.tailnet
+      ? {
+          login: opts.tailnet.login,
+          ...(opts.tailnet.displayName ? { displayName: opts.tailnet.displayName } : {}),
+          ...(opts.tailnet.tailnet ? { tailnet: opts.tailnet.tailnet } : {}),
+        }
+      : null,
     runtime: {
       git: await getRuntimeGit(),
       version: getRuntimeVersion(),

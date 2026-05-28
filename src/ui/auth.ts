@@ -20,13 +20,31 @@ export async function getOrCreateWebToken(): Promise<string> {
 }
 
 /**
+ * The tailnet user attribution extracted from a trusted upstream's headers.
+ * Surfaced so request handlers can attribute actions to a specific tailnet
+ * identity (e.g. log "adam@ pulled jobs repo") and the UI can render
+ * "Signed in as @adam" instead of an opaque cookie.
+ */
+export interface TailnetIdentity {
+  /** The Tailscale login (e.g. `adam@github` or `adam@askclara.com`). */
+  login: string;
+  /** Human-friendly display name when the proxy provides it. */
+  displayName?: string;
+  /** The tailnet name (e.g. `claw-clara.ts.net`) when provided. */
+  tailnet?: string;
+}
+
+/**
  * Result of an auth check: did the request authenticate, and if so, via which
  * channel? `viaQuery` means we should set a fresh signed cookie on the
- * response so the client doesn't keep the token in URLs.
+ * response so the client doesn't keep the token in URLs. `tailnet` is
+ * populated when the request was authenticated via the tailnet header
+ * bypass — request handlers can use it for attribution.
  */
 export interface AuthResult {
   valid: boolean;
   viaQuery: boolean;
+  tailnet?: TailnetIdentity;
 }
 
 export interface AuthOptions {
@@ -46,12 +64,38 @@ export function isTailnetRequest(req: Request): boolean {
   return !!v && v.trim().length > 0;
 }
 
+/**
+ * Extract the tailnet identity from a request's headers. Returns null when
+ * no `Tailscale-User-Login` header is present. Header lookup is
+ * case-insensitive because `Headers.get` lowercases the key. Callers are
+ * responsible for only trusting this when `trustTailnet` is enabled.
+ */
+export function getTailnetIdentity(req: Request): TailnetIdentity | null {
+  const login = req.headers.get("tailscale-user-login")?.trim();
+  if (!login) return null;
+  const displayName = req.headers.get("tailscale-user-name")?.trim();
+  // Some Tailscale proxies stamp the tailnet via a header; others encode it
+  // in the login (`user@tailnet`). Prefer the explicit header when present,
+  // otherwise derive from the login suffix.
+  const headerTailnet = req.headers.get("tailscale-tailnet")?.trim();
+  const derivedTailnet = login.includes("@") ? login.split("@").pop()!.trim() : "";
+  const tailnet = headerTailnet || derivedTailnet || undefined;
+  return {
+    login,
+    ...(displayName ? { displayName } : {}),
+    ...(tailnet ? { tailnet } : {}),
+  };
+}
+
 export function authenticate(req: Request, expected: string, opts: AuthOptions = {}): AuthResult {
   // 0) Tailnet bypass (opt-in). The Tailscale operator Ingress strips this
   //    header on funnel-origin requests, so a non-empty value means the
   //    visitor is authenticated against the tailnet.
-  if (opts.trustTailnet && isTailnetRequest(req)) {
-    return { valid: true, viaQuery: false };
+  if (opts.trustTailnet) {
+    const tailnet = getTailnetIdentity(req);
+    if (tailnet) {
+      return { valid: true, viaQuery: false, tailnet };
+    }
   }
 
   // 1) Signed cookie (preferred — set after the first ?token= handshake).

@@ -59,6 +59,7 @@ export function SettingsSection() {
       <PageHeader title="Settings" crumbs={[{ label: "Settings" }]} />
 
       <UpdateBanner />
+      <TailnetBanner />
 
       <nav aria-label="Sections" className="flex flex-wrap gap-2 text-sm">
         {SECTIONS.map((s) => (
@@ -187,6 +188,33 @@ function UpdateBanner() {
 
   // Up to date — no chrome.
   return null;
+}
+
+/**
+ * Renders a small "signed in via tailnet" hint when the daemon was launched
+ * with `--web-trust-tailnet` and the current request carried the
+ * `Tailscale-User-Login` header. Stays hidden otherwise so the token/cookie
+ * path looks unchanged.
+ */
+function TailnetBanner() {
+  const state = useAsync<StateResponse>(() => getState());
+  const tailnet = state.data?.tailnet;
+  if (!tailnet) return null;
+  const label = tailnet.displayName ? `${tailnet.displayName} (${tailnet.login})` : tailnet.login;
+  return (
+    <div className="alert alert-info flex flex-wrap items-center gap-2 py-2 text-sm">
+      <CheckCircle2 size={14} />
+      <span>
+        Signed in via tailnet as <code className="font-mono">{label}</code>
+        {tailnet.tailnet ? (
+          <>
+            {" "}
+            on <code className="font-mono">{tailnet.tailnet}</code>
+          </>
+        ) : null}
+      </span>
+    </div>
+  );
 }
 
 function SettingsSubsection({
