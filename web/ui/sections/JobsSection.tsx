@@ -475,6 +475,23 @@ function FileView({ slug, file, back }: { slug: string; file: string; back: () =
   );
 }
 
+/**
+ * Extract a human-friendly hook scope label from a session's firstMessage.
+ *
+ * Hook-fired runs are augmented in src/commands/start.ts:onHookFire with
+ * a header like:
+ *   "Triggered by GitHub issue_comment (delivery <id>) for scope `pr-42-feature-foo`:"
+ *
+ * Returns the scope key or null if the session isn't hook-driven (cron
+ * runs and manual chats don't carry the header).
+ */
+function hookScopeFromFirstMessage(firstMessage: string | undefined): string | null {
+  if (!firstMessage) return null;
+  const m = firstMessage.match(/Triggered by GitHub (\S+).*? for scope `([^`]+)`/);
+  if (!m) return null;
+  return m[2] ?? null;
+}
+
 function ChatsForJob({ jobName }: { jobName: string }) {
   const { goto } = useRoute();
   const sessions = useAsync<SessionInfo[]>(() => listSessions(true));
@@ -489,32 +506,48 @@ function ChatsForJob({ jobName }: { jobName: string }) {
       {sessions.error ? <ErrorBanner error={sessions.error} /> : null}
       {sessions.data && mine.length === 0 && <Empty>No chats linked to this routine yet.</Empty>}
       <ul className="divide-y divide-base-300 -mx-2">
-        {mine.slice(0, 10).map((s) => (
-          <li key={s.id} className="flex items-center gap-3 px-2 py-2 min-w-0">
-            <div className="flex-1 min-w-0 flex items-baseline gap-3 flex-wrap">
-              <time
-                className="font-medium tabular-nums"
-                dateTime={s.lastUsedAt}
-                title={new Date(s.lastUsedAt).toLocaleString()}
+        {mine.slice(0, 10).map((s) => {
+          // For hook-driven jobs, the chat's identity is "which PR /
+          // scope triggered me" — far more useful than a timestamp.
+          // Falls back to the timestamp for cron / manual runs.
+          const scope = hookScopeFromFirstMessage(s.firstMessage);
+          const ts = new Date(s.lastUsedAt).toLocaleString();
+          return (
+            <li key={s.id} className="flex items-center gap-3 px-2 py-2 min-w-0">
+              <div className="flex-1 min-w-0 flex items-baseline gap-3 flex-wrap">
+                {scope ? (
+                  <span
+                    className="font-mono font-medium truncate"
+                    title={`${scope} · ${ts}`}
+                  >
+                    {scope}
+                  </span>
+                ) : (
+                  <time
+                    className="font-medium tabular-nums"
+                    dateTime={s.lastUsedAt}
+                    title={ts}
+                  >
+                    {ts}
+                  </time>
+                )}
+                <span className="text-xs text-base-content/60 tabular-nums">
+                  {s.turnCount} turn{s.turnCount === 1 ? "" : "s"}
+                </span>
+                <span className="badge badge-ghost badge-xs">{s.channel}</span>
+                {s.closed && <span className="badge badge-ghost badge-xs">closed</span>}
+              </div>
+              <button
+                type="button"
+                className="btn btn-sm btn-primary shrink-0"
+                onClick={() => goto("chat", [s.id])}
+                aria-label={`Open chat ${s.id}`}
               >
-                {new Date(s.lastUsedAt).toLocaleString()}
-              </time>
-              <span className="text-xs text-base-content/60 tabular-nums">
-                {s.turnCount} turn{s.turnCount === 1 ? "" : "s"}
-              </span>
-              <span className="badge badge-ghost badge-xs">{s.channel}</span>
-              {s.closed && <span className="badge badge-ghost badge-xs">closed</span>}
-            </div>
-            <button
-              type="button"
-              className="btn btn-sm btn-primary shrink-0"
-              onClick={() => goto("chat", [s.id])}
-              aria-label={`Open chat ${s.id}`}
-            >
-              <ArrowUpRight size={16} /> Open
-            </button>
-          </li>
-        ))}
+                <ArrowUpRight size={16} /> Open
+              </button>
+            </li>
+          );
+        })}
       </ul>
     </Card>
   );

@@ -18,14 +18,27 @@ import { JobsSection } from "./sections/JobsSection";
 import { ScheduleSection } from "./sections/ScheduleSection";
 import { SettingsSection } from "./sections/SettingsSection";
 
-const TABS: TabSpec[] = [
-  { id: "home", label: "Home", Icon: Home },
-  { id: "schedule", label: "Schedule", Icon: CalendarClock },
-  { id: "jobs", label: "Jobs", Icon: Workflow },
-  { id: "hooks", label: "Hooks", Icon: PlugZap },
-  { id: "chat", label: "Chat", Icon: MessageSquare },
-  { id: "settings", label: "Settings", Icon: Cog },
-  { id: "about", label: "About", Icon: CircleHelp },
+// Three logical tab groups, separated by thin dividers in the desktop
+// tab bar (TabBar handles the rendering — see normalizeGroups there).
+//
+//   1. work surface — Home overview, conversational Chat
+//   2. routine config — when/why a job runs (Schedule, Hooks) + the
+//      routine bodies themselves (Jobs)
+//   3. meta — pod Settings + About
+const TABS: TabSpec[][] = [
+  [
+    { id: "home", label: "Home", Icon: Home },
+    { id: "chat", label: "Chat", Icon: MessageSquare },
+  ],
+  [
+    { id: "schedule", label: "Schedule", Icon: CalendarClock },
+    { id: "hooks", label: "Hooks", Icon: PlugZap },
+    { id: "jobs", label: "Jobs", Icon: Workflow },
+  ],
+  [
+    { id: "settings", label: "Settings", Icon: Cog },
+    { id: "about", label: "About", Icon: CircleHelp },
+  ],
 ];
 
 export default function App() {
