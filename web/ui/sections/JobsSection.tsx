@@ -24,7 +24,7 @@ import { MarkdownView } from "../components/MarkdownView";
 import { PageHeader } from "../components/PageHeader";
 import { ScheduleEditor } from "../components/ScheduleEditor";
 import { ScheduleReadout } from "../components/ScheduleReadout";
-import { useRoute } from "../router";
+import { type TabId, useRoute } from "../router";
 import { readFrontmatter, writeFrontmatter } from "../schedule";
 import { useAsync } from "../useAsync";
 
@@ -131,7 +131,14 @@ function RepoView({ slug }: { slug: string }) {
       />
 
       {repos.data && repos.data.length > 1 && (
-        <div role="tablist" className="tabs tabs-lift">
+        <div
+          role="tablist"
+          // tabs-lift: active tab merges with the content below by removing
+          // its own bottom border. We give the routines container a flush
+          // top border so the seam is invisible — that's the visual fix
+          // for "tabs disjoint from contents".
+          className="tabs tabs-lift mb-0"
+        >
           {repos.data.map((r) => (
             <button
               key={r.slug}
@@ -148,7 +155,7 @@ function RepoView({ slug }: { slug: string }) {
         </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2 mt-2">
         {repo && <RepoMeta repo={repo} />}
         <div className="flex flex-wrap items-center gap-2 ml-auto">
           <button type="button" className="btn btn-sm" onClick={onSync} disabled={busy !== null}>
@@ -163,42 +170,153 @@ function RepoView({ slug }: { slug: string }) {
 
       {opError && <ErrorBanner error={opError} />}
 
-      <Card title="Routines">
-        {files.loading && <Loader />}
-        {files.error ? <ErrorBanner error={files.error} /> : null}
-        {/* When the repo isn't cloned the listing might still surface stale
-            files left in the clone dir (or files from a sibling repo's dir
-            on the rare slug-collision path). Show the "not cloned" empty
-            state instead — clicking Sync clones and re-fetches. */}
-        {repo && !repo.cloned ? (
+      {/* Split routines (cron-scheduled .md) from other files (skills,
+          commands, agents, memory dumps, READMEs). The former is the
+          actual subject of this tab; the latter is reference material
+          shown as a tree below. */}
+      {repo && !repo.cloned ? (
+        <Card title="Routines">
           <Empty>Not cloned yet. Click Sync above to fetch this repo.</Empty>
-        ) : (
-          <>
-            {files.data && files.data.length === 0 && (
-              <Empty>No .md routines yet. Add one above.</Empty>
-            )}
-            {files.data && files.data.length > 0 && (
-              <ul className="divide-y divide-base-300 -mx-4">
-                {files.data
-                  .filter((f) => f.path.endsWith(".md"))
-                  .map((f) => (
-                    <li key={f.path}>
-                      <button
-                        type="button"
-                        className="w-full text-left px-4 py-2 hover:bg-base-200 flex items-center justify-between gap-2"
-                        onClick={() => goto("jobs", [slug, f.path])}
-                      >
-                        <span className="font-mono text-sm truncate">{f.path}</span>
-                        {f.isJob && <span className="badge badge-ghost badge-sm">job</span>}
-                      </button>
-                    </li>
-                  ))}
-              </ul>
-            )}
-          </>
-        )}
-      </Card>
+        </Card>
+      ) : (
+        <>
+          <Card title="Routines">
+            {files.loading && <Loader />}
+            {files.error ? <ErrorBanner error={files.error} /> : null}
+            {files.data && <RoutinesList files={files.data} slug={slug} goto={goto} />}
+          </Card>
+          {files.data && <FilesCard files={files.data} slug={slug} goto={goto} />}
+        </>
+      )}
     </>
+  );
+}
+
+function RoutinesList({
+  files,
+  slug,
+  goto,
+}: {
+  files: JobFileEntry[];
+  slug: string;
+  goto: (tab: TabId, segments?: string[]) => void;
+}) {
+  const routines = files.filter((f) => f.isJob);
+  if (routines.length === 0) {
+    return <Empty>No routines yet. Add one above.</Empty>;
+  }
+  return (
+    <ul className="divide-y divide-base-300 -mx-4">
+      {routines.map((f) => (
+        <li key={f.path}>
+          <button
+            type="button"
+            className="w-full text-left px-4 py-2 hover:bg-base-200 flex items-center justify-between gap-2"
+            onClick={() => goto("jobs", [slug, f.path])}
+          >
+            <span className="font-mono text-sm truncate">{f.path}</span>
+            <span className="badge badge-ghost badge-sm">job</span>
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function FilesCard({
+  files,
+  slug,
+  goto,
+}: {
+  files: JobFileEntry[];
+  slug: string;
+  goto: (tab: TabId, segments?: string[]) => void;
+}) {
+  const others = files.filter((f) => !f.isJob);
+  if (others.length === 0) return null;
+  const tree = buildTree(others);
+  return (
+    <Card title="Files">
+      <p className="text-xs text-base-content/60 -mt-1 mb-2">
+        Reference material from this source — skills, commands, agents, memory, etc.
+        Not scheduled by clawdcode.
+      </p>
+      <FileTree node={tree} slug={slug} goto={goto} />
+    </Card>
+  );
+}
+
+interface TreeNode {
+  name: string;
+  fullPath?: string; // set on leaf nodes
+  children: Map<string, TreeNode>;
+}
+
+function buildTree(files: JobFileEntry[]): TreeNode {
+  const root: TreeNode = { name: "", children: new Map() };
+  for (const f of files) {
+    const parts = f.path.split("/");
+    let cursor = root;
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i] ?? "";
+      let child = cursor.children.get(part);
+      if (!child) {
+        child = { name: part, children: new Map() };
+        cursor.children.set(part, child);
+      }
+      if (i === parts.length - 1) {
+        child.fullPath = f.path;
+      }
+      cursor = child;
+    }
+  }
+  return root;
+}
+
+function FileTree({
+  node,
+  slug,
+  goto,
+  depth = 0,
+}: {
+  node: TreeNode;
+  slug: string;
+  goto: (tab: TabId, segments?: string[]) => void;
+  depth?: number;
+}) {
+  // Sort directories first, then files; both alpha within each group.
+  const entries = Array.from(node.children.values()).sort((a, b) => {
+    const aDir = a.children.size > 0;
+    const bDir = b.children.size > 0;
+    if (aDir !== bDir) return aDir ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+  return (
+    <ul className={depth === 0 ? "space-y-0.5" : "space-y-0.5 pl-4 border-l border-base-300 ml-2"}>
+      {entries.map((child) => {
+        const isDir = child.children.size > 0;
+        return (
+          <li key={child.name}>
+            {isDir ? (
+              <details open={depth === 0}>
+                <summary className="cursor-pointer text-sm font-mono text-base-content/80 hover:text-base-content py-0.5">
+                  📁 {child.name}
+                </summary>
+                <FileTree node={child} slug={slug} goto={goto} depth={depth + 1} />
+              </details>
+            ) : (
+              <button
+                type="button"
+                className="text-left text-sm font-mono text-base-content/70 hover:text-base-content py-0.5"
+                onClick={() => child.fullPath && goto("jobs", [slug, child.fullPath])}
+              >
+                📄 {child.name}
+              </button>
+            )}
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
