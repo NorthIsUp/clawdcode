@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, Copy, Eye, EyeOff, ShieldOff } from "lucide-react";
+import { AlertTriangle, CheckCircle2, CircleSlash, Copy, Eye, EyeOff, ShieldOff } from "lucide-react";
 import { useState } from "react";
 import {
   type Delivery,
@@ -38,11 +38,34 @@ export function HooksSection() {
         }
       />
 
-      <Card title="GitHub receiver">
-        {status.loading && <Loader />}
-        {status.error ? <ErrorBanner error={status.error} /> : null}
-        {status.data && <ReceiverCard status={status.data} />}
-      </Card>
+      {/* Receiver config (URL + secret) is a configure-once thing — keep
+          it collapsed by default so live data (triggers + deliveries)
+          gets the real estate. The summary still surfaces the
+          signature-mode badge so a quick glance shows whether the
+          receiver is in verifying or unsigned mode. */}
+      <details className="collapse collapse-arrow border border-base-300 bg-base-100">
+        <summary className="collapse-title text-sm font-medium">
+          GitHub receiver
+          {status.data && (
+            <span className="ml-2 align-middle">
+              {status.data.configured ? (
+                <span className="badge badge-success badge-sm gap-1">
+                  <CheckCircle2 size={10} /> signatures verified
+                </span>
+              ) : (
+                <span className="badge badge-warning badge-sm gap-1">
+                  <ShieldOff size={10} /> unsigned mode
+                </span>
+              )}
+            </span>
+          )}
+        </summary>
+        <div className="collapse-content">
+          {status.loading && <Loader />}
+          {status.error ? <ErrorBanner error={status.error} /> : null}
+          {status.data && <ReceiverCard status={status.data} />}
+        </div>
+      </details>
 
       <Card title={`PR triggers (${triggers.data?.triggers.length ?? 0})`}>
         {triggers.loading && <Loader />}
@@ -258,11 +281,28 @@ function DeliveryList({ deliveries }: { deliveries: Delivery[] }) {
             <span className="text-sm text-base-content/80 truncate">{d.summary}</span>
             <DeliveryStatus status={d.status} />
           </div>
-          {d.matched.length > 0 && (
-            <div className="text-xs text-base-content/60 mt-0.5">
-              matched: {d.matched.join(", ")}
-            </div>
-          )}
+          <div className="text-xs mt-0.5 flex items-center gap-1.5">
+            {d.matched.length > 0 ? (
+              <>
+                <span className="badge badge-success badge-xs gap-1">
+                  <CheckCircle2 size={10} /> fired
+                </span>
+                <span className="text-base-content/60 truncate">
+                  → {d.matched.join(", ")}
+                </span>
+              </>
+            ) : d.status === "ok" ? (
+              // The delivery was accepted but no job's on: rules matched.
+              // Could be "no job opted in for this event" or "matched the
+              // event class but a sub-rule filtered it out" — receiver
+              // doesn't surface that distinction yet, so we collapse both
+              // into "no match" for now. (Distinguishing filtered vs
+              // unmatched is a follow-up — see hooks/receiver.ts.)
+              <span className="badge badge-ghost badge-xs gap-1">
+                <CircleSlash size={10} /> no match
+              </span>
+            ) : null}
+          </div>
           <details className="mt-1">
             <summary className="cursor-pointer text-[11px] text-base-content/60">payload</summary>
             <pre className="mt-1 bg-base-200 border border-base-300 rounded-box px-2 py-1 overflow-x-auto font-mono text-[11px] max-h-48 overflow-y-auto">
