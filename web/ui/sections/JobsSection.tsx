@@ -23,10 +23,10 @@ import { Empty, ErrorBanner, Loader } from "../components/Loader";
 import { MarkdownView } from "../components/MarkdownView";
 import { RoutineEditor } from "../components/RoutineEditor";
 import { PageHeader } from "../components/PageHeader";
-import { ScheduleEditor } from "../components/ScheduleEditor";
 import { ScheduleReadout } from "../components/ScheduleReadout";
+import { TriggersEditor } from "../components/TriggersEditor";
 import { type TabId, useRoute } from "../router";
-import { readFrontmatter, writeFrontmatter } from "../schedule";
+import { type JobFrontmatter, readFrontmatter, writeFrontmatter } from "../schedule";
 import { useAsync } from "../useAsync";
 
 export function JobsSection() {
@@ -462,7 +462,7 @@ function FileView({ slug, file, back }: { slug: string; file: string; back: () =
           {tab === "edit" && <RoutineEditor value={draft} onChange={setDraft} />}
           {tab === "preview" && <MarkdownView source={draft} />}
           {tab === "config" && (
-            <ScheduleEditor
+            <ConfigPane
               value={readFrontmatter(draft)}
               onChange={(next) => setDraft(writeFrontmatter(draft, next))}
             />
@@ -472,6 +472,66 @@ function FileView({ slug, file, back }: { slug: string; file: string; back: () =
 
       <ChatsForJob jobName={jobName} />
     </>
+  );
+}
+
+/**
+ * Config tab body: enabled toggle, unified Triggers editor, notify
+ * setting. Pure controlled — parent owns the JobFrontmatter draft.
+ */
+function ConfigPane({
+  value,
+  onChange,
+}: {
+  value: JobFrontmatter;
+  onChange: (next: JobFrontmatter) => void;
+}) {
+  return (
+    <div className="space-y-5">
+      <section>
+        <label className="flex items-center gap-3 cursor-pointer">
+          <input
+            type="checkbox"
+            className="toggle toggle-primary"
+            checked={value.enabled ?? true}
+            onChange={(e) => onChange({ ...value, enabled: e.target.checked })}
+          />
+          <div className="min-w-0">
+            <div className="text-sm font-medium">Enabled</div>
+            <div className="text-xs text-base-content/60">
+              Off keeps the file but skips scheduling and hooks.
+            </div>
+          </div>
+        </label>
+      </section>
+
+      <hr className="border-base-300" />
+
+      <TriggersEditor value={value} onChange={onChange} />
+
+      <hr className="border-base-300" />
+
+      <section>
+        <fieldset>
+          <legend className="text-sm font-semibold mb-1">Notify on</legend>
+          <div className="join">
+            {(["true", "error", "false"] as const).map((opt) => (
+              <button
+                key={opt}
+                type="button"
+                aria-pressed={(value.notify ?? "false") === opt}
+                onClick={() => onChange({ ...value, notify: opt })}
+                className={`btn btn-sm join-item ${
+                  (value.notify ?? "false") === opt ? "btn-primary" : "btn-ghost"
+                }`}
+              >
+                {opt === "true" ? "Always" : opt === "error" ? "On error" : "Never"}
+              </button>
+            ))}
+          </div>
+        </fieldset>
+      </section>
+    </div>
   );
 }
 
