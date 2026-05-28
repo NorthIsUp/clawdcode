@@ -44,15 +44,25 @@ export interface SyncResult {
 }
 
 /** Run a git command in `cwd`. Never throws — returns ok=false on failure.
- *  Injects `-c user.name=... -c user.email=...` from settings.git so commits
- *  work in containerized deployments where the global git config is empty. */
+ *
+ *  Always injects:
+ *  - `-c user.name=... -c user.email=...` so commits work in containerized
+ *    deployments where the global git config is empty.
+ *  - `-c credential.helper=` to *disable* any inherited credential helper.
+ *    The Docker image ships `gh` and the deploy may have a GitHub App token
+ *    in scope; without this override every HTTPS clone gets hijacked by
+ *    that token and returns 403 against repos the App can't see — even
+ *    public ones, where anonymous HTTPS would have worked. Users who need
+ *    auth can use SSH URLs or embed `https://x-access-token:TOKEN@...`. */
 export async function runGit(cwd: string, args: string[]): Promise<GitResult> {
   try {
     const { name, email } = getSettings().git;
-    const identity: string[] = [];
-    if (name) identity.push("-c", `user.name=${name}`);
-    if (email) identity.push("-c", `user.email=${email}`);
-    const proc = Bun.spawn(["git", ...identity, ...args], { cwd, stdout: "pipe", stderr: "pipe" });
+    const config = [
+      "-c", `user.name=${name || "ClawdCode"}`,
+      "-c", `user.email=${email || "clawdcode@localhost"}`,
+      "-c", "credential.helper=",
+    ];
+    const proc = Bun.spawn(["git", ...config, ...args], { cwd, stdout: "pipe", stderr: "pipe" });
     const stdout = await new Response(proc.stdout).text();
     const stderr = await new Response(proc.stderr).text();
     const code = await proc.exited;
