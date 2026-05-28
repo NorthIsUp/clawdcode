@@ -19,7 +19,13 @@ import {
 import { addMcpServer, listMcpServers, removeMcpServer } from "../mcp";
 import { runUserMessage } from "../runner";
 import { resetSession } from "../sessions";
-import { attachAuthCookie, authenticate, checkToken } from "./auth";
+import {
+  attachAuthCookie,
+  authenticate,
+  checkToken,
+  getTailnetIdentity,
+  type TailnetIdentity,
+} from "./auth";
 import { clampInt, json, withJson } from "./http";
 import {
   createJobFile,
@@ -228,7 +234,13 @@ export function startWebUi(opts: StartWebUiOptions): WebServerHandle {
       }
 
       if (url.pathname === "/api/state") {
-        return json(await buildState(opts.getSnapshot()));
+        // Only surface the tailnet identity when the operator explicitly
+        // trusts the upstream header — otherwise an attacker behind a
+        // misconfigured proxy could spoof it.
+        const tailnetIdentity: TailnetIdentity | null = opts.trustTailnet
+          ? getTailnetIdentity(req)
+          : null;
+        return json(await buildState(opts.getSnapshot(), { tailnet: tailnetIdentity }));
       }
 
       // Self-update routes: report how far behind origin/<branch> we are
@@ -882,8 +894,11 @@ export function startWebUi(opts: StartWebUiOptions): WebServerHandle {
         const snapshot = opts.getSnapshot();
         const jobs = await loadJobs();
         const repos = await getAllRepoStatuses();
+        const tailnetIdentity: TailnetIdentity | null = opts.trustTailnet
+          ? getTailnetIdentity(req)
+          : null;
         return json({
-          server: await buildState(snapshot),
+          server: await buildState(snapshot, { tailnet: tailnetIdentity }),
           jobs: jobs.map((j) => ({ name: j.name, schedule: j.schedule, recurring: j.recurring })),
           repos, // new multi-repo field
           repo: repos[0] ?? null, // back-compat alias (first repo)

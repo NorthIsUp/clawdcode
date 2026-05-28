@@ -68,6 +68,14 @@ export interface StateResponse {
   } | null;
   web: Record<string, unknown>;
   git: { name: string; email: string };
+  /** Populated when the request came in over a trusted Tailscale proxy
+   *  (daemon launched with `--web-trust-tailnet`) and carried the
+   *  `Tailscale-User-Login` header. Null in the token/cookie path. */
+  tailnet: {
+    login: string;
+    displayName?: string;
+    tailnet?: string;
+  } | null;
   runtime: {
     git: RuntimeGit;
     version: string | null;
