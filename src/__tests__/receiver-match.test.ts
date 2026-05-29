@@ -10,8 +10,8 @@ import { handleWebhook } from "../hooks/receiver";
 // branch (the bug where a `comments: true` routine got skipped on a
 // main-targeting PR).
 
-function makeJob(name: string, on: unknown[]): Job {
-  const { schedules, hookConfig } = parseTriggers(on, undefined);
+function makeJob(name: string, on: unknown[], skipSelf?: boolean): Job {
+  const { schedules, hookConfig } = parseTriggers(on, skipSelf === false ? false : undefined);
   return {
     name,
     schedules,
@@ -97,6 +97,44 @@ describe("webhook matcher — config is authoritative", () => {
           labels: [],
         },
         sender: { login: "alice" },
+      },
+      [job],
+    );
+    expect(fired).not.toContain("pr-comments");
+  });
+
+  // Comment matching keys on the ACTOR (sender), not the comment author.
+  // A GitHub App authors comments as its bot user, but `sender` is who
+  // triggered it — a humans-only filter should fire when a human acted
+  // through an app, and skip a genuine bot action.
+  test("humans-only comment fires when sender is human (app authored)", async () => {
+    // skip_self: false isolates the user-glob from the self-skip (which would
+    // otherwise depend on the test runner's resolved `gh` login).
+    const job = makeJob("pr-comments", [{ comments: { user: ["*", "!*[bot]"] } }], false);
+    const fired = await firedJobs(
+      "pull_request_review_comment",
+      {
+        action: "created",
+        repository: { full_name: "teamclara/Clara_V1" },
+        pull_request: { number: 1424, base: { ref: "main" }, head: { ref: "feat/x" } },
+        comment: { user: { login: "graphite-app[bot]" } },
+        sender: { login: "some-human" },
+      },
+      [job],
+    );
+    expect(fired).toContain("pr-comments");
+  });
+
+  test("humans-only comment skips when sender is a bot", async () => {
+    const job = makeJob("pr-comments", [{ comments: { user: ["*", "!*[bot]"] } }]);
+    const fired = await firedJobs(
+      "issue_comment",
+      {
+        action: "created",
+        repository: { full_name: "org/repo" },
+        issue: { number: 9, pull_request: { url: "x" } },
+        comment: { user: { login: "NorthIsUp" } },
+        sender: { login: "graphite-app[bot]" },
       },
       [job],
     );
