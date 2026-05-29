@@ -55,7 +55,8 @@ export async function buildState(snapshot: WebSnapshot, opts: BuildStateOptions 
     },
     jobs: snapshot.jobs.map((j) => ({
       name: j.name,
-      schedule: j.schedule,
+      schedules: j.schedules,
+      schedule: j.schedules[0] ?? "",
       prompt: j.prompt,
       running: snapshot.activeJobs?.includes(j.name) ?? false,
       lastResult: snapshot.jobLastResult?.[j.name]?.result ?? null,

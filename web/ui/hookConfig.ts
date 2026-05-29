@@ -98,68 +98,95 @@ export function defaultPrRule(): PrRule {
 
 const FRONTMATTER_RE = /^---\s*\n([\s\S]*?)\n---\s*\n?([\s\S]*)$/;
 
+export interface ParsedTriggers {
+  /** Cron expressions from `- schedule:` entries (may be empty). */
+  schedules: string[];
+  /** Event triggers (pr/comments/sentry/datadog), or null when none. */
+  hookConfig: HookConfig | null;
+}
+
 /**
- * Parse the `on:` block out of a job's frontmatter. Returns null when:
- * - no frontmatter present
- * - no `on:` key
- * - YAML is malformed (silently — the editor falls back to "Add PR trigger")
+ * Parse the `on:` triggers list out of a job's frontmatter into cron
+ * schedules + a HookConfig. Each list item is a single-key dict:
+ * `schedule` / `pr` / `prs` / `comments` / `sentry` / `datadog`. `skip_self`
+ * is a top-level modifier. Best-effort: malformed items are skipped (the
+ * editor falls back to defaults) rather than throwing.
  */
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: each branch handles a distinct on-block shape (no frontmatter / no on / shorthand / explicit rules); flattening would lose the structure.
-export function parseOnBlock(content: string): HookConfig | null {
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: one branch per trigger key.
+export function parseTriggers(content: string): ParsedTriggers {
+  const empty: ParsedTriggers = { schedules: [], hookConfig: null };
   const m = content.match(FRONTMATTER_RE);
-  if (!m) {
-    return null;
-  }
-  const block = m[1] ?? "";
+  if (!m) return empty;
   let parsed: unknown;
   try {
-    parsed = parseYaml(block);
+    parsed = parseYaml(m[1] ?? "");
   } catch {
-    return null;
+    return empty;
   }
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-    return null;
+    return empty;
   }
-  const on = (parsed as Record<string, unknown>).on;
-  if (on === undefined || on === null) {
-    return null;
-  }
-  if (typeof on !== "object" || Array.isArray(on)) {
-    return null;
-  }
-  const onObj = on as Record<string, unknown>;
-  const comments = parseComments(onObj.comments);
-  // Default true; only explicit `skip_self: false` disables it.
-  const skipSelf = !(onObj.skip_self === false || onObj.skip_self === "false");
-  const sentry = parseSentry(onObj.sentry);
-  const datadog = parseDatadog(onObj.datadog);
+  const root = parsed as Record<string, unknown>;
+  const skipSelf = !(root.skip_self === false || root.skip_self === "false");
+  const on = root.on;
+  if (!Array.isArray(on)) return { schedules: [], hookConfig: null };
 
-  // Shorthand: `prs: true` means "any PR from any user on any repo,
-  // default actions, but skip PRs targeting main". Combinable with the
-  // sentry/datadog blocks.
+  const schedules: string[] = [];
   const rules: PrRule[] = [];
-  if (onObj.prs === true || onObj.prs === "true") {
-    rules.push(fullyOpenPrRule());
-  } else if (onObj.pr !== undefined) {
-    const list = Array.isArray(onObj.pr) ? onObj.pr : [onObj.pr];
-    for (const raw of list) {
-      const rule = normalizeRule(raw);
-      if (rule) {
-        rules.push(rule);
+  let comments: boolean | CommentRule = false;
+  let sentry: boolean | SentryRule = false;
+  let datadog: boolean | DatadogRule = false;
+  let sawEvent = false;
+
+  for (const item of on) {
+    if (typeof item !== "object" || item === null || Array.isArray(item)) continue;
+    const keys = Object.keys(item as Record<string, unknown>);
+    if (keys.length !== 1) continue;
+    const key = keys[0] as string;
+    const val = (item as Record<string, unknown>)[key];
+    switch (key) {
+      case "schedule":
+        if (typeof val === "string" && val.trim()) schedules.push(val.trim());
+        break;
+      case "prs":
+        if (val === true || val === "true") {
+          rules.push(fullyOpenPrRule());
+          sawEvent = true;
+        }
+        break;
+      case "pr": {
+        const rule = normalizeRule(val);
+        if (rule) {
+          rules.push(rule);
+          sawEvent = true;
+        }
+        break;
       }
+      case "comments":
+        comments = parseComments(val);
+        sawEvent = true;
+        break;
+      case "sentry":
+        sentry = parseSentry(val);
+        sawEvent = true;
+        break;
+      case "datadog":
+        datadog = parseDatadog(val);
+        sawEvent = true;
+        break;
+      default:
+        break;
     }
   }
-  const cfg: HookConfig = { pr: rules, skipSelf };
-  if (comments !== false) {
-    cfg.comments = comments;
+
+  let hookConfig: HookConfig | null = null;
+  if (sawEvent) {
+    hookConfig = { pr: rules, skipSelf };
+    if (comments !== false) hookConfig.comments = comments;
+    if (sentry !== false) hookConfig.sentry = sentry;
+    if (datadog !== false) hookConfig.datadog = datadog;
   }
-  if (sentry !== false) {
-    cfg.sentry = sentry;
-  }
-  if (datadog !== false) {
-    cfg.datadog = datadog;
-  }
-  return cfg;
+  return { schedules, hookConfig };
 }
 
 function parseSentry(raw: unknown): boolean | SentryRule {

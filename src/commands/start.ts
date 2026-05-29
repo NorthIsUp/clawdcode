@@ -9,12 +9,13 @@ import {
   resolvePrompt,
   type Settings,
 } from "../config";
-import { cronMatches, nextCronMatch } from "../cron";
+import { anyCronMatches, earliestCronMatch } from "../cron";
 import type { Job } from "../jobs";
 import { buildHookTrigger, extractHookLabel, extractHookScope, renderHookSummaryMarkdown } from "../hooks/match";
 import { staticSkipReason, writeStaticSkipSession } from "../hooks/skip";
 import { annotateSkip } from "../hooks/deliveries";
 import { buildJobThreadId, clearJobSchedule, loadJobs, snapshotJobFrontmatter } from "../jobs";
+import { migrateTriggers } from "../migrateTriggers";
 import { ensureAllRepos, pullRepo } from "../jobsRepo";
 import { extractErrorDetail } from "../messaging";
 import { checkExistingDaemon, cleanupPidFile, writePidFile } from "../pid";
@@ -596,6 +597,12 @@ export async function start(args: string[] = []) {
   const settings = await loadSettings();
   await ensureAllRepos();
   await ensureProjectClaudeMd();
+  // Upgrade any old-form routine frontmatter (top-level schedule:/recurring:
+  // + on: mapping) to the unified on: triggers list before loading. Idempotent.
+  const migrated = await migrateTriggers();
+  if (migrated > 0) {
+    console.log(`[${ts()}] Migrated ${migrated} routine file(s) to the on:-list trigger format`);
+  }
   const jobs = await loadJobs();
   const webEnabled =
     webFlag || webPortFlag !== null || webHostFlag !== null || settings.web.enabled;
@@ -644,7 +651,7 @@ export async function start(args: string[] = []) {
   console.log(`  Web UI: ${webEnabled ? `http://${settings.web.host}:${webPort}` : "disabled"}`);
   if (debugFlag) console.log("  Debug: enabled");
   console.log(`  Jobs loaded: ${jobs.length}`);
-  jobs.forEach((j) => console.log(`    - ${j.name} [${j.schedule}]`));
+  jobs.forEach((j) => console.log(`    - ${j.name} [${j.schedules.join(", ")}]`));
 
   // --- Mutable state ---
   let currentSettings: Settings = settings;
@@ -1239,16 +1246,16 @@ export async function start(args: string[] = []) {
 
       // Detect job changes
       const jobNames = newJobs
-        .map((j) => `${j.name}:${j.schedule}:${j.prompt}`)
+        .map((j) => `${j.name}:${j.schedules.join(",")}:${j.prompt}`)
         .sort()
         .join("|");
       const oldJobNames = currentJobs
-        .map((j) => `${j.name}:${j.schedule}:${j.prompt}`)
+        .map((j) => `${j.name}:${j.schedules.join(",")}:${j.prompt}`)
         .sort()
         .join("|");
       if (jobNames !== oldJobNames) {
         console.log(`[${ts()}] Jobs reloaded: ${newJobs.length} job(s)`);
-        newJobs.forEach((j) => console.log(`    - ${j.name} [${j.schedule}]`));
+        newJobs.forEach((j) => console.log(`    - ${j.name} [${j.schedules.join(", ")}]`));
       }
       currentJobs = newJobs;
 
@@ -1289,9 +1296,10 @@ export async function start(args: string[] = []) {
       jobs: currentJobs.map((job) => {
         const last = jobLastResult.get(job.name);
         const retryState = jobRetryState.get(job.name);
+        const next = earliestCronMatch(job.schedules, now, currentSettings.timezoneOffsetMinutes);
         return {
           name: job.name,
-          nextAt: nextCronMatch(job.schedule, now, currentSettings.timezoneOffsetMinutes).getTime(),
+          ...(next ? { nextAt: next.getTime() } : {}),
           ...(last ? { lastResult: last.result, lastRanAt: last.ranAt } : {}),
           ...(retryState ? { failCount: retryState.failCount, retryAt: retryState.retryAt } : {}),
         };
@@ -1465,8 +1473,8 @@ export async function start(args: string[] = []) {
       : buildJobThreadId(base, reuse, runId);
     // Cron-triggered runs (no hookScope) get a schedule trigger so the
     // Runs view can distinguish hook vs. schedule on jobs with both.
-    if (!opts.hookScope && job.schedule) {
-      void recordSessionTrigger(threadId, { kind: "schedule", cron: job.schedule });
+    if (!opts.hookScope && job.schedules.length > 0) {
+      void recordSessionTrigger(threadId, { kind: "schedule", cron: job.schedules.join(", ") });
     }
     currentActiveJobs.add(job.name);
     emitJobStatus();
@@ -1530,13 +1538,11 @@ export async function start(args: string[] = []) {
           if (job.recurring) return;
           // Only clear one-shot schedule when no retry is pending.
           if (jobRetryState.has(job.name)) return;
-          // Event-driven jobs (those with an `on:` hookConfig) are
-          // not one-shot — they fire every time a matching webhook
-          // arrives. Stripping the `schedule:` key would re-mangle the
-          // frontmatter so the next loadJobs() reload can't parse it
-          // (schedule is required by parseJobFile), and the job
-          // silently disappears from the live set. Skip the clear for
-          // hook-driven jobs.
+          // Event-driven jobs (those with an `on:` hookConfig) are not
+          // one-shot — they fire every time a matching webhook arrives, so
+          // don't clear their schedule triggers. (clearJobSchedule only
+          // removes `- schedule:` entries; the hook triggers would survive,
+          // but skipping entirely avoids a needless frontmatter rewrite.)
           if (job.hookConfig) return;
           try {
             await clearJobSchedule(job.name);
@@ -1556,7 +1562,7 @@ export async function start(args: string[] = []) {
       for (const job of currentJobs) {
         const retryState = jobRetryState.get(job.name);
         const retryDue = !!retryState && retryState.retryAt <= skippedAt;
-        const scheduleDue = cronMatches(job.schedule, now, currentSettings.timezoneOffsetMinutes);
+        const scheduleDue = anyCronMatches(job.schedules, now, currentSettings.timezoneOffsetMinutes);
         if (retryDue || scheduleDue) {
           jobLastResult.set(job.name, { result: "skipped", ranAt: skippedAt });
           touched = true;
@@ -1577,7 +1583,7 @@ export async function start(args: string[] = []) {
           runJob(job);
           continue;
         }
-        if (cronMatches(job.schedule, now, currentSettings.timezoneOffsetMinutes)) {
+        if (anyCronMatches(job.schedules, now, currentSettings.timezoneOffsetMinutes)) {
           runJob(job);
         }
       }

@@ -15,10 +15,10 @@ import { describeWait, nextRunAt } from "../schedule";
  * shrink in real time without having to refresh.
  */
 export function ScheduleReadout({
-  cron,
+  schedules,
   hookConfig,
 }: {
-  cron: string;
+  schedules: string[];
   hookConfig?: HookConfig | null;
 }) {
   const [now, setNow] = useState(() => new Date());
@@ -27,10 +27,9 @@ export function ScheduleReadout({
     return () => clearInterval(id);
   }, []);
 
-  const trimmed = cron.trim();
-  const next = trimmed ? nextRunAt(trimmed, now) : null;
+  const crons = schedules.map((s) => s.trim()).filter(Boolean);
   const hookLines = hookConfig ? describeHooks(hookConfig) : [];
-  const hasCron = !!trimmed;
+  const hasCron = crons.length > 0;
   const hasHooks = hookLines.length > 0;
 
   // No cron and no hooks → keep the old "No schedule set" copy.
@@ -44,21 +43,25 @@ export function ScheduleReadout({
 
   return (
     <div className="rounded-box border border-base-300 bg-base-200 px-3 py-2 text-sm space-y-2">
-      {hasCron && (
-        <div>
-          <div className="flex items-baseline justify-between gap-3">
-            <span className="font-medium truncate">{humanizeCron(trimmed)}</span>
-            <span className="text-xs text-base-content/60 tabular-nums shrink-0">
-              {describeWait(next, now) ?? "—"}
-            </span>
-          </div>
-          {next && (
-            <div className="text-xs text-base-content/60 tabular-nums mt-0.5">
-              next run · {next.toLocaleString()}
+      {crons.map((trimmed, i) => {
+        const next = nextRunAt(trimmed, now);
+        return (
+          // biome-ignore lint/suspicious/noArrayIndexKey: positional cron list, no stable id
+          <div key={`cron-${i}`}>
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="font-medium truncate">{humanizeCron(trimmed)}</span>
+              <span className="text-xs text-base-content/60 tabular-nums shrink-0">
+                {describeWait(next, now) ?? "—"}
+              </span>
             </div>
-          )}
-        </div>
-      )}
+            {next && (
+              <div className="text-xs text-base-content/60 tabular-nums mt-0.5">
+                next run · {next.toLocaleString()}
+              </div>
+            )}
+          </div>
+        );
+      })}
       {hasHooks && (
         <div>
           <div className="font-medium">On GitHub triggers</div>

@@ -51,3 +51,24 @@ export function nextCronMatch(expr: string, after: Date, timezoneOffsetMinutes =
   }
   return d;
 }
+
+/** True if any of the cron expressions matches `date`. A routine can carry
+ *  multiple `schedule:` triggers; it fires when any of them is due. */
+export function anyCronMatches(exprs: string[], date: Date, timezoneOffsetMinutes = 0): boolean {
+  return exprs.some((e) => cronMatches(e, date, timezoneOffsetMinutes));
+}
+
+/** Earliest next fire across multiple cron expressions, or null when the
+ *  list is empty (an event-only routine has no scheduled next-run). */
+export function earliestCronMatch(
+  exprs: string[],
+  after: Date,
+  timezoneOffsetMinutes = 0,
+): Date | null {
+  let best: Date | null = null;
+  for (const e of exprs) {
+    const d = nextCronMatch(e, after, timezoneOffsetMinutes);
+    if (best === null || d.getTime() < best.getTime()) best = d;
+  }
+  return best;
+}

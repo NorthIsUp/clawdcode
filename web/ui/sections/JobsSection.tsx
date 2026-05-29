@@ -403,7 +403,7 @@ function FileView({ slug, file, back }: { slug: string; file: string; back: () =
       {initial.data &&
         (() => {
           const fm = readFrontmatter(draft);
-          return <ScheduleReadout cron={fm.schedule} hookConfig={fm.hookConfig} />;
+          return <ScheduleReadout schedules={fm.schedules} hookConfig={fm.hookConfig} />;
         })()}
 
       {initial.data && (

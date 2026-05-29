@@ -7,7 +7,8 @@ export interface StateData {
   heartbeat?: { nextAt: number };
   jobs: {
     name: string;
-    nextAt: number;
+    /** Next scheduled fire (ms). Absent for event-only routines (no cron). */
+    nextAt?: number;
     /** Outcome of the most recent run. Absent until the job runs at least once. */
     lastResult?: "ok" | "error" | "skipped";
     /** Unix timestamp (ms) of the most recent completion. Absent until first run. */
