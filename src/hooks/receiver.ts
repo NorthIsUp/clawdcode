@@ -117,26 +117,25 @@ export async function handleWebhook(req: Request, deps: WebhookDeps = {}): Promi
           }
         }
       } else if (COMMENT_EVENTS.has(event)) {
-        const commenter = readCommenterLogin(event, payload);
+        // The identity for comment matching + self-skip is the ACTOR — the
+        // `sender` that triggered the delivery, i.e. who the action is on
+        // behalf of. A GitHub App authors its comments as its own bot user
+        // (`comment.user`), but `sender` is the real actor; keying off
+        // `comment.user` misclassifies a human acting through an app (e.g.
+        // Graphite) as a bot and drops their comment under a humans-only
+        // filter.
+        const actor = senderLogin;
         for (const job of jobs) {
           const cfg = job.hookConfig?.comments;
-          // Self-skip also gates comment events. The commenter check is
-          // already filtered downstream; this is the cheap pre-filter so
-          // we never enter the per-rule loop for a self-authored event.
-          const skipBySelf =
-            job.hookConfig?.skipSelf !== false &&
-            !!selfLogin &&
-            ((commenter && commenter.toLowerCase() === selfLogin.toLowerCase()) ||
-              isSelfActor);
-          if (skipBySelf) continue;
+          if (job.hookConfig?.skipSelf !== false && isSelfActor) continue;
           if (cfg === true) {
-            // No filter — fire on every commenter.
+            // No filter — fire on every actor.
             delivery.matched.push(job.name);
             void deps.onHookFire(job.name, event, id, payload);
           } else if (cfg && typeof cfg === "object") {
-            // User-filtered comments. If we can't read the login, skip
-            // the rule rather than risk firing on the wrong commenter.
-            if (commenter && matchPatternList(cfg.user, commenter)) {
+            // User-filtered comments. If we can't read the actor, skip the
+            // rule rather than risk firing on the wrong account.
+            if (actor && matchPatternList(cfg.user, actor)) {
               delivery.matched.push(job.name);
               void deps.onHookFire(job.name, event, id, payload);
             }
@@ -193,30 +192,6 @@ function recordAttempt(req: Request, body: string, status: Delivery["status"]): 
     matched: [],
     payloadSnippet: body.slice(0, 2048),
   });
-}
-
-/**
- * Find the commenter's GitHub login across the three comment-class
- * webhook event shapes. `issue_comment` and `pull_request_review_comment`
- * carry it under `comment.user.login`; `pull_request_review` uses
- * `review.user.login`. Returns null if the path doesn't resolve to a
- * string — caller falls back to "skip the rule rather than misfire".
- */
-function readCommenterLogin(event: string, payload: unknown): string | null {
-  if (typeof payload !== "object" || payload === null) {
-    return null;
-  }
-  const root = payload as Record<string, unknown>;
-  const carrier = event === "pull_request_review" ? root.review : (root.comment ?? root.review);
-  if (typeof carrier !== "object" || carrier === null) {
-    return null;
-  }
-  const user = (carrier as Record<string, unknown>).user;
-  if (typeof user !== "object" || user === null) {
-    return null;
-  }
-  const login = (user as Record<string, unknown>).login;
-  return typeof login === "string" ? login : null;
 }
 
 /** Top-level `sender.login` — the GitHub account whose action produced

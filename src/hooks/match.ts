@@ -623,11 +623,10 @@ export function buildHookTrigger(
     typeof root.pull_request === "object" && root.pull_request !== null
       ? (root.pull_request as Record<string, unknown>)
       : pr;
-  const actor =
-    readPath(root, ["comment", "user", "login"]) ??
-    readPath(root, ["review", "user", "login"]) ??
-    readPath(root, ["sender", "login"]) ??
-    undefined;
+  // The actor is the `sender` — the account that triggered the delivery,
+  // i.e. who the action is on behalf of. (A GitHub App authors comments as
+  // its own bot user under `comment.user`, but `sender` is the real actor.)
+  const actor = readPath(root, ["sender", "login"]) ?? undefined;
   const prUrl = fullPr ? readPath(fullPr, ["html_url"]) : null;
   return {
     event,
