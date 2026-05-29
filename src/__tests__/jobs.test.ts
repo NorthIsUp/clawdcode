@@ -22,7 +22,7 @@ afterAll(async () => {
 
 function jobMd(schedule: string, prompt: string, extra = ""): string {
   const extras = extra ? extra + "\n" : "";
-  return `---\nschedule: ${schedule}\nrecurring: true\n${extras}---\n${prompt}\n`;
+  return `---\nrecurring: true\n${extras}on:\n  - schedule: "${schedule}"\n---\n${prompt}\n`;
 }
 
 /** Run loadJobs() in the sandbox dir via a child bun process (so process.cwd() == TEST_ROOT). */
@@ -63,7 +63,7 @@ describe("loadJobs", () => {
     const job = jobs.find((j) => j.name === "nightly");
     expect(job).toBeDefined();
     expect(job?.agent).toBeUndefined(); // not agent-scoped
-    expect(job?.schedule).toBe("0 3 * * *");
+    expect(job?.schedules).toEqual(["0 3 * * *"]);
     expect(job?.prompt).toBe("Run nightly report");
   });
 
@@ -77,7 +77,7 @@ describe("loadJobs", () => {
     expect(job).toBeDefined();
     expect(job?.agent).toBe("suzy");
     expect(job?.label).toBe("daily-digest");
-    expect(job?.schedule).toBe("0 9 * * *");
+    expect(job?.schedules).toEqual(["0 9 * * *"]);
     expect(job?.prompt).toBe("Summarise today's news");
   });
 
@@ -101,21 +101,40 @@ describe("loadJobs", () => {
     expect(jobs.find((j) => j.name === "suzy/disabled")).toBeUndefined();
   });
 
-  // Regression: an event-only hook routine has no `schedule:` key (only an
-  // `on:` block). clearJobSchedule used to strip the key on a one-shot
-  // completion, and parseJobFile then dropped the whole routine — so the
-  // job vanished from the live set and webhooks stopped matching it.
-  // Event-only routines must load with an empty schedule + a hookConfig.
-  test("event-only routine (on:, no schedule key) loads as a hook job", async () => {
+  // Event-only routine: an `on:` list with hook triggers and no schedule
+  // entry. Loads with empty schedules + a hookConfig.
+  test("event-only routine (on: list, no schedule) loads as a hook job", async () => {
     await writeFile(
       join(LEGACY_JOBS_DIR, "pr-comments.md"),
-      "---\nnotify: error\non:\n  comments: true\n  prs: true\n---\nReview the PR.\n"
+      "---\nnotify: error\non:\n  - comments: true\n  - prs: true\n---\nReview the PR.\n"
     );
     const jobs = await loadJobsInSandbox();
     const job = jobs.find((j) => j.name === "pr-comments");
     expect(job).toBeDefined();
-    expect(job?.schedule).toBe("");
+    expect(job?.schedules).toEqual([]);
     expect(job?.hookConfig).toBeDefined();
+    expect(job?.hookConfig?.comments).toBe(true);
+    expect(job?.hookConfig?.pr.length).toBe(1);
+  });
+
+  test("multiple `- schedule:` entries load into schedules[]", async () => {
+    await writeFile(
+      join(LEGACY_JOBS_DIR, "twice-daily.md"),
+      "---\nrecurring: true\non:\n  - schedule: \"0 9 * * *\"\n  - schedule: \"0 17 * * *\"\n---\nrun\n"
+    );
+    const jobs = await loadJobsInSandbox();
+    const job = jobs.find((j) => j.name === "twice-daily");
+    expect(job?.schedules).toEqual(["0 9 * * *", "0 17 * * *"]);
+  });
+
+  test("skip_self: false (top-level) carries into hookConfig", async () => {
+    await writeFile(
+      join(LEGACY_JOBS_DIR, "self-replay.md"),
+      "---\nskip_self: false\non:\n  - comments: true\n---\nreplay\n"
+    );
+    const jobs = await loadJobsInSandbox();
+    const job = jobs.find((j) => j.name === "self-replay");
+    expect(job?.hookConfig?.skipSelf).toBe(false);
   });
 
   test("frontmatter with neither schedule nor on: is dropped", async () => {

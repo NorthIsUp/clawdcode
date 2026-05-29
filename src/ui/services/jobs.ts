@@ -36,7 +36,7 @@ export async function createQuickJob(input: QuickJobInput): Promise<{ name: stri
   const stamp = new Date().toISOString().replace(/[-:TZ.]/g, "").slice(0, 14);
   const name = `quick-${stamp}-${hour.toString().padStart(2, "0")}${minute.toString().padStart(2, "0")}`;
   const path = join(getJobsDir(), `${name}.md`);
-  const content = `---\nschedule: "${schedule}"\nrecurring: ${recurring ? "true" : "false"}\n---\n${prompt}\n`;
+  const content = `---\nrecurring: ${recurring ? "true" : "false"}\non:\n  - schedule: "${schedule}"\n---\n${prompt}\n`;
 
   await mkdir(getJobsDir(), { recursive: true });
   await writeFile(path, content, "utf-8");
@@ -106,15 +106,10 @@ export async function listJobFiles(dir: string = getJobsDir()): Promise<JobFileE
       const rel = sub ? `${sub}/${e.name}` : e.name;
       if (e.isDirectory()) { await walk(rel); continue; }
       const s = await stat(join(dir, rel));
-      // A routine is a .md whose frontmatter declares either a
-      // `schedule:` (cron-driven) or an `on:` block (event-driven via
-      // webhook). The old check only looked for `schedule:`, so hook-
-      // only routines were mis-classified as plain reference Files
-      // whenever the `schedule:` line was missing — e.g. trimmed by
-      // clearJobSchedule on an older daemon, or never written by an
-      // editor save path that defaults `schedule` away for event-only
-      // routines. A SKILL.md has frontmatter (name/description) but
-      // neither schedule nor on, so it stays a File.
+      // A routine is a .md whose frontmatter carries an `on:` triggers
+      // list (the `- schedule:` items also match the schedule probe). A
+      // SKILL.md has frontmatter (name/description) but no `on:`/schedule,
+      // so it stays a File.
       let isJob = false;
       if (e.name.endsWith(".md")) {
         try {
@@ -149,7 +144,11 @@ export async function createJobFile(relPath: string, dir: string = getJobsDir())
   const full = await resolveSafe(relPath, dir);
   if (await Bun.file(full).exists()) throw new Error("File already exists.");
   await mkdir(join(full, ".."), { recursive: true });
-  await writeFile(full, "---\nschedule: \"0 9 * * *\"\nrecurring: true\nreuse_session: false\n---\n", "utf-8");
+  await writeFile(
+    full,
+    "---\nrecurring: true\nreuse_session: false\non:\n  - schedule: \"0 9 * * *\"\n---\n",
+    "utf-8",
+  );
 }
 
 export async function deleteJobFile(relPath: string, dir: string = getJobsDir()): Promise<void> {

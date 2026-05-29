@@ -92,58 +92,108 @@ export interface HookConfig {
   skipSelf: boolean;
 }
 
+export interface ParsedTriggers {
+  /** Cron expressions from `- schedule:` entries (may be empty). */
+  schedules: string[];
+  /** Event triggers (pr/comments/sentry/datadog), or null when none. */
+  hookConfig: HookConfig | null;
+}
+
 /**
- * Parse the raw `on` value from a job's frontmatter into a normalized
- * HookConfig. Returns null if there's no `on:` block. Throws with a
- * descriptive message if the block is malformed.
+ * Parse the `on:` LIST from a job's frontmatter into cron schedules plus a
+ * normalized HookConfig. Each list item is a single-key dict naming one
+ * trigger: `schedule`, `pr`, `prs`, `comments`, `sentry`, or `datadog`.
+ *
+ * `skipSelf` comes from the top-level `skip_self:` key (it's a modifier, not
+ * a trigger). Returns `hookConfig: null` when there are no event triggers, so
+ * a pure-cron routine isn't given an empty hookConfig (which would make the
+ * one-shot finally-clause wrongly treat it as event-driven).
+ *
+ * Throws with a descriptive message on a malformed list (non-list `on:`,
+ * multi-key items, unknown trigger keys) so typos surface instead of
+ * silently never firing.
  */
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: shape-validation has a branch per supported field.
-export function parseHookConfig(raw: unknown): HookConfig | null {
-  if (raw === null || raw === undefined) {
-    return null;
-  }
-  if (typeof raw !== "object" || Array.isArray(raw)) {
-    throw new Error(`\`on:\` must be a mapping (got ${typeName(raw)})`);
-  }
-  const obj = raw as Record<string, unknown>;
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: one branch per supported trigger key.
+export function parseTriggers(rawOn: unknown, topLevelSkipSelf: unknown): ParsedTriggers {
+  // skip_self defaults true; only an explicit false disables it. Tolerant of
+  // both YAML boolean false and the string "false".
+  const skipSelf = !(topLevelSkipSelf === false || topLevelSkipSelf === "false");
 
-  // Top-level shorthands.
-  const comments = parseComments(obj.comments);
-  // skip_self defaults true; only an explicit false disables it. We
-  // accept both YAML boolean false and string "false" since the existing
-  // frontmatter parser was tolerant of either.
-  const skipSelf = !(obj.skip_self === false || obj.skip_self === "false");
+  if (rawOn === null || rawOn === undefined) {
+    return { schedules: [], hookConfig: null };
+  }
+  if (!Array.isArray(rawOn)) {
+    throw new Error(`\`on:\` must be a list of single-key triggers (got ${typeName(rawOn)})`);
+  }
 
-  // `prs: true` desugars to a single rule that matches any PR not
-  // targeting main (skips release/landing PRs, which are usually noise
-  // for code-review automation). Combinable with sentry/datadog blocks.
+  const schedules: string[] = [];
   const prRules: PrRule[] = [];
-  if (obj.prs === true || obj.prs === "true") {
-    prRules.push(fullyOpenPrRule());
-  } else if (obj.pr !== undefined) {
-    const list = Array.isArray(obj.pr) ? obj.pr : [obj.pr];
-    for (let i = 0; i < list.length; i++) {
-      try {
-        prRules.push(normalizePrRule(list[i]));
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        throw new Error(`on.pr[${i}]: ${msg}`);
+  let comments: boolean | CommentRule = false;
+  let sentry: boolean | SentryRule = false;
+  let datadog: boolean | DatadogRule = false;
+  let sawEventTrigger = false;
+
+  for (let i = 0; i < rawOn.length; i++) {
+    const item = rawOn[i];
+    if (typeof item !== "object" || item === null || Array.isArray(item)) {
+      throw new Error(`on[${i}]: each trigger must be a single-key mapping (got ${typeName(item)})`);
+    }
+    const keys = Object.keys(item as Record<string, unknown>);
+    if (keys.length !== 1) {
+      throw new Error(`on[${i}]: each trigger must have exactly one key, got [${keys.join(", ")}]`);
+    }
+    const key = keys[0] as string;
+    const val = (item as Record<string, unknown>)[key];
+    switch (key) {
+      case "schedule": {
+        if (val !== null && val !== undefined && typeof val !== "string") {
+          throw new Error(`on[${i}].schedule: must be a cron string (got ${typeName(val)})`);
+        }
+        const cron = (val ?? "").toString().trim();
+        if (cron) schedules.push(cron);
+        break;
       }
+      case "prs":
+        sawEventTrigger = true;
+        if (val === true || val === "true") {
+          prRules.push(fullyOpenPrRule());
+        } else {
+          throw new Error(`on[${i}].prs: only \`true\` is supported (use \`pr:\` for filters)`);
+        }
+        break;
+      case "pr":
+        sawEventTrigger = true;
+        try {
+          prRules.push(normalizePrRule(val));
+        } catch (e) {
+          throw new Error(`on[${i}].pr: ${e instanceof Error ? e.message : String(e)}`);
+        }
+        break;
+      case "comments":
+        sawEventTrigger = true;
+        comments = parseComments(val);
+        break;
+      case "sentry":
+        sawEventTrigger = true;
+        sentry = parseSentry(val);
+        break;
+      case "datadog":
+        sawEventTrigger = true;
+        datadog = parseDatadog(val);
+        break;
+      default:
+        throw new Error(`on[${i}]: unknown trigger \`${key}\``);
     }
   }
-  const cfg: HookConfig = { pr: prRules, skipSelf };
-  if (comments !== false) {
-    cfg.comments = comments;
+
+  let hookConfig: HookConfig | null = null;
+  if (sawEventTrigger) {
+    hookConfig = { pr: prRules, skipSelf };
+    if (comments !== false) hookConfig.comments = comments;
+    if (sentry !== false) hookConfig.sentry = sentry;
+    if (datadog !== false) hookConfig.datadog = datadog;
   }
-  const sentry = parseSentry(obj.sentry);
-  if (sentry !== false) {
-    cfg.sentry = sentry;
-  }
-  const datadog = parseDatadog(obj.datadog);
-  if (datadog !== false) {
-    cfg.datadog = datadog;
-  }
-  return cfg;
+  return { schedules, hookConfig };
 }
 
 /** Parse `on.sentry`. `true` → match any; object → filtered rule; unset

@@ -42,7 +42,8 @@ export function TriggersEditor({
 }) {
   const cfg = value.hookConfig;
 
-  const scheduleActive = value.schedule.trim() !== "";
+  const schedules = value.schedules;
+  const scheduleActive = schedules.length > 0;
   const ghHookActive =
     (cfg?.pr.length ?? 0) > 0 ||
     cfg?.comments === true ||
@@ -53,11 +54,19 @@ export function TriggersEditor({
   function addSchedule() {
     // Default to a sensible preset — every 5 minutes — so the editor
     // isn't empty. The user can immediately retune via the slider.
-    onChange({ ...value, schedule: "*/5 * * * *" });
+    onChange({ ...value, schedules: [...schedules, "*/5 * * * *"] });
   }
 
-  function removeSchedule() {
-    onChange({ ...value, schedule: "", recurring: null });
+  function updateScheduleAt(i: number, cron: string) {
+    const next = schedules.slice();
+    next[i] = cron;
+    onChange({ ...value, schedules: next });
+  }
+
+  function removeScheduleAt(i: number) {
+    const next = schedules.filter((_, j) => j !== i);
+    // Drop the now-meaningless recurring flag once the last schedule goes.
+    onChange({ ...value, schedules: next, recurring: next.length > 0 ? value.recurring : null });
   }
 
   /** Apply a mutation to a draft HookConfig, then persist — dropping the
@@ -123,11 +132,11 @@ export function TriggersEditor({
     <section className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
         <h3 className="text-sm font-semibold mr-1">Triggers</h3>
-        {!scheduleActive && (
-          <button type="button" className="btn btn-xs btn-outline" onClick={addSchedule}>
-            <Plus size={12} /> schedule
-          </button>
-        )}
+        {/* Multiple schedules are allowed — the routine fires when any cron
+            is due — so this button stays available. */}
+        <button type="button" className="btn btn-xs btn-outline" onClick={addSchedule}>
+          <Plus size={12} /> schedule
+        </button>
         {!ghHookActive && (
           <button type="button" className="btn btn-xs btn-outline" onClick={addGhHook}>
             <Plus size={12} /> gh hook
@@ -151,14 +160,33 @@ export function TriggersEditor({
         </p>
       )}
 
-      {scheduleActive && (
+      {schedules.map((cron, i) => (
         <TriggerSubsection
+          // biome-ignore lint/suspicious/noArrayIndexKey: schedules are positional with no stable id; index is the identity here
+          key={`schedule-${i}`}
           icon={<CalendarClock size={14} className="opacity-70" />}
-          label="Schedule"
-          onRemove={removeSchedule}
+          label={schedules.length > 1 ? `Schedule ${i + 1}` : "Schedule"}
+          onRemove={() => removeScheduleAt(i)}
         >
-          <ScheduleEditor value={value} onChange={onChange} />
+          <ScheduleEditor cron={cron} onChange={(next) => updateScheduleAt(i, next)} />
         </TriggerSubsection>
+      ))}
+
+      {scheduleActive && (
+        <label className="flex items-center gap-3 cursor-pointer px-1">
+          <input
+            type="checkbox"
+            className="toggle toggle-primary toggle-sm"
+            checked={value.recurring ?? false}
+            onChange={(e) => onChange({ ...value, recurring: e.target.checked })}
+          />
+          <div className="min-w-0">
+            <div className="text-sm font-medium">Recurring</div>
+            <div className="text-xs text-base-content/60">
+              Re-arm after each run instead of firing once. Applies to all schedules.
+            </div>
+          </div>
+        </label>
       )}
 
       {ghHookActive && (

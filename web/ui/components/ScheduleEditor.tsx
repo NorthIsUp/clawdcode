@@ -1,32 +1,24 @@
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
-import { type JobFrontmatter, PRESETS, presetIndexForCron } from "../schedule";
+import { PRESETS, presetIndexForCron } from "../schedule";
 import { FrequencySlider } from "./FrequencySlider";
 
 /**
- * Edit just the schedule (cron) fields on a job's frontmatter. Pure
- * controlled component — the parent owns the JobFrontmatter draft and
- * the save action.
+ * Edit a single cron expression. Pure controlled component — the parent
+ * (TriggersEditor) owns the list of schedules and the recurring flag.
  *
- * Renders:
- *   - Frequency slider (preset cron stops)
- *   - Advanced cron input (collapsible)
- *   - Recurring toggle
- *
- * Enabled, notify, and hook config live in TriggersEditor — this is
- * intentionally narrow so it can be composed as one trigger subsection
- * inside the unified Triggers UI.
+ * Renders a frequency slider (preset cron stops) plus a collapsible advanced
+ * cron input. Recurring / notify / hook config live in TriggersEditor.
  */
 export function ScheduleEditor({
-  value,
+  cron,
   onChange,
 }: {
-  value: JobFrontmatter;
-  onChange: (next: JobFrontmatter) => void;
+  cron: string;
+  onChange: (cron: string) => void;
 }) {
-  const [advanced, setAdvanced] = useState(presetIndexForCron(value.schedule) < 0);
-
-  const presetIndex = presetIndexForCron(value.schedule);
+  const presetIndex = presetIndexForCron(cron);
+  const [advanced, setAdvanced] = useState(presetIndex < 0);
   const safeIndex = presetIndex < 0 ? 0 : presetIndex;
 
   function selectPreset(i: number) {
@@ -34,7 +26,7 @@ export function ScheduleEditor({
     if (!preset) {
       return;
     }
-    onChange({ ...value, schedule: preset.cron });
+    onChange(preset.cron);
   }
 
   return (
@@ -62,28 +54,13 @@ export function ScheduleEditor({
             type="text"
             spellCheck={false}
             className="input input-bordered input-sm font-mono w-full mt-2"
-            value={value.schedule}
-            onChange={(e) => onChange({ ...value, schedule: e.target.value })}
+            value={cron}
+            onChange={(e) => onChange(e.target.value)}
             placeholder="* * * * *"
             aria-label="Cron expression"
           />
         )}
       </div>
-
-      <label className="flex items-center gap-3 cursor-pointer">
-        <input
-          type="checkbox"
-          className="toggle toggle-primary toggle-sm"
-          checked={value.recurring ?? false}
-          onChange={(e) => onChange({ ...value, recurring: e.target.checked })}
-        />
-        <div className="min-w-0">
-          <div className="text-sm font-medium">Recurring</div>
-          <div className="text-xs text-base-content/60">
-            Re-arm after each run instead of firing once.
-          </div>
-        </div>
-      </label>
     </div>
   );
 }

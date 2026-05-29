@@ -37,6 +37,9 @@ export interface RuntimeGit {
 
 export interface JobSummary {
   name: string;
+  /** All cron schedules for this routine (empty for event-only). */
+  schedules: string[];
+  /** First schedule, kept for back-compat with single-cron consumers. */
   schedule: string;
   prompt: string;
   running: boolean;

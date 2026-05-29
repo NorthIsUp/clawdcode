@@ -1,12 +1,16 @@
 /**
  * Schedule helpers — preset table, frequency ↔ cron conversion, simple
- * next-run prediction, and frontmatter line surgery for the job .md files.
+ * next-run prediction, and frontmatter (de)serialization for job .md files.
  *
- * Backend has a hand-rolled line-by-line frontmatter parser (src/jobs.ts),
- * so anything we write back must keep keys flat (`key: value`) and not
- * introduce nested mappings. The PR_HOOKS_SPEC plans to swap to real YAML
- * later; until then we live within the parser's limits.
+ * Triggers live in the `on:` list (a list of single-key dicts: schedule /
+ * pr / comments / sentry / datadog). We round-trip the frontmatter through a
+ * real YAML parser, so reads/writes preserve unrelated top-level keys and the
+ * nested trigger structure stays valid.
  */
+
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import type { DatadogRule, HookConfig, PrRule, SentryRule } from "./hookConfig";
+import { parseTriggers } from "./hookConfig";
 
 export interface Preset {
   /** Minutes between firings. */
@@ -185,7 +189,7 @@ export function describeWait(target: Date | null, from = new Date()): string | n
 }
 
 // ---------------------------------------------------------------------------
-// Frontmatter line surgery
+// Frontmatter (de)serialization
 // ---------------------------------------------------------------------------
 
 /**
@@ -194,341 +198,182 @@ export function describeWait(target: Date | null, from = new Date()): string | n
  */
 const FRONTMATTER_RE = /^---\s*\n([\s\S]*?)\n---\s*\n?([\s\S]*)$/;
 
-import { type HookConfig, parseOnBlock } from "./hookConfig";
-
 export interface JobFrontmatter {
-  schedule: string;
+  /** Cron expressions from the `on:` list's `- schedule:` entries. */
+  schedules: string[];
   recurring: boolean | null;
   notify: "true" | "false" | "error" | null;
   enabled: boolean | null;
   hookConfig: HookConfig | null;
 }
 
+/** Parse the top-level frontmatter mapping (or {} when absent/malformed). */
+function parseFrontmatterObject(content: string): Record<string, unknown> {
+  const m = content.match(FRONTMATTER_RE);
+  if (!m) return {};
+  try {
+    const parsed = parseYaml(m[1] ?? "");
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    /* malformed — treat as empty */
+  }
+  return {};
+}
+
 /**
- * Read the schedule-relevant fields from a job .md file. Unknown values
- * become null so the editor can present a sensible default without
- * silently rewriting unrelated keys.
+ * Read the editor-relevant fields from a job .md file. Triggers come from the
+ * `on:` list (schedules + hookConfig); recurring/notify/enabled are top-level
+ * scalars. Missing values become null so the editor can show a default.
  */
 export function readFrontmatter(content: string): JobFrontmatter {
-  const m = content.match(FRONTMATTER_RE);
-  const lines = m ? (m[1] ?? "").split("\n") : [];
-  const get = (key: string): string | null => {
-    const found = lines.find((l) => l.trim().startsWith(`${key}:`));
-    if (!found) {
-      return null;
-    }
-    return found
-      .replace(new RegExp(`^\\s*${key}:\\s*`), "")
-      .trim()
-      .replace(/^["']|["']$/g, "");
-  };
-  const recurring = get("recurring");
-  const notify = get("notify");
-  const enabled = get("enabled");
+  const fm = parseFrontmatterObject(content);
+  const { schedules, hookConfig } = parseTriggers(content);
+
+  const recurring = fm.recurring;
+  const notify = fm.notify;
+  const enabled = fm.enabled;
   return {
-    schedule: get("schedule") ?? "",
-    recurring: recurring === null ? null : recurring.toLowerCase() === "true",
+    schedules,
+    recurring:
+      recurring === undefined ? null : recurring === true || recurring === "true",
     notify:
-      notify === null
-        ? null
-        : notify === "true" || notify === "false" || notify === "error"
-          ? notify
-          : null,
-    enabled: enabled === null ? null : enabled.toLowerCase() === "true",
-    hookConfig: parseOnBlock(content),
+      notify === true || notify === "true"
+        ? "true"
+        : notify === false || notify === "false"
+          ? "false"
+          : notify === "error"
+            ? "error"
+            : null,
+    enabled: enabled === undefined ? null : enabled === true || enabled === "true",
+    hookConfig,
   };
 }
 
 /**
- * Patch only the keys we know about (schedule / recurring / notify /
- * enabled) inside the existing frontmatter block, preserving every other
- * line untouched. Missing keys are appended. If the file has no
- * frontmatter, a fresh block is prepended.
+ * Apply a patch and re-serialize the frontmatter via a YAML round-trip.
+ * Unrelated top-level keys (model, effort, reuse_session, …) are preserved.
+ * Triggers are rebuilt into the `on:` list from `schedules` + `hookConfig`;
+ * `skip_self` is emitted as a top-level key only when explicitly disabled.
  */
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: line surgery has multiple branches per supported key; rewriting via full YAML is in the PR_HOOKS_SPEC backlog.
 export function writeFrontmatter(content: string, patch: Partial<JobFrontmatter>): string {
   const m = content.match(FRONTMATTER_RE);
   const body = m ? (m[2] ?? "") : content;
-  const existingBlock = m ? (m[1] ?? "") : "";
+  const fm = parseFrontmatterObject(content);
 
-  const updates: Record<string, string> = {};
-  if (patch.schedule !== undefined) {
-    updates.schedule = quote(patch.schedule);
+  if (patch.recurring !== undefined) {
+    if (patch.recurring === null) delete fm.recurring;
+    else fm.recurring = patch.recurring;
   }
-  if (patch.recurring !== undefined && patch.recurring !== null) {
-    updates.recurring = String(patch.recurring);
+  if (patch.notify !== undefined) {
+    if (patch.notify === null) delete fm.notify;
+    else fm.notify = patch.notify === "error" ? "error" : patch.notify === "true";
   }
-  if (patch.notify !== undefined && patch.notify !== null) {
-    updates.notify = patch.notify;
-  }
-  if (patch.enabled !== undefined && patch.enabled !== null) {
-    updates.enabled = String(patch.enabled);
-  }
-
-  // Strip out the existing on: block so the scalar-line surgery below
-  // doesn't have to reason about nested keys.
-  const blockWithoutOn = stripOnBlock(existingBlock);
-  const lines = blockWithoutOn.split("\n");
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const line of lines) {
-    const keyMatch = line.match(/^\s*([a-zA-Z_]+)\s*:/);
-    const key = keyMatch?.[1];
-    if (key && key in updates) {
-      out.push(`${key}: ${updates[key]}`);
-      seen.add(key);
-    } else {
-      out.push(line);
-    }
-  }
-  for (const key of Object.keys(updates)) {
-    if (!seen.has(key)) {
-      out.push(`${key}: ${updates[key]}`);
-    }
+  if (patch.enabled !== undefined) {
+    if (patch.enabled === null) delete fm.enabled;
+    else fm.enabled = patch.enabled;
   }
 
-  // Drop a trailing empty line that we may have introduced.
-  while (out.length > 0 && out[out.length - 1] === "") {
-    out.pop();
+  if (patch.schedules !== undefined || patch.hookConfig !== undefined) {
+    const current = readFrontmatter(content);
+    const schedules = patch.schedules ?? current.schedules;
+    const hookConfig =
+      patch.hookConfig !== undefined ? patch.hookConfig : current.hookConfig;
+    const on = buildOnList(schedules, hookConfig);
+    if (on.length > 0) fm.on = on;
+    else delete fm.on;
+    if (hookConfig && hookConfig.skipSelf === false) fm.skip_self = false;
+    else delete fm.skip_self;
   }
 
-  // Append the `on:` block last, if the caller supplied one. `undefined`
-  // means "leave existing on: block alone" — but we already stripped it,
-  // so re-parse from the source to restore it untouched.
-  let onLines: string[] = [];
-  if (patch.hookConfig === undefined) {
-    // Preserve any prior on: block verbatim.
-    const prior = extractOnBlock(existingBlock);
-    if (prior) {
-      onLines = prior.split("\n");
-    }
-  } else if (patch.hookConfig !== null && hasAnyTrigger(patch.hookConfig)) {
-    onLines = renderOnBlock(patch.hookConfig);
-  }
-
-  const finalLines = [...out, ...onLines];
-  return `---\n${finalLines.join("\n")}\n---\n${body}`;
+  const yaml = stringifyYaml(fm).trim();
+  return `---\n${yaml}\n---\n${body}`;
 }
 
-/**
- * Find the `on:` section in a frontmatter block and return its text
- * (including the `on:` line, excluding the trailing newline). Returns
- * null when there isn't one.
- */
-function extractOnBlock(block: string): string | null {
-  const lines = block.split("\n");
-  const start = lines.findIndex((l) => /^on\s*:/.test(l));
-  if (start < 0) {
-    return null;
-  }
-  let end = lines.length;
-  for (let i = start + 1; i < lines.length; i++) {
-    const line = lines[i] ?? "";
-    if (line === "" || /^\s/.test(line)) {
-      continue;
-    }
-    end = i;
-    break;
-  }
-  return lines.slice(start, end).join("\n");
-}
-
-function stripOnBlock(block: string): string {
-  const lines = block.split("\n");
-  const start = lines.findIndex((l) => /^on\s*:/.test(l));
-  if (start < 0) {
-    return block;
-  }
-  let end = lines.length;
-  for (let i = start + 1; i < lines.length; i++) {
-    const line = lines[i] ?? "";
-    if (line === "" || /^\s/.test(line)) {
-      continue;
-    }
-    end = i;
-    break;
-  }
-  const kept = [...lines.slice(0, start), ...lines.slice(end)];
-  // Drop any trailing blank lines we may have created.
-  while (kept.length > 0 && kept[kept.length - 1] === "") {
-    kept.pop();
-  }
-  return kept.join("\n");
-}
-
-/**
- * Render a HookConfig as YAML lines. Structure is fixed (list of
- * mappings with scalar/list values) so we hand-roll it to keep the
- * output deterministic and readable.
- */
-// Default values used by parseOnBlock — we keep emitted YAML terse by
-// omitting any field that matches its default. Stay in sync with that
-// parser; otherwise round-trips silently lose user intent.
 const DEFAULT_ACTIONS = ["opened", "synchronize", "reopened"];
 const DEFAULT_BRANCH = ["*"];
 const SHORTHAND_BRANCH = ["!main"];
 
-function isDefaultList(value: string[], def: string[]): boolean {
-  if (value.length !== def.length) {
-    return false;
-  }
-  return value.every((v, i) => v === def[i]);
+function sameList(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((v, i) => v === b[i]);
 }
 
 /**
- * Render a HookConfig as YAML lines. Structure is fixed (list of
- * mappings with scalar/list values) so we hand-roll it to keep the
- * output deterministic and readable. Fields at their default value are
- * skipped so saved frontmatter stays terse — no `branch: ["*"]` clutter
- * for the common case.
- *
- * If every rule is "wide open" (user: ["*"], everything else default)
- * we collapse to `on: prs: true` — a single-line shorthand that the
- * parsers accept and round-trip cleanly.
+ * Build the `on:` list (array of single-key dicts) from schedules + a
+ * HookConfig. Mirrors the parser's shorthands so round-trips stay terse:
+ * a fully-open PR rule collapses to `- prs: true`, `comments`/`sentry`/
+ * `datadog` collapse to `true` when unfiltered, and default rule fields are
+ * omitted.
  */
-/** True when the config has at least one active trigger of any kind —
- *  PR rules, comments, sentry, or datadog. Drives whether the `on:`
- *  block is rendered at all. */
-function hasAnyTrigger(cfg: import("./hookConfig").HookConfig): boolean {
-  if (cfg.pr.length > 0) return true;
-  if (cfg.comments === true || (typeof cfg.comments === "object" && cfg.comments !== null)) {
-    return true;
+function buildOnList(schedules: string[], cfg: HookConfig | null): unknown[] {
+  const on: unknown[] = [];
+  for (const s of schedules) {
+    if (s.trim()) on.push({ schedule: s.trim() });
   }
-  if (cfg.sentry === true || (typeof cfg.sentry === "object" && cfg.sentry !== null)) {
-    return true;
-  }
-  if (cfg.datadog === true || (typeof cfg.datadog === "object" && cfg.datadog !== null)) {
-    return true;
-  }
-  return false;
-}
+  if (!cfg) return on;
 
-function renderOnBlock(cfg: import("./hookConfig").HookConfig): string[] {
-  const commentsActive =
-    cfg.comments === true || (typeof cfg.comments === "object" && cfg.comments !== null);
-  const sentryActive =
-    cfg.sentry === true || (typeof cfg.sentry === "object" && cfg.sentry !== null);
-  const datadogActive =
-    cfg.datadog === true || (typeof cfg.datadog === "object" && cfg.datadog !== null);
-
-  if (cfg.pr.length === 0 && !commentsActive && !sentryActive && !datadogActive) {
-    return ["on:"];
-  }
-
-  const head: string[] = ["on:"];
-  // Only emit skip_self when the user explicitly disabled it — default
-  // true should stay absent so the frontmatter stays tight.
-  if (cfg.skipSelf === false) {
-    head.push("  skip_self: false");
-  }
-  if (cfg.comments === true) {
-    head.push("  comments: true");
-  } else if (typeof cfg.comments === "object" && cfg.comments !== null) {
-    // Expanded form: comments:\n    user: [...]
-    head.push("  comments:");
-    head.push(`    user: ${renderList(cfg.comments.user)}`);
-  }
-  renderSentry(cfg.sentry, head);
-  renderDatadog(cfg.datadog, head);
-
-  // Shorthand: a single permissive rule (any repo, anyone, defaults but
-  // `branch: ["!main"]`) collapses to `on:\n  prs: true`. Round-trips
-  // through the parsers cleanly.
-  if (cfg.pr.length === 0) {
-    return head;
-  }
   if (isFullyOpen(cfg.pr)) {
-    return [...head, "  prs: true"];
+    on.push({ prs: true });
+  } else {
+    for (const r of cfg.pr) on.push({ pr: prRuleObject(r) });
   }
 
-  const out: string[] = [...head, "  pr:"];
-  for (const rule of cfg.pr) {
-    let first = true;
-    const emit = (key: string, rendered: string) => {
-      const prefix = first ? "    - " : "      ";
-      out.push(`${prefix}${key}: ${rendered}`);
-      first = false;
-    };
-    emit("repo", renderStringOrList(rule.repo));
-    emit("user", renderList(rule.user));
-    if (!isDefaultList(rule.action, DEFAULT_ACTIONS)) {
-      emit("action", renderList(rule.action));
-    }
-    if (!isDefaultList(rule.branch, DEFAULT_BRANCH)) {
-      emit("branch", renderList(rule.branch));
-    }
-    if (rule.labels.length > 0) {
-      emit("labels", renderList(rule.labels));
-    }
-    if (rule.draft !== false) {
-      emit("draft", renderDraft(rule.draft));
-    }
+  if (cfg.comments === true) {
+    on.push({ comments: true });
+  } else if (cfg.comments && typeof cfg.comments === "object") {
+    on.push({ comments: { user: cfg.comments.user } });
   }
-  return out;
+
+  const sentry = sentryValue(cfg.sentry);
+  if (sentry !== null) on.push({ sentry });
+  const datadog = datadogValue(cfg.datadog);
+  if (datadog !== null) on.push({ datadog });
+
+  return on;
 }
 
-/** Emit the `sentry:` block. `true` → one line; an object → only the
- *  non-empty filter lists (project defaults to `["*"]` so it's omitted
- *  when wide-open). */
-function renderSentry(
-  sentry: import("./hookConfig").HookConfig["sentry"],
-  out: string[],
-): void {
-  if (sentry === true) {
-    out.push("  sentry: true");
-    return;
-  }
-  if (typeof sentry !== "object" || sentry === null) return;
-  const lines: string[] = [];
-  const projectWide = sentry.project.length === 1 && sentry.project[0] === "*";
-  if (sentry.project.length > 0 && !projectWide) {
-    lines.push(`    project: ${renderList(sentry.project)}`);
-  }
-  if (sentry.level.length > 0) lines.push(`    level: ${renderList(sentry.level)}`);
-  if (sentry.action.length > 0) lines.push(`    action: ${renderList(sentry.action)}`);
-  // No filters → collapse to the shorthand.
-  if (lines.length === 0) {
-    out.push("  sentry: true");
-    return;
-  }
-  out.push("  sentry:");
-  out.push(...lines);
+function prRuleObject(r: PrRule): Record<string, unknown> {
+  const o: Record<string, unknown> = { repo: r.repo, user: r.user };
+  if (!sameList(r.action, DEFAULT_ACTIONS)) o.action = r.action;
+  if (!sameList(r.branch, DEFAULT_BRANCH)) o.branch = r.branch;
+  if (r.labels.length > 0) o.labels = r.labels;
+  if (r.draft !== false) o.draft = r.draft;
+  return o;
 }
 
-/** Emit the `datadog:` block, same collapse rules as sentry. */
-function renderDatadog(
-  datadog: import("./hookConfig").HookConfig["datadog"],
-  out: string[],
-): void {
-  if (datadog === true) {
-    out.push("  datadog: true");
-    return;
-  }
-  if (typeof datadog !== "object" || datadog === null) return;
-  const lines: string[] = [];
-  const monitorWide = datadog.monitor.length === 1 && datadog.monitor[0] === "*";
-  if (datadog.monitor.length > 0 && !monitorWide) {
-    lines.push(`    monitor: ${renderList(datadog.monitor)}`);
-  }
-  if (datadog.priority.length > 0) lines.push(`    priority: ${renderList(datadog.priority)}`);
-  if (datadog.type.length > 0) lines.push(`    type: ${renderList(datadog.type)}`);
-  if (datadog.tags.length > 0) lines.push(`    tags: ${renderList(datadog.tags)}`);
-  if (lines.length === 0) {
-    out.push("  datadog: true");
-    return;
-  }
-  out.push("  datadog:");
-  out.push(...lines);
+/** `true` (any), a filtered mapping, or null (off). */
+function sentryValue(s: HookConfig["sentry"]): unknown | null {
+  if (s === true) return true;
+  if (!s || typeof s !== "object") return null;
+  const rule: SentryRule = s;
+  const o: Record<string, unknown> = {};
+  const projectWide = rule.project.length === 1 && rule.project[0] === "*";
+  if (rule.project.length > 0 && !projectWide) o.project = rule.project;
+  if (rule.level.length > 0) o.level = rule.level;
+  if (rule.action.length > 0) o.action = rule.action;
+  return Object.keys(o).length > 0 ? o : true;
 }
 
-function isFullyOpen(rules: import("./hookConfig").PrRule[]): boolean {
-  if (rules.length !== 1) {
-    return false;
-  }
+function datadogValue(d: HookConfig["datadog"]): unknown | null {
+  if (d === true) return true;
+  if (!d || typeof d !== "object") return null;
+  const rule: DatadogRule = d;
+  const o: Record<string, unknown> = {};
+  const monitorWide = rule.monitor.length === 1 && rule.monitor[0] === "*";
+  if (rule.monitor.length > 0 && !monitorWide) o.monitor = rule.monitor;
+  if (rule.priority.length > 0) o.priority = rule.priority;
+  if (rule.type.length > 0) o.type = rule.type;
+  if (rule.tags.length > 0) o.tags = rule.tags;
+  return Object.keys(o).length > 0 ? o : true;
+}
+
+/** A single permissive rule (any repo, anyone, default actions, `!main`,
+ *  no labels, not draft) collapses to the `- prs: true` shorthand. */
+function isFullyOpen(rules: PrRule[]): boolean {
+  if (rules.length !== 1) return false;
   const r = rules[0];
-  if (!r) {
-    return false;
-  }
+  if (!r) return false;
   const repoWildcard =
     (typeof r.repo === "string" && (r.repo === "*" || r.repo === "*/*")) ||
     (Array.isArray(r.repo) && r.repo.length === 1 && (r.repo[0] === "*" || r.repo[0] === "*/*"));
@@ -536,63 +381,9 @@ function isFullyOpen(rules: import("./hookConfig").PrRule[]): boolean {
     repoWildcard &&
     r.user.length === 1 &&
     r.user[0] === "*" &&
-    isDefaultList(r.action, DEFAULT_ACTIONS) &&
-    isDefaultList(r.branch, SHORTHAND_BRANCH) &&
+    sameList(r.action, DEFAULT_ACTIONS) &&
+    sameList(r.branch, SHORTHAND_BRANCH) &&
     r.labels.length === 0 &&
     r.draft === false
   );
-}
-
-function renderStringOrList(v: string | string[]): string {
-  if (Array.isArray(v)) {
-    return renderList(v);
-  }
-  return yamlScalar(v);
-}
-
-function renderList(items: string[]): string {
-  if (items.length === 0) {
-    return "[]";
-  }
-  return `[${items.map(yamlScalar).join(", ")}]`;
-}
-
-function renderDraft(v: boolean | "any"): string {
-  if (v === "any") {
-    return '"any"';
-  }
-  return String(v);
-}
-
-/**
- * Quote a YAML scalar when it contains characters that would confuse a
- * naive line parser, or is empty. We use double quotes and backslash-
- * escape any embedded double quotes / backslashes.
- */
-function yamlScalar(value: string): string {
-  if (value === "") {
-    return '""';
-  }
-  // Purely numeric or boolean-looking scalars must be quoted, or the YAML
-  // parser reads them back as a number / boolean and our string-only
-  // list filters drop them (e.g. a Datadog monitor id like `789`).
-  if (/^-?\d+(\.\d+)?$/.test(value) || /^(true|false|yes|no|null)$/i.test(value)) {
-    return `"${value}"`;
-  }
-  if (/^[A-Za-z0-9_\-./]+$/.test(value)) {
-    return value;
-  }
-  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
-}
-
-/** Quote a cron string only if it contains characters that would confuse
- *  the line parser (currently `*`, `:`, `#`). */
-function quote(value: string): string {
-  if (value === "") {
-    return '""';
-  }
-  if (/[*:#]/.test(value)) {
-    return `"${value.replace(/"/g, '\\"')}"`;
-  }
-  return value;
 }

@@ -32,21 +32,23 @@ interface RoutineEditorProps {
  * extension and the marginal UX gain isn't worth the bundle hit.
  */
 const FRONTMATTER_KEYS: Array<{ label: string; value: string; info: string }> = [
-  { label: "schedule", value: 'schedule: "0 9 * * *"', info: "Cron expression for when this routine fires" },
+  { label: "on", value: 'on:\n  - schedule: "0 9 * * *"', info: "Triggers list (schedule / pr / comments / sentry / datadog)" },
   { label: "recurring", value: "recurring: true", info: "true to keep firing on schedule; false for one-shot" },
   { label: "enabled", value: "enabled: true", info: "Set false to pause without deleting" },
   { label: "notify", value: "notify: error", info: "Notify channel: true | false | error" },
+  { label: "skip_self", value: "skip_self: false", info: "Set false to allow clawdcode's own events to trigger (default skips self)" },
   { label: "reuse_session", value: "reuse_session: false", info: "Resume the same Claude session each fire" },
   { label: "model", value: "model: sonnet", info: "Override the default model for this routine" },
   { label: "effort", value: "effort: medium", info: "Reasoning effort: low | medium | high" },
-  { label: "on", value: "on:\n  ", info: "Webhook-driven triggers (PRs, comments)" },
 ];
 
 const ON_KEYS: Array<{ label: string; value: string; info: string }> = [
-  { label: "pr", value: "pr:\n    - repo: org/repo\n      user: [\"*\", \"!*[bot]\"]", info: "Per-rule PR matcher (repo / user / action / branch / labels / draft)" },
+  { label: "schedule", value: 'schedule: "0 9 * * *"', info: "Cron trigger (repeatable — add multiple `- schedule:` entries)" },
+  { label: "pr", value: "pr:\n    repo: org/repo\n    user: [\"*\", \"!*[bot]\"]", info: "Per-rule PR matcher (repo / user / action / branch / labels / draft)" },
   { label: "prs", value: "prs: true", info: "Shorthand: any PR not targeting main" },
   { label: "comments", value: "comments: true", info: "Fire on review/comment events" },
-  { label: "skip_self", value: "skip_self: true", info: "Drop events from clawdcode's own GitHub user (default true)" },
+  { label: "sentry", value: "sentry: true", info: "Fire on Sentry webhooks (or a filtered mapping)" },
+  { label: "datadog", value: "datadog: true", info: "Fire on Datadog webhooks (or a filtered mapping)" },
 ];
 
 const PR_RULE_KEYS: Array<{ label: string; value: string; info: string }> = [

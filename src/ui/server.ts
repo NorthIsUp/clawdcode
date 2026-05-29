@@ -514,7 +514,8 @@ export function startWebUi(opts: StartWebUiOptions): WebServerHandle {
       if (url.pathname === "/api/jobs") {
         const jobs = opts.getSnapshot().jobs.map((j) => ({
           name: j.name,
-          schedule: j.schedule,
+          schedules: j.schedules,
+          schedule: j.schedules[0] ?? "",
           promptPreview: j.prompt.slice(0, 160),
         }));
         return json({ jobs });
@@ -868,12 +869,15 @@ export function startWebUi(opts: StartWebUiOptions): WebServerHandle {
           // Count how many next-fire times fall in each hour of day 0-23
           const density: number[] = Array(24).fill(0);
           for (const job of jobs) {
-            if (!job.schedule) continue;
-            try {
-              const next = nextCronMatch(job.schedule, now);
-              density[next.getHours()]!++;
-            } catch {
-              // skip unparseable
+            // Each schedule contributes a tick — a multi-schedule routine
+            // shows up in every hour it fires.
+            for (const cron of job.schedules) {
+              try {
+                const next = nextCronMatch(cron, now);
+                density[next.getHours()]!++;
+              } catch {
+                // skip unparseable
+              }
             }
           }
           const data = density.map((count, hour) => ({ hour, count }));
@@ -958,7 +962,12 @@ export function startWebUi(opts: StartWebUiOptions): WebServerHandle {
           : null;
         return json({
           server: await buildState(snapshot, { tailnet: tailnetIdentity }),
-          jobs: jobs.map((j) => ({ name: j.name, schedule: j.schedule, recurring: j.recurring })),
+          jobs: jobs.map((j) => ({
+            name: j.name,
+            schedules: j.schedules,
+            schedule: j.schedules[0] ?? "",
+            recurring: j.recurring,
+          })),
           repos, // new multi-repo field
           repo: repos[0] ?? null, // back-compat alias (first repo)
           logs: await readLogs(20),

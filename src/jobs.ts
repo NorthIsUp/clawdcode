@@ -1,13 +1,15 @@
 import { readdir } from "fs/promises";
 import { join } from "path";
-import { parse as parseYaml } from "yaml";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { getAgentsDir, getJobsDir } from "./config";
-import { type HookConfig, parseHookConfig } from "./hooks/schema";
+import { type HookConfig, parseTriggers } from "./hooks/schema";
 
 export interface Job {
   /** Scheduler key. For standalone jobs this is the file stem. For agent-scoped jobs this is "agent/label". */
   name: string;
-  schedule: string;
+  /** Cron expressions from the routine's `- schedule:` triggers. The job
+   *  fires when ANY of them is due. Empty for event-only routines. */
+  schedules: string[];
   prompt: string;
   recurring: boolean;
   notify: true | false | "error";
@@ -92,18 +94,6 @@ function parseJobFile(name: string, content: string): Job | null {
     return null;
   }
 
-  // A routine needs at least one trigger: a `schedule:` (cron) or an
-  // `on:` block (webhook-driven). Requiring the `schedule:` *key* to be
-  // present was fragile — clearJobSchedule strips it on one-shot
-  // completion, and any hand-edit/save path that omits it would silently
-  // drop an event-only hook routine (it leaves the live set and stops
-  // matching webhooks). Treat a missing schedule as empty when an `on:`
-  // block is present; only bail when there's no trigger at all.
-  if (!("schedule" in fm) && !("on" in fm)) {
-    return null;
-  }
-  const schedule = asString(fm.schedule).trim();
-
   // recurring (with `daily` as a legacy alias).
   const recurring = asBoolean(fm.recurring ?? fm.daily, false);
 
@@ -133,20 +123,30 @@ function parseJobFile(name: string, content: string): Job | null {
   const retryDelay = asPositiveInt(fm.retry_delay);
   const reuseSession = asBoolean(fm.reuse_session, false);
 
+  // Triggers live in the `on:` list: `- schedule:` entries become cron
+  // schedules, the rest (pr/comments/sentry/datadog) become the hookConfig.
+  // skip_self is a top-level modifier, not a trigger.
+  let schedules: string[] = [];
   let hookConfig: HookConfig | undefined;
   try {
-    const parsed = parseHookConfig(fm.on);
-    if (parsed) hookConfig = parsed;
+    const parsed = parseTriggers(fm.on, fm.skip_self);
+    schedules = parsed.schedules;
+    if (parsed.hookConfig) hookConfig = parsed.hookConfig;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    console.error(`hook config error in ${name}: ${msg}`);
-    // Don't return null — a malformed `on:` block shouldn't take down
-    // the rest of the job. Hook matcher just won't see this job.
+    console.error(`trigger config error in ${name}: ${msg}`);
+    // Don't return null on a malformed `on:` block — keep loading the rest
+    // of the job; it just won't fire until the triggers are fixed.
+  }
+
+  // A routine needs at least one trigger (a schedule or an event hook).
+  if (schedules.length === 0 && !hookConfig) {
+    return null;
   }
 
   return {
     name,
-    schedule,
+    schedules,
     prompt,
     recurring,
     notify,
@@ -264,19 +264,34 @@ export async function snapshotJobFrontmatter(jobName: string): Promise<() => Pro
   };
 }
 
+/**
+ * One-shot completion: remove every `- schedule:` entry from the routine's
+ * `on:` list so a non-recurring scheduled job won't fire again, while
+ * preserving any event-hook triggers and all other frontmatter. Uses a YAML
+ * round-trip rather than line surgery because the `on:` list has nested
+ * items (`- pr: { ... }`) that line-prefix filtering can't safely span.
+ */
 export async function clearJobSchedule(jobName: string): Promise<void> {
   const path = resolveJobPath(jobName);
   const content = await Bun.file(path).text();
   const match = content.match(FRONTMATTER_RE);
   if (!match) return;
 
-  const filteredFrontmatter = (match[1] ?? "")
-    .split("\n")
-    .filter((line) => !line.trim().startsWith("schedule:"))
-    .join("\n")
-    .trim();
+  const fm = parseYaml(match[1] ?? "") as Record<string, unknown> | null;
+  if (!fm || typeof fm !== "object") return;
+
+  if (Array.isArray(fm.on)) {
+    const remaining = fm.on.filter(
+      (item) => !(item && typeof item === "object" && !Array.isArray(item) && "schedule" in item),
+    );
+    if (remaining.length > 0) {
+      fm.on = remaining;
+    } else {
+      delete fm.on;
+    }
+  }
 
   const body = (match[2] ?? "").trim();
-  const next = `---\n${filteredFrontmatter}\n---\n${body}\n`;
+  const next = `---\n${stringifyYaml(fm).trim()}\n---\n${body}\n`;
   await Bun.write(path, next);
 }

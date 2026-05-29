@@ -7,7 +7,7 @@ import {
   readSentryPayload,
   renderHookSummaryMarkdown,
 } from "../hooks/match";
-import { parseHookConfig } from "../hooks/schema";
+import { parseTriggers } from "../hooks/schema";
 
 const SENTRY_ISSUE = {
   action: "created",
@@ -41,18 +41,24 @@ const DATADOG_ALERT = {
 
 describe("schema parsing", () => {
   test("sentry: true → match-any", () => {
-    expect(parseHookConfig({ sentry: true })?.sentry).toBe(true);
+    expect(parseTriggers([{ sentry: true }], undefined).hookConfig?.sentry).toBe(true);
   });
   test("sentry object normalizes lists", () => {
-    const cfg = parseHookConfig({ sentry: { project: "clara-*", level: ["error", "fatal"] } });
+    const cfg = parseTriggers(
+      [{ sentry: { project: "clara-*", level: ["error", "fatal"] } }],
+      undefined,
+    ).hookConfig;
     expect(cfg?.sentry).toEqual({ project: ["clara-*"], level: ["error", "fatal"], action: [] });
   });
   test("datadog object normalizes lists", () => {
-    const cfg = parseHookConfig({ datadog: { monitor: "789", priority: "P1" } });
+    const cfg = parseTriggers(
+      [{ datadog: { monitor: "789", priority: "P1" } }],
+      undefined,
+    ).hookConfig;
     expect(cfg?.datadog).toEqual({ monitor: ["789"], priority: ["P1"], type: [], tags: [] });
   });
-  test("prs + sentry combine", () => {
-    const cfg = parseHookConfig({ prs: true, sentry: true });
+  test("prs + sentry combine across list entries", () => {
+    const cfg = parseTriggers([{ prs: true }, { sentry: true }], undefined).hookConfig;
     expect(cfg?.pr.length).toBe(1);
     expect(cfg?.sentry).toBe(true);
   });
