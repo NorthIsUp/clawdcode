@@ -10,14 +10,20 @@ import {
   type Settings,
 } from "../config";
 import { anyCronMatches, earliestCronMatch } from "../cron";
-import type { Job } from "../jobs";
 import { annotateSkip } from "../hooks/deliveries";
-import { buildHookTrigger, extractHookLabel, extractHookScope, renderHookSummaryMarkdown } from "../hooks/match";
+import {
+  buildHookTrigger,
+  CLAW_HOLD_SKIP_REASON,
+  extractHookLabel,
+  extractHookScope,
+  renderHookSummaryMarkdown,
+} from "../hooks/match";
 import { writeStaticSkipSession } from "../hooks/skip";
+import type { Job } from "../jobs";
 import { buildJobThreadId, clearJobSchedule, loadJobs, snapshotJobFrontmatter } from "../jobs";
-import { migrateTriggers } from "../migrateTriggers";
 import { ensureAllRepos, pullRepo } from "../jobsRepo";
 import { extractErrorDetail } from "../messaging";
+import { migrateTriggers } from "../migrateTriggers";
 import { checkExistingDaemon, cleanupPidFile, writePidFile } from "../pid";
 import { PluginManager, setPluginManager } from "../plugins";
 import {
@@ -250,10 +256,7 @@ async function titleHookSession(threadId: string, label: string): Promise<void> 
         return;
       }
     } catch (err) {
-      console.warn(
-        `[clawdcode] titleHookSession ${threadId} attempt ${i + 1} failed:`,
-        err,
-      );
+      console.warn(`[clawdcode] titleHookSession ${threadId} attempt ${i + 1} failed:`, err);
     }
   }
   console.log(
@@ -942,8 +945,7 @@ export async function start(args: string[] = []) {
               // unscoped hook fire into one shared Claude session
               // (which is how comments from many different PRs ended up
               // in one chat history).
-              const hookScope =
-                extractHookScope(event, payload) ?? `delivery-${deliveryId}`;
+              const hookScope = extractHookScope(event, payload) ?? `delivery-${deliveryId}`;
 
               // Whether a delivery fires is decided entirely by the matcher
               // (receiver.ts + matchPrRule) and the receiver's self-skip —
@@ -1031,12 +1033,21 @@ export async function start(args: string[] = []) {
               const threadId = `${base}:hook:${hookScope}`;
               const trig = buildHookTrigger(event, payload);
               const prNum = trig.pr?.number;
-              const message = prNum ? `[skip] PR #${prNum}: ${reason}` : `[skip] ${reason}`;
+              // A `claw:hold` skip is marked `[skip:hold]` so it's visibly
+              // distinct from config/self skips in the chat + runs surfaces.
+              const marker = reason === CLAW_HOLD_SKIP_REASON ? "skip:hold" : "skip";
+              const message = prNum
+                ? `[${marker}] PR #${prNum}: ${reason}`
+                : `[${marker}] ${reason}`;
 
               const sessionId = await writeStaticSkipSession({ assistantText: message });
               const { createThreadSession } = await import("../sessionManager");
-              const { setSessionTrigger, setSessionResult, setSessionTitle, setSessionHookPayload } =
-                await import("../ui/services/session-meta");
+              const {
+                setSessionTrigger,
+                setSessionResult,
+                setSessionTitle,
+                setSessionHookPayload,
+              } = await import("../ui/services/session-meta");
               await createThreadSession(threadId, sessionId);
               await setSessionTrigger(sessionId, { kind: "hook", ...trig });
               await setSessionHookPayload(sessionId, event, payload);
@@ -1393,7 +1404,10 @@ export async function start(args: string[] = []) {
 
   // Track each job's most recent outcome so state.json can expose lastResult/lastRanAt
   // for crash-recovery + status displays. Resets on daemon restart (in-memory only).
-  const jobLastResult = new Map<string, { result: "ok" | "error" | "skipped" | "pass"; ranAt: number }>();
+  const jobLastResult = new Map<
+    string,
+    { result: "ok" | "error" | "skipped" | "pass"; ranAt: number }
+  >();
 
   // Jobs currently being executed. Populated on runJob entry, drained in
   // .finally. The web /api/state endpoint surfaces this so the Schedule tab
@@ -1543,7 +1557,11 @@ export async function start(args: string[] = []) {
       for (const job of currentJobs) {
         const retryState = jobRetryState.get(job.name);
         const retryDue = !!retryState && retryState.retryAt <= skippedAt;
-        const scheduleDue = anyCronMatches(job.schedules, now, currentSettings.timezoneOffsetMinutes);
+        const scheduleDue = anyCronMatches(
+          job.schedules,
+          now,
+          currentSettings.timezoneOffsetMinutes,
+        );
         if (retryDue || scheduleDue) {
           jobLastResult.set(job.name, { result: "skipped", ranAt: skippedAt });
           touched = true;

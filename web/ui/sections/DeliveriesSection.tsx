@@ -189,16 +189,22 @@ function DeliveryRow({
             <span className="text-base-content/40 text-xs">—</span>
           ) : (
             <div className="flex flex-wrap gap-1">
-              {routines.map((r) => (
-                <span
-                  key={`${r.job}-${r.outcome}`}
-                  className={`badge badge-xs ${r.outcome === "trigger" ? "badge-success" : "badge-warning"}`}
-                  title={r.reason ?? (r.outcome === "trigger" ? "will trigger" : undefined)}
-                >
-                  {r.outcome === "trigger" ? "▶ " : "skip "}
-                  {r.job}
-                </span>
-              ))}
+              {routines.map((r) => {
+                const held = r.outcome === "skip" && (r.reason ?? "").startsWith("hold");
+                const verb = r.outcome === "trigger" ? "▶ " : held ? "hold " : "skip ";
+                const cls =
+                  r.outcome === "trigger" ? "badge-success" : held ? "badge-info" : "badge-warning";
+                return (
+                  <span
+                    key={`${r.job}-${r.outcome}`}
+                    className={`badge badge-xs ${cls}`}
+                    title={r.reason ?? (r.outcome === "trigger" ? "will trigger" : undefined)}
+                  >
+                    {verb}
+                    {r.job}
+                  </span>
+                );
+              })}
             </div>
           )}
         </td>

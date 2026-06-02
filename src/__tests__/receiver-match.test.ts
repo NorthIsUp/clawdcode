@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import type { Job } from "../jobs";
-import { parseTriggers } from "../hooks/schema";
 import { handleWebhook } from "../hooks/receiver";
+import { parseTriggers } from "../hooks/schema";
+import type { Job } from "../jobs";
 
 // The matcher (+ the routine's `on:` config) is the SINGLE source of truth for
 // which deliveries fire. There is no server-side "static skip" layer that can
@@ -213,5 +213,58 @@ describe("webhook matcher — config is authoritative", () => {
       [job],
     );
     expect(reasons.some((r) => r.includes("not matched by the comment user filter"))).toBe(true);
+  });
+});
+
+describe("claw:hold label pauses all hooks for a PR", () => {
+  const heldPr = (extra: Record<string, unknown> = {}) => ({
+    action: "synchronize",
+    repository: { full_name: "org/repo" },
+    pull_request: {
+      number: 9,
+      base: { ref: "feature/x" },
+      head: { ref: "feature/x" },
+      labels: [{ name: "needs-review" }, { name: "claw:hold" }],
+    },
+    sender: { login: "alice" },
+    ...extra,
+  });
+
+  test("held PR does not fire, and skips with the hold reason", async () => {
+    const job = makeJob("pr-review", [{ prs: true }]);
+    const fired = await firedJobs("pull_request", heldPr(), [job]);
+    expect(fired).not.toContain("pr-review");
+    const reasons = await skipReasons("pull_request", heldPr(), [job]);
+    expect(reasons.some((r) => r.startsWith("hold"))).toBe(true);
+  });
+
+  test("held PR also skips comment hooks (label read from issue.labels)", async () => {
+    const job = makeJob("pr-comments", [{ comments: true }]);
+    const body = {
+      action: "created",
+      repository: { full_name: "org/repo" },
+      issue: { number: 9, pull_request: { url: "x" }, labels: [{ name: "claw:hold" }] },
+      comment: { user: { login: "bob" } },
+      sender: { login: "bob" },
+    };
+    expect(await firedJobs("issue_comment", body, [job])).not.toContain("pr-comments");
+    expect(
+      (await skipReasons("issue_comment", body, [job])).some((r) => r.startsWith("hold")),
+    ).toBe(true);
+  });
+
+  test("without the label the same PR fires normally", async () => {
+    const job = makeJob("pr-review", [{ prs: true }]);
+    const fired = await firedJobs(
+      "pull_request",
+      {
+        action: "synchronize",
+        repository: { full_name: "org/repo" },
+        pull_request: { number: 9, base: { ref: "feature/x" }, labels: [{ name: "needs-review" }] },
+        sender: { login: "alice" },
+      },
+      [job],
+    );
+    expect(fired).toContain("pr-review");
   });
 });
