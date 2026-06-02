@@ -9,7 +9,14 @@ import {
   summarize,
 } from "./deliveries";
 import { extractHookFields, extractHookKeys, extractHookPk } from "./evaluate";
-import { matchPatternList, matchPrRule, prRuleSkipReason, readPrPayload } from "./match";
+import {
+  CLAW_HOLD_SKIP_REASON,
+  hasClawHoldLabel,
+  matchPatternList,
+  matchPrRule,
+  prRuleSkipReason,
+  readPrPayload,
+} from "./match";
 
 /**
  * GitHub webhook receiver. Verifies HMAC-SHA256 signature using a secret
@@ -163,6 +170,12 @@ export async function dispatchHook(
   const selfSkipReason = (actor: string) =>
     `triggered by \`${actor || "?"}\` (this clawdcode user — self-skip)`;
 
+  // A `claw:hold` label on the PR pauses ALL hooks for it (PR events + comments),
+  // independent of routine config — a human flips it to hold the bot off a PR.
+  // Highest-priority skip, marked `hold` so it's distinguishable in the table.
+  const held = hasClawHoldLabel(event, payload);
+  const HOLD_REASON = CLAW_HOLD_SKIP_REASON;
+
   if (event === "pull_request") {
     const pr = readPrPayload(payload);
     if (pr) {
@@ -171,7 +184,10 @@ export async function dispatchHook(
         if (rules.length === 0) {
           continue; // not interested in PR events
         }
-        if (job.hookConfig?.skipSelf !== false && isSelfActor) {
+        if (held) {
+          routines.push({ job: job.name, outcome: "skip", reason: HOLD_REASON });
+          void deps.onHookSkip?.(job.name, event, id, payload, HOLD_REASON);
+        } else if (job.hookConfig?.skipSelf !== false && isSelfActor) {
           const reason = selfSkipReason(senderLogin ?? "");
           routines.push({ job: job.name, outcome: "skip", reason });
           void deps.onHookSkip?.(job.name, event, id, payload, reason);
@@ -198,7 +214,10 @@ export async function dispatchHook(
       if (cfg === undefined || cfg === false) {
         continue; // not interested
       }
-      if (job.hookConfig?.skipSelf !== false && isSelfActor) {
+      if (held) {
+        routines.push({ job: job.name, outcome: "skip", reason: HOLD_REASON });
+        void deps.onHookSkip?.(job.name, event, id, payload, HOLD_REASON);
+      } else if (job.hookConfig?.skipSelf !== false && isSelfActor) {
         const reason = selfSkipReason(actor ?? "");
         routines.push({ job: job.name, outcome: "skip", reason });
         void deps.onHookSkip?.(job.name, event, id, payload, reason);
