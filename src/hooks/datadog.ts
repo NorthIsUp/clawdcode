@@ -8,7 +8,7 @@ import {
 } from "./deliveries";
 import { extractHookFields, extractHookKeys, extractHookPk } from "./evaluate";
 import { datadogRuleSkipReason, matchDatadogRule, readDatadogPayload } from "./match";
-import type { WebhookDeps } from "./receiver";
+import type { ReceiverResult, WebhookDeps } from "./receiver";
 
 /**
  * Datadog webhook receiver.
@@ -49,11 +49,6 @@ export const RECOMMENDED_DATADOG_PAYLOAD = {
   hostname: "$HOSTNAME",
   date: "$DATE",
 } as const;
-
-export interface ReceiverResult {
-  status: number;
-  body: { ok: boolean; duplicate?: boolean; error?: string; matched?: string[] };
-}
 
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: token auth + dedup + per-job match-or-skip read clearly inline; extracting pieces hurts more than it helps.
 export async function handleDatadogWebhook(
