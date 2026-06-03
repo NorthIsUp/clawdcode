@@ -8,7 +8,7 @@ import {
 } from "./deliveries";
 import { extractHookFields, extractHookKeys, extractHookPk } from "./evaluate";
 import { matchSentryRule, readSentryPayload, sentryRuleSkipReason } from "./match";
-import type { WebhookDeps } from "./receiver";
+import type { ReceiverResult, WebhookDeps } from "./receiver";
 import { defaultSentryRule } from "./schema";
 
 /**
@@ -27,11 +27,6 @@ import { defaultSentryRule } from "./schema";
 
 export function getSentrySecret(): string {
   return process.env.CLAWDCODE_SENTRY_CLIENT_SECRET ?? "";
-}
-
-export interface ReceiverResult {
-  status: number;
-  body: { ok: boolean; duplicate?: boolean; error?: string; matched?: string[] };
 }
 
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: signature verify + dedup + per-job match-or-skip read clearly inline; extracting pieces hurts more than it helps.
