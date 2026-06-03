@@ -289,3 +289,42 @@ export function getHookQueue(): HookQueue {
   }
   return singleton;
 }
+
+export interface QueueOutcome {
+  action: "done" | "defer" | "fail";
+  /** For `defer`: epoch ms the batch becomes ready again. */
+  notBefore?: number;
+  error?: string;
+}
+
+/** Decide what to do with a just-run batch from the run result + limiter state.
+ *  Pure so the retry/backoff/cap policy is unit-testable:
+ *   - exit 0          → done
+ *   - rate-limited    → defer to the reset time (doesn't burn a retry)
+ *   - else            → exponential backoff up to `cap` attempts, then fail */
+export function nextQueueAction(opts: {
+  exitCode: number | null;
+  rateLimited: boolean;
+  rateLimitResetAt: number;
+  /** Highest `attempts` among the batch BEFORE this run. */
+  priorAttempts: number;
+  cap: number;
+  now: number;
+}): QueueOutcome {
+  if (opts.exitCode === 0) {
+    return { action: "done" };
+  }
+  if (opts.rateLimited) {
+    return { action: "defer", notBefore: opts.rateLimitResetAt, error: "rate limited" };
+  }
+  const attempt = opts.priorAttempts + 1;
+  if (attempt > opts.cap) {
+    return { action: "fail", error: `exhausted ${opts.cap} retries` };
+  }
+  const backoffMs = Math.min(60_000 * 2 ** (attempt - 1), 30 * 60_000);
+  return {
+    action: "defer",
+    notBefore: opts.now + backoffMs,
+    error: `exit ${opts.exitCode ?? "?"}`,
+  };
+}

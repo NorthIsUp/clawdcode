@@ -1,5 +1,35 @@
 import { describe, expect, test } from "bun:test";
-import { HookQueue } from "../hookQueue";
+import { HookQueue, nextQueueAction } from "../hookQueue";
+
+describe("nextQueueAction (retry/defer policy)", () => {
+  const d = { rateLimitResetAt: 50_000, priorAttempts: 0, cap: 5, now: 1000 };
+  test("exit 0 → done", () => {
+    expect(nextQueueAction({ ...d, exitCode: 0, rateLimited: false }).action).toBe("done");
+  });
+  test("rate-limited → defer to reset, no retry burned", () => {
+    const a = nextQueueAction({ ...d, exitCode: 1, rateLimited: true, priorAttempts: 2 });
+    expect(a).toEqual({ action: "defer", notBefore: 50_000, error: "rate limited" });
+  });
+  test("failure → exponential backoff defer under the cap", () => {
+    const a1 = nextQueueAction({ ...d, exitCode: 1, rateLimited: false, priorAttempts: 0 });
+    expect(a1.action).toBe("defer");
+    expect(a1.notBefore).toBe(1000 + 60_000); // attempt 1 → 60s
+    const a2 = nextQueueAction({ ...d, exitCode: 1, rateLimited: false, priorAttempts: 1 });
+    expect(a2.notBefore).toBe(1000 + 120_000); // attempt 2 → 120s
+  });
+  test("attempt 5 → 16m (1/2/4/8/16 schedule under cap 5)", () => {
+    const a = nextQueueAction({ ...d, exitCode: 1, rateLimited: false, priorAttempts: 4 });
+    expect(a.notBefore).toBe(1000 + 16 * 60_000);
+  });
+  test("backoff caps at 30m for high attempts", () => {
+    const a = nextQueueAction({ ...d, exitCode: 1, rateLimited: false, priorAttempts: 8, cap: 12 });
+    expect(a.notBefore).toBe(1000 + 30 * 60_000); // attempt 9 → 2^8*60s capped
+  });
+  test("past the cap → fail (terminal)", () => {
+    const a = nextQueueAction({ ...d, exitCode: 1, rateLimited: false, priorAttempts: 5 });
+    expect(a.action).toBe("fail");
+  });
+});
 
 function q(): HookQueue {
   return new HookQueue(":memory:");

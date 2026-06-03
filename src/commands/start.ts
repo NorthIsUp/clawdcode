@@ -10,6 +10,7 @@ import {
   type Settings,
 } from "../config";
 import { anyCronMatches, earliestCronMatch } from "../cron";
+import { getHookQueue, nextQueueAction, type QueuedMessage } from "../hookQueue";
 import { annotateSkip } from "../hooks/deliveries";
 import {
   buildHookTrigger,
@@ -923,99 +924,44 @@ export async function start(args: string[] = []) {
             );
           },
           onHookFire: (jobName, event, deliveryId, payload) => {
-            // Look up the job from the live set and fire it via the same
-            // path cron jobs use, but with the webhook payload prepended
-            // so the prompt sees what triggered it.
+            // A matched delivery is durably ENQUEUED (not run inline). The
+            // per-thread drain worker (drainHookQueue) coalesces all pending
+            // messages for a PR's session into one resumed turn, defers while
+            // rate-limited, retries on failure, and replays after a restart.
+            // The webhook returns 200 the instant the message is persisted, so
+            // a crash (e.g. the ~10-min auto-update) loses nothing.
             const job = currentJobs.find((j) => j.name === jobName);
             if (!job) {
               console.log(`[${ts()}] hook fire: job not found name=${jobName}`);
               return;
             }
             try {
-              // Derive a stable scope (e.g. pr-42-feature-foo) from the
-              // payload. When present, the job's claude session is keyed
-              // by scope rather than per-run, so repeated deliveries to
-              // the same PR route into the same conversation and the
-              // agent picks up where it left off.
-              // When extraction fails, fall back to the delivery ID so
-              // each delivery becomes its own thread. Critically, we
-              // must NOT leave hookScope undefined — runJob would then
-              // fall through to buildJobThreadId(base, reuse, …), and
-              // for a `reuseSession: true` job that collapses every
-              // unscoped hook fire into one shared Claude session
-              // (which is how comments from many different PRs ended up
-              // in one chat history).
+              // Stable per-scope thread (e.g. pr-42-feature-foo). Deliveries to
+              // the same PR route into the same Claude session — same context +
+              // cache. Falls back to the delivery id so an unscoped event still
+              // gets its own thread (never undefined — see runJob threadId).
               const hookScope = extractHookScope(event, payload) ?? `delivery-${deliveryId}`;
-
-              // Whether a delivery fires is decided entirely by the matcher
-              // (receiver.ts + matchPrRule) and the receiver's self-skip —
-              // the routine's `on:` config is the single source of truth.
-              // There is intentionally no server-side "static skip" layer:
-              // hardcoded heuristics (bot users, PRs targeting main) wrongly
-              // overrode explicit config (e.g. skipping `comments: true`
-              // deliveries on main-targeting PRs).
-              //
-              // Distil the payload — GitHub webhook bodies are enormous and
-              // most fields are redundant (repo metadata repeated 3-4×,
-              // every actor inlines a dozen API URLs, PR body can run to
-              // hundreds of lines). The agent only needs identifiers + a
-              // short summary; it can `gh pr view <repo>#<n> --json …` for
-              // anything else.
-              // Render as a markdown bullet list — URLs linkify, fewer
-              // tokens than JSON, and the agent doesn't need to parse the
-              // trigger as data (it acts on it; a `gh pr view --json …`
-              // fetches structured data when needed).
-              const summaryMd = renderHookSummaryMarkdown(event, payload);
-              // Provider events thread through as `sentry:…` / `datadog:…`;
-              // bare event names are GitHub. Name the source accordingly.
-              const source = event.startsWith("sentry:")
-                ? "Sentry"
-                : event.startsWith("datadog:")
-                  ? "Datadog"
-                  : "GitHub";
-              const augmented = {
-                ...job,
-                prompt:
-                  "Triggered by " +
-                  source +
-                  " " +
-                  event +
-                  " (delivery " +
-                  deliveryId +
-                  ")" +
-                  (hookScope ? ` for scope \`${hookScope}\`` : "") +
-                  ":\n\n" +
-                  summaryMd +
-                  "\n\n" +
-                  job.prompt,
-              };
-              const scopeLabel = hookScope ? ` scope=${hookScope}` : "";
-              console.log(`[${ts()}] hook fire: ${jobName} ← ${event} ${deliveryId}${scopeLabel}`);
-              runJob(augmented as (typeof currentJobs)[0], { hookScope });
-
-              // Attach a human-readable session title (e.g. `teamclara/Clara_V1#1424`
-              // for PR events, `LIN-1234` for Linear) once the session is
-              // created. The session ID isn't known synchronously — the
-              // runner allocates it after spawn — so poll the
-              // thread→session map briefly and set the title when it
-              // resolves. 10 × 500ms ≈ 5s gives the runner plenty of time
-              // even on a cold start.
-              const displayLabel = extractHookLabel(event, payload);
-              if (hookScope) {
-                const base = job.agent ? `agent:${job.agent}` : job.name;
-                const threadId = `${base}:hook:${hookScope}`;
-                if (displayLabel) {
-                  void titleHookSession(threadId, displayLabel);
-                }
-                // Persist the trigger so the Runs view can render
-                // "comment on PR #N" for sessions whose job has both a
-                // schedule AND hook config.
-                const triggerInfo = buildHookTrigger(event, payload);
-                void recordSessionTrigger(threadId, { kind: "hook", ...triggerInfo });
-                // Persist the full raw payload so the chat full-JSON
-                // disclosure, the copy button, and reprocess can use it.
-                void recordSessionHookPayload(threadId, event, payload);
-              }
+              const base = job.agent ? `agent:${job.agent}` : job.name;
+              const threadId = `${base}:hook:${hookScope}`;
+              const trig = buildHookTrigger(event, payload);
+              const fresh = getHookQueue().enqueue({
+                id: deliveryId,
+                threadId,
+                jobName,
+                event,
+                scope: hookScope,
+                payload,
+                prRepo: trig.repo ?? null,
+                prNumber: trig.pr?.number ?? null,
+              });
+              console.log(
+                fresh
+                  ? `[${ts()}] hook queued: ${jobName} ← ${event} ${deliveryId} scope=${hookScope}`
+                  : `[${ts()}] hook dup ignored: ${event} ${deliveryId}`,
+              );
+              // Kick the drain immediately for low latency; the periodic tick
+              // is the safety net (rate-limit reset, retry backoff, replay).
+              void drainHookQueue();
             } catch (err) {
               console.error(`[${ts()}] hook fire error for ${jobName}:`, err);
             }
@@ -1471,7 +1417,7 @@ export async function start(args: string[] = []) {
     }
     currentActiveJobs.add(job.name);
     emitJobStatus();
-    snapshotJobFrontmatter(job.name).then((restoreFrontmatter) =>
+    return snapshotJobFrontmatter(job.name).then((restoreFrontmatter) =>
       resolvePrompt(job.prompt)
         .then((prompt) => {
           const clock = buildClockPromptPrefix(new Date(), currentSettings.timezoneOffsetMinutes);
@@ -1522,10 +1468,11 @@ export async function start(args: string[] = []) {
               /* best-effort */
             });
           }
-          if (job.notify === false) return;
-          if (job.notify === "error" && r.exitCode === 0) return;
+          if (job.notify === false) return r;
+          if (job.notify === "error" && r.exitCode === 0) return r;
           forwardToTelegram(job.name, r);
           forwardToDiscord(job.name, r);
+          return r;
         })
         .finally(async () => {
           currentActiveJobs.delete(job.name);
@@ -1548,6 +1495,124 @@ export async function start(args: string[] = []) {
         }),
     );
   }
+
+  // ---- Durable hook queue drain ------------------------------------------
+  // The receiver enqueues matched deliveries; this drains them per thread.
+  const HOOK_RETRY_CAP = 5;
+  // Threads with a batch currently in flight — so a delivery that lands mid-run
+  // is left pending and coalesced into the NEXT batch instead of racing.
+  const drainingThreads = new Set<string>();
+
+  function buildCoalescedHookPrompt(prompt: string, scope: string, msgs: QueuedMessage[]): string {
+    const blocks = msgs.map((m, i) => {
+      const source = m.event.startsWith("sentry:")
+        ? "Sentry"
+        : m.event.startsWith("datadog:")
+          ? "Datadog"
+          : "GitHub";
+      const n = msgs.length > 1 ? `${i + 1}. ` : "";
+      return `${n}Triggered by ${source} ${m.event} (delivery ${m.id}):\n\n${renderHookSummaryMarkdown(m.event, m.payload)}`;
+    });
+    const header =
+      msgs.length > 1
+        ? `${msgs.length} new events on scope \`${scope}\` since you last ran — handle them together:\n\n`
+        : "";
+    return `${header}${blocks.join("\n\n")}\n\n${prompt}`;
+  }
+
+  async function runQueuedBatch(threadId: string, msgs: QueuedMessage[]): Promise<void> {
+    const queue = getHookQueue();
+    const ids = msgs.map((m) => m.id);
+    const { jobName, scope } = msgs[0];
+    const job = currentJobs.find((j) => j.name === jobName);
+    if (!job) {
+      console.log(`[${ts()}] hook drain: job ${jobName} gone — failing ${ids.length} msg(s)`);
+      queue.complete(ids, "failed", "job not found");
+      return;
+    }
+    // The newest delivery drives the session title / trigger / payload shown
+    // in the UI; the prompt coalesces all of them.
+    const newest = msgs[msgs.length - 1];
+    // Strip `retry` so runJob's cron-style jobRetryState never engages — the
+    // queue is the single retry authority for hook runs.
+    const augmented = {
+      ...job,
+      retry: 0,
+      prompt: buildCoalescedHookPrompt(job.prompt, scope, msgs),
+    } as (typeof currentJobs)[0];
+    const label = extractHookLabel(newest.event, newest.payload);
+    if (label) void titleHookSession(threadId, label);
+    void recordSessionTrigger(threadId, {
+      kind: "hook",
+      ...buildHookTrigger(newest.event, newest.payload),
+    });
+    void recordSessionHookPayload(threadId, newest.event, newest.payload);
+    console.log(`[${ts()}] hook drain: ${jobName} scope=${scope} (${msgs.length} msg)`);
+    try {
+      const r = await runJob(augmented, { hookScope: scope });
+      const action = nextQueueAction({
+        exitCode: r?.exitCode ?? null,
+        rateLimited: isRateLimited(),
+        rateLimitResetAt: getRateLimitResetAt(),
+        priorAttempts: Math.max(...msgs.map((m) => m.attempts)),
+        cap: HOOK_RETRY_CAP,
+        now: Date.now(),
+      });
+      if (action.action === "done") {
+        queue.complete(ids, "done");
+      } else if (action.action === "fail") {
+        queue.complete(ids, "failed", action.error ?? null);
+        console.log(`[${ts()}] hook drain: ${jobName} ${action.error}`);
+      } else {
+        queue.defer(ids, action.notBefore ?? Date.now(), action.error ?? null);
+        console.log(
+          `[${ts()}] hook drain: ${jobName} deferred (${action.error}) → ${new Date(action.notBefore ?? 0).toISOString()}`,
+        );
+      }
+    } catch (err) {
+      // Unexpected throw (not a normal non-zero exit) — back off and retry.
+      queue.defer(ids, Date.now() + 60_000, String(err));
+      console.error(`[${ts()}] hook drain error for ${jobName}:`, err);
+    }
+  }
+
+  function drainHookQueue(): void {
+    // While Claude is rate-limited, leave everything pending — the periodic
+    // tick re-checks and drains once the limit resets.
+    if (isRateLimited()) return;
+    const queue = getHookQueue();
+    for (const threadId of queue.readyThreadIds()) {
+      if (drainingThreads.has(threadId)) continue;
+      const msgs = queue.claimThread(threadId);
+      if (msgs.length === 0) continue;
+      drainingThreads.add(threadId);
+      void runQueuedBatch(threadId, msgs).finally(() => drainingThreads.delete(threadId));
+    }
+  }
+
+  // Replay the durable queue on boot: any message left `running` by a killed
+  // worker (e.g. the auto-update restart) is reset to pending, then drained.
+  try {
+    const requeued = getHookQueue().requeueStuckRunning();
+    if (requeued > 0) {
+      console.log(`[${ts()}] hook queue: replayed ${requeued} in-flight message(s) after restart`);
+    }
+  } catch (err) {
+    console.error(`[${ts()}] hook queue replay failed:`, err);
+  }
+  // Drain tick (covers rate-limit reset, retry backoff, replay) + hourly prune.
+  setInterval(drainHookQueue, 3000);
+  setInterval(
+    () => {
+      try {
+        getHookQueue().prune(7 * 24 * 60 * 60 * 1000);
+      } catch {
+        // best-effort housekeeping
+      }
+    },
+    60 * 60 * 1000,
+  );
+  void drainHookQueue();
 
   setInterval(() => {
     const now = new Date();
