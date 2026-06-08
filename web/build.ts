@@ -21,6 +21,7 @@ const twBin = join("node_modules", ".bin", "tailwindcss");
 const twJobs: { in: string; out: string }[] = [
   { in: "web/styles/darwin.css", out: "web/styles/darwin.gen.css" },
   { in: "web/ui/styles.css", out: "web/ui/styles.gen.css" },
+  { in: "web/v3/styles.css", out: "web/v3/styles.gen.css" },
 ];
 for (const job of twJobs) {
   const r = spawnSync(twBin, ["-i", job.in, "-o", job.out], {
@@ -46,6 +47,7 @@ const bundles: Bundle[] = [
   { name: "os9", entry: "web/os9/index.tsx", html: "web/os9/index.html" },
   { name: "osish", entry: "web/osish/index.tsx", html: "web/osish/index.html" },
   { name: "ui", entry: "web/ui/index.tsx", html: "web/ui/index.html" },
+  { name: "v3", entry: "web/v3/index.tsx", html: "web/v3/index.html" },
 ];
 
 for (const bundle of bundles) {
