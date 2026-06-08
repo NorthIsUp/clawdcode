@@ -32,6 +32,29 @@
   --serif:"Instrument Serif", Georgia, serif;
   --sans:"Hanken Grotesk", system-ui, sans-serif;
 }
+/* ── Tidepool (light): sunlit shallows over warm sand ── */
+html[data-theme="tidepool"]{
+  --abyss-0:#f4efe4; --abyss-1:#ede6d6; --abyss-2:#fbf7ee;
+  --surface:#fffcf5; --surface-2:#f3ecdd;
+  --line:#ddd3be; --line-2:#c9bba0;
+  --bone:#14211f; --bone-dim:#4a5a57; --bone-faint:#8a9591;
+  --coral:#ef4a2c; --coral-deep:#d63a1f;
+  --cyan:#0e9e86; --cyan-dim:#0b7d6a;
+  --amber:#c8881f; --red:#d63a3a;
+  --glow-coral:0 0 0 1px rgba(239,74,44,.3), 0 0 16px -3px rgba(239,74,44,.4);
+}
+html[data-theme="tidepool"] .bg::before{
+  background:
+    radial-gradient(120% 80% at 18% 8%, rgba(14,158,134,.10), transparent 55%),
+    radial-gradient(90% 70% at 92% 96%, rgba(239,74,44,.10), transparent 55%),
+    radial-gradient(140% 120% at 50% 50%, #fbf7ee 0%, #f1eadc 60%, #ece3d2 100%);
+}
+html[data-theme="tidepool"] .bg::after{opacity:.35;mix-blend-mode:multiply}
+html[data-theme="tidepool"] .vignette{box-shadow:inset 0 0 200px 30px rgba(120,100,70,.12)}
+html[data-theme="tidepool"] .code{background:#fbf7ee}
+html[data-theme="tidepool"] .code .f{color:#1b2a26}
+html[data-theme="tidepool"] .send{color:#fff}
+html[data-theme="tidepool"] .tool{background:var(--surface-2)}
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%}
 body{
@@ -274,7 +297,7 @@ body{
     <div class="brand">
       <span class="lobster">🦞</span>
       <h1>clawd<em>code</em></h1>
-      <span class="tag">v3</span>
+      <span class="tag" id="themeToggle" style="cursor:pointer" title="Toggle Abyssal / Tidepool">v3 ◐</span>
     </div>
 
     <div class="nav-scroll">
@@ -456,6 +479,12 @@ const ta=document.querySelector('.input-wrap textarea');
 document.querySelectorAll('.sg').forEach(s=>s.addEventListener('click',()=>{ta.value=s.textContent.replace(/^✓ /,'');ta.focus();
   ta.style.height='auto';ta.style.height=ta.scrollHeight+'px';}));
 ta.addEventListener('input',()=>{ta.style.height='auto';ta.style.height=ta.scrollHeight+'px';});
+// theme toggle
+const root=document.documentElement;
+document.getElementById('themeToggle').addEventListener('click',()=>{
+  const next=root.getAttribute('data-theme')==='tidepool'?'abyssal':'tidepool';
+  root.setAttribute('data-theme',next);
+});
 </script>
 </body>
 </html>
