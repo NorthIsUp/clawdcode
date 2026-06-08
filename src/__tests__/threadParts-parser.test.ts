@@ -1,0 +1,165 @@
+import { describe, expect, test } from "bun:test";
+import { parseTranscript, TranscriptParser } from "../ui/services/threadParts";
+
+// A minimal but representative transcript: a user turn, an assistant turn with
+// thinking + text + a tool_use, then the tool_result in a following user turn.
+const FIXTURE = [
+  JSON.stringify({
+    type: "user",
+    uuid: "u1",
+    message: { role: "user", content: "please check the build" },
+  }),
+  JSON.stringify({
+    type: "assistant",
+    uuid: "a1",
+    message: {
+      role: "assistant",
+      content: [
+        { type: "thinking", thinking: "let me look at the logs", signature: "sig" },
+        { type: "text", text: "I'll run the tests." },
+        { type: "tool_use", id: "toolu_1", name: "Bash", input: { command: "bun test" } },
+      ],
+    },
+  }),
+  JSON.stringify({
+    type: "user",
+    uuid: "u2",
+    message: {
+      role: "user",
+      content: [{ type: "tool_result", tool_use_id: "toolu_1", content: "12 pass, 0 fail" }],
+    },
+  }),
+].join("\n");
+
+describe("parseTranscript (spec §6)", () => {
+  test("parses text / reasoning / tool_use+result into ChatPart[]", () => {
+    const parts = parseTranscript(FIXTURE);
+    const kinds = parts.map((p) => p.kind);
+    expect(kinds).toEqual(["text", "reasoning", "text", "tool"]);
+
+    const userTurn = parts[0];
+    expect(userTurn).toMatchObject({ kind: "text", role: "user", markdown: "please check the build" });
+
+    const reasoning = parts[1];
+    expect(reasoning).toMatchObject({ kind: "reasoning", markdown: "let me look at the logs" });
+
+    const assistantText = parts[2];
+    expect(assistantText).toMatchObject({ kind: "text", role: "assistant", markdown: "I'll run the tests." });
+
+    const tool = parts[3];
+    if (tool?.kind !== "tool") throw new Error("expected tool part");
+    expect(tool.tool.type).toBe("Bash");
+    expect(tool.tool.toolCallId).toBe("toolu_1");
+    expect(tool.tool.input).toEqual({ command: "bun test" });
+    // tool_result paired in → output available.
+    expect(tool.tool.state).toBe("output-available");
+    expect(tool.tool.output).toEqual({ text: "12 pass, 0 fail" });
+  });
+
+  test("a tool_use without a result stays input-available", () => {
+    const t = [
+      JSON.stringify({
+        type: "assistant",
+        uuid: "a1",
+        message: {
+          role: "assistant",
+          content: [{ type: "tool_use", id: "toolu_x", name: "Read", input: { file_path: "/x" } }],
+        },
+      }),
+    ].join("\n");
+    const parts = parseTranscript(t);
+    expect(parts).toHaveLength(1);
+    const tool = parts[0];
+    if (tool?.kind !== "tool") throw new Error("expected tool part");
+    expect(tool.tool.state).toBe("input-available");
+    expect(tool.tool.output).toBeUndefined();
+  });
+
+  test("is_error tool_result marks the tool part output-error with errorText", () => {
+    const t = [
+      JSON.stringify({
+        type: "assistant",
+        message: { role: "assistant", content: [{ type: "tool_use", id: "te", name: "Bash", input: {} }] },
+      }),
+      JSON.stringify({
+        type: "user",
+        message: {
+          role: "user",
+          content: [{ type: "tool_result", tool_use_id: "te", content: "boom", is_error: true }],
+        },
+      }),
+    ].join("\n");
+    const parts = parseTranscript(t);
+    const tool = parts[0];
+    if (tool?.kind !== "tool") throw new Error("expected tool part");
+    expect(tool.tool.state).toBe("output-error");
+    expect(tool.tool.errorText).toBe("boom");
+  });
+
+  test("tool_result content as a block array is flattened to text", () => {
+    const t = [
+      JSON.stringify({
+        type: "assistant",
+        message: { role: "assistant", content: [{ type: "tool_use", id: "tb", name: "Task", input: {} }] },
+      }),
+      JSON.stringify({
+        type: "user",
+        message: {
+          role: "user",
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: "tb",
+              content: [{ type: "text", text: "line one" }, { type: "text", text: "line two" }],
+            },
+          ],
+        },
+      }),
+    ].join("\n");
+    const parts = parseTranscript(t);
+    const tool = parts[0];
+    if (tool?.kind !== "tool") throw new Error("expected tool part");
+    expect(tool.tool.output).toEqual({ text: "line one\nline two" });
+  });
+
+  test("TranscriptParser feeds incrementally: a later batch pairs a result with an earlier tool_use", () => {
+    const parser = new TranscriptParser();
+    parser.feed(
+      JSON.stringify({
+        type: "assistant",
+        message: { role: "assistant", content: [{ type: "tool_use", id: "split", name: "Bash", input: {} }] },
+      }),
+    );
+    expect(parser.parts).toHaveLength(1);
+    let tool = parser.parts[0];
+    if (tool?.kind !== "tool") throw new Error("expected tool part");
+    expect(tool.tool.state).toBe("input-available");
+
+    // Second batch (as the SSE tail would feed) carries the result.
+    parser.feed(
+      "\n" +
+        JSON.stringify({
+          type: "user",
+          message: {
+            role: "user",
+            content: [{ type: "tool_result", tool_use_id: "split", content: "done" }],
+          },
+        }),
+    );
+    // No new part — the existing tool part was updated in place.
+    expect(parser.parts).toHaveLength(1);
+    tool = parser.parts[0];
+    if (tool?.kind !== "tool") throw new Error("expected tool part");
+    expect(tool.tool.state).toBe("output-available");
+    expect(tool.tool.output).toEqual({ text: "done" });
+  });
+
+  test("strips ClawdCode-injected timestamp prefix from user text", () => {
+    const t = JSON.stringify({
+      type: "user",
+      message: { role: "user", content: "[2026-06-08 12:00:00 UTC]\nthe real message" },
+    });
+    const parts = parseTranscript(t);
+    expect(parts[0]).toMatchObject({ kind: "text", role: "user", markdown: "the real message" });
+  });
+});

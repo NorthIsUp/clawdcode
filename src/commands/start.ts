@@ -68,6 +68,39 @@ const PREFLIGHT_SCRIPT = fileURLToPath(new URL("../preflight.ts", import.meta.ur
  * missing or older than any source, we rebuild. The Dockerfile pre-builds
  * the bundle so this path is effectively a no-op there.
  */
+/**
+ * Render one coalesced prompt for a batch of queued hook messages. A normal
+ * hook message renders a "Triggered by …" summary; a `web:message` (the v3
+ * composer reply, spec §8) renders its raw `payload.text` as a plain user
+ * turn. Module-level + exported so it's unit-testable.
+ */
+export function buildCoalescedHookPrompt(
+  prompt: string,
+  scope: string,
+  msgs: QueuedMessage[],
+): string {
+  const blocks = msgs.map((m, i) => {
+    // A web composer reply (spec §8): render the raw user text as a plain
+    // user turn, not a hook summary. Payload is `{ type:"user-message", text }`.
+    if (m.event === "web:message") {
+      const p = m.payload as { text?: unknown } | null | undefined;
+      return typeof p?.text === "string" ? p.text : "";
+    }
+    const source = m.event.startsWith("sentry:")
+      ? "Sentry"
+      : m.event.startsWith("datadog:")
+        ? "Datadog"
+        : "GitHub";
+    const n = msgs.length > 1 ? `${i + 1}. ` : "";
+    return `${n}Triggered by ${source} ${m.event} (delivery ${m.id}):\n\n${renderHookSummaryMarkdown(m.event, m.payload)}`;
+  });
+  const header =
+    msgs.length > 1
+      ? `${msgs.length} new events on scope \`${scope}\` since you last ran — handle them together:\n\n`
+      : "";
+  return `${header}${blocks.join("\n\n")}\n\n${prompt}`;
+}
+
 async function ensureWebBundleBuilt(): Promise<void> {
   const { existsSync, statSync, readdirSync } = await import("node:fs");
   const { join } = await import("node:path");
@@ -1505,23 +1538,6 @@ export async function start(args: string[] = []) {
   // Threads with a batch currently in flight — so a delivery that lands mid-run
   // is left pending and coalesced into the NEXT batch instead of racing.
   const drainingThreads = new Set<string>();
-
-  function buildCoalescedHookPrompt(prompt: string, scope: string, msgs: QueuedMessage[]): string {
-    const blocks = msgs.map((m, i) => {
-      const source = m.event.startsWith("sentry:")
-        ? "Sentry"
-        : m.event.startsWith("datadog:")
-          ? "Datadog"
-          : "GitHub";
-      const n = msgs.length > 1 ? `${i + 1}. ` : "";
-      return `${n}Triggered by ${source} ${m.event} (delivery ${m.id}):\n\n${renderHookSummaryMarkdown(m.event, m.payload)}`;
-    });
-    const header =
-      msgs.length > 1
-        ? `${msgs.length} new events on scope \`${scope}\` since you last ran — handle them together:\n\n`
-        : "";
-    return `${header}${blocks.join("\n\n")}\n\n${prompt}`;
-  }
 
   async function runQueuedBatch(threadId: string, msgs: QueuedMessage[]): Promise<void> {
     const queue = getHookQueue();
