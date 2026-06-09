@@ -26,13 +26,27 @@ const SECTION_ICON: Record<TreeSource, ComponentType<{ className?: string }>> = 
 
 export type SortMode = "recent" | "num";
 
+/**
+ * Stable, namespaced open-state keys. Every collapsible node — section, repo
+ * group, item disclosure — maps to one of these so its open/closed state
+ * persists across reloads and as the live tree changes. Unknown keys read as
+ * closed (the openMap only records nodes the user has opened).
+ */
+const nodeKey = {
+  section: (source: TreeSource) => `sec:${source}`,
+  repo: (source: TreeSource, repo: string) => `repo:${source}:${repo}`,
+  item: (key: string) => `item:${key}`,
+};
+
 export type SectionTreeProps = {
   sections: TreeSection[];
   activeThreadId: string | null;
   onSelectThread: (threadId: string) => void;
-  /** Per-section collapse: `collapsed[source] === true` ⇒ section closed. */
-  collapsed: Record<string, boolean>;
-  onToggleSection: (source: TreeSource) => void;
+  /** Open-state for every node: `openMap[key] === true` ⇒ node open; everything
+   *  else is closed (so a first visit with no saved state is fully collapsed). */
+  openMap: Record<string, boolean>;
+  /** Toggle a node by its stable `nodeKey`. */
+  onToggleNode: (key: string) => void;
   /** PR sort order (Pull Requests section). */
   sortMode: SortMode;
   onSortChange: (mode: SortMode) => void;
@@ -45,27 +59,32 @@ export function SectionTree({
   sections,
   activeThreadId,
   onSelectThread,
-  collapsed,
-  onToggleSection,
+  openMap,
+  onToggleNode,
   sortMode,
   onSortChange,
   deferredByThread,
 }: SectionTreeProps) {
   return (
     <div className="flex flex-col">
-      {sections.map((section) => (
-        <SectionBlock
-          key={section.source}
-          section={section}
-          open={!collapsed[section.source]}
-          onToggle={() => onToggleSection(section.source)}
-          activeThreadId={activeThreadId}
-          onSelectThread={onSelectThread}
-          sortMode={sortMode}
-          onSortChange={onSortChange}
-          deferredByThread={deferredByThread}
-        />
-      ))}
+      {sections.map((section) => {
+        const key = nodeKey.section(section.source);
+        return (
+          <SectionBlock
+            key={section.source}
+            section={section}
+            open={openMap[key] === true}
+            onToggle={() => onToggleNode(key)}
+            activeThreadId={activeThreadId}
+            onSelectThread={onSelectThread}
+            openMap={openMap}
+            onToggleNode={onToggleNode}
+            sortMode={sortMode}
+            onSortChange={onSortChange}
+            deferredByThread={deferredByThread}
+          />
+        );
+      })}
     </div>
   );
 }
@@ -103,6 +122,8 @@ function SectionBlock({
   onToggle,
   activeThreadId,
   onSelectThread,
+  openMap,
+  onToggleNode,
   sortMode,
   onSortChange,
   deferredByThread,
@@ -112,6 +133,8 @@ function SectionBlock({
   onToggle: () => void;
   activeThreadId: string | null;
   onSelectThread: (threadId: string) => void;
+  openMap: Record<string, boolean>;
+  onToggleNode: (key: string) => void;
   sortMode: SortMode;
   onSortChange: (mode: SortMode) => void;
   deferredByThread: Map<string, number> | undefined;
@@ -140,22 +163,31 @@ function SectionBlock({
         ) : isGithub ? (
           <>
             <SortBar mode={sortMode} onChange={onSortChange} />
-            {groupByRepo(section.items).map((g) => (
-              <RepoGroup
-                key={g.repo}
-                repo={g.repo}
-                items={sortItems(g.items, sortMode)}
-                activeThreadId={activeThreadId}
-                onSelectThread={onSelectThread}
-                deferredByThread={deferredByThread}
-              />
-            ))}
+            {groupByRepo(section.items).map((g) => {
+              const key = nodeKey.repo(section.source, g.repo);
+              return (
+                <RepoGroup
+                  key={g.repo}
+                  repo={g.repo}
+                  items={sortItems(g.items, sortMode)}
+                  open={openMap[key] === true}
+                  onToggle={() => onToggleNode(key)}
+                  activeThreadId={activeThreadId}
+                  onSelectThread={onSelectThread}
+                  openMap={openMap}
+                  onToggleNode={onToggleNode}
+                  deferredByThread={deferredByThread}
+                />
+              );
+            })}
           </>
         ) : (
           section.items.map((item) => (
             <ItemBlock
               key={item.key}
               item={item}
+              open={openMap[nodeKey.item(item.key)] === true}
+              onToggle={() => onToggleNode(nodeKey.item(item.key))}
               activeThreadId={activeThreadId}
               onSelectThread={onSelectThread}
               deferredByThread={deferredByThread}
@@ -200,19 +232,30 @@ function SortBar({ mode, onChange }: { mode: SortMode; onChange: (m: SortMode) =
 function RepoGroup({
   repo,
   items,
+  open,
+  onToggle,
   activeThreadId,
   onSelectThread,
+  openMap,
+  onToggleNode,
   deferredByThread,
 }: {
   repo: string;
   items: TreeItem[];
+  open: boolean;
+  onToggle: () => void;
   activeThreadId: string | null;
   onSelectThread: (threadId: string) => void;
+  openMap: Record<string, boolean>;
+  onToggleNode: (key: string) => void;
   deferredByThread: Map<string, number> | undefined;
 }) {
   return (
-    <Collapsible defaultOpen>
-      <CollapsibleTrigger className="group flex w-full items-center gap-1.5 px-3 py-1 pl-7 text-left hover:bg-base-200/50">
+    <Collapsible open={open}>
+      <CollapsibleTrigger
+        onClick={onToggle}
+        className="group flex w-full items-center gap-1.5 px-3 py-1 pl-7 text-left hover:bg-base-200/50"
+      >
         <ChevronRight className="size-3 shrink-0 text-base-content/40 transition-transform group-data-[state=open]:rotate-90" />
         <span className="flex-1 truncate font-mono text-[11px] text-base-content/55" title={repo}>
           {repo}
@@ -220,15 +263,20 @@ function RepoGroup({
         <span className="font-mono text-[10px] text-base-content/35">{items.length}</span>
       </CollapsibleTrigger>
       <CollapsibleContent>
-        {items.map((item) => (
-          <ItemBlock
-            key={item.key}
-            item={item}
-            activeThreadId={activeThreadId}
-            onSelectThread={onSelectThread}
-            deferredByThread={deferredByThread}
-          />
-        ))}
+        {items.map((item) => {
+          const key = nodeKey.item(item.key);
+          return (
+            <ItemBlock
+              key={item.key}
+              item={item}
+              open={openMap[key] === true}
+              onToggle={() => onToggleNode(key)}
+              activeThreadId={activeThreadId}
+              onSelectThread={onSelectThread}
+              deferredByThread={deferredByThread}
+            />
+          );
+        })}
       </CollapsibleContent>
     </Collapsible>
   );
@@ -236,11 +284,15 @@ function RepoGroup({
 
 function ItemBlock({
   item,
+  open,
+  onToggle,
   activeThreadId,
   onSelectThread,
   deferredByThread,
 }: {
   item: TreeItem;
+  open: boolean;
+  onToggle: () => void;
   activeThreadId: string | null;
   onSelectThread: (threadId: string) => void;
   deferredByThread: Map<string, number> | undefined;
@@ -260,8 +312,11 @@ function ItemBlock({
   // Every item is a disclosure — even a single-routine PR — so you can always
   // see WHICH routine (.md) handled it, not just the PR title.
   return (
-    <Collapsible defaultOpen>
-      <CollapsibleTrigger className="group flex w-full items-center gap-1.5 px-3 py-1 pl-7 text-left text-sm hover:bg-base-200/60">
+    <Collapsible open={open}>
+      <CollapsibleTrigger
+        onClick={onToggle}
+        className="group flex w-full items-center gap-1.5 px-3 py-1 pl-7 text-left text-sm hover:bg-base-200/60"
+      >
         <ChevronRight className="size-3 shrink-0 text-base-content/40 transition-transform group-data-[state=open]:rotate-90" />
         <span className="flex-1 truncate font-medium text-base-content/90" title={item.title}>
           {item.title}
