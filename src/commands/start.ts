@@ -970,25 +970,37 @@ export async function start(args: string[] = []) {
                 ? `${head}\n\n${renderHookEssentialsMarkdown(buildHookEssentials(event, payload))}`
                 : head;
 
-              const sessionId = await writeStaticSkipSession({ assistantText: message });
-              const { createThreadSession } = await import("../sessionManager");
-              const {
-                setSessionTrigger,
-                setSessionResult,
-                setSessionTitle,
-                setSessionHookPayload,
-              } = await import("../ui/services/session-meta");
-              await createThreadSession(threadId, sessionId);
-              await setSessionTrigger(sessionId, { kind: "hook", ...trig });
-              await setSessionHookPayload(sessionId, event, payload);
-              await setSessionResult(sessionId, "skipped");
-              const displayLabel = extractHookLabel(event, payload);
-              if (displayLabel) {
-                await setSessionTitle(sessionId, displayLabel);
+              // CRITICAL: never clobber a thread that already has a session. A
+              // skip event arriving AFTER real activity on the same thread — e.g.
+              // a `labeled` event on a PR that pr-comments already conversed on —
+              // must NOT replace the real session with an empty skip placeholder;
+              // that wipes the visible chat history (the real transcript is
+              // orphaned and the thread shows only the skip notice). Only
+              // materialize a skip session when the thread has NONE yet, so a
+              // thread whose first-ever event is a skip still shows the notice,
+              // while an active conversation is preserved. The skip is still
+              // recorded in the Deliveries tab via annotateSkip below.
+              const { createThreadSession, peekThreadSession } = await import("../sessionManager");
+              const existing = await peekThreadSession(threadId);
+              if (!existing) {
+                const sessionId = await writeStaticSkipSession({ assistantText: message });
+                const {
+                  setSessionTrigger,
+                  setSessionResult,
+                  setSessionTitle,
+                  setSessionHookPayload,
+                } = await import("../ui/services/session-meta");
+                await createThreadSession(threadId, sessionId);
+                await setSessionTrigger(sessionId, { kind: "hook", ...trig });
+                await setSessionHookPayload(sessionId, event, payload);
+                await setSessionResult(sessionId, "skipped");
+                const displayLabel = extractHookLabel(event, payload);
+                if (displayLabel) {
+                  await setSessionTitle(sessionId, displayLabel);
+                }
+                setThreadResult(threadId, job.name, { result: "skipped", ranAt: Date.now() });
+                emitJobStatus();
               }
-
-              setThreadResult(threadId, job.name, { result: "skipped", ranAt: Date.now() });
-              emitJobStatus();
               annotateSkip(deliveryId, job.name, reason);
             } catch (err) {
               console.error(`[${ts()}] hook skip error for ${jobName}:`, err);
