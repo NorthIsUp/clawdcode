@@ -43,7 +43,17 @@ export type ChatPart = (
   | { kind: "reasoning"; id: string; markdown: string }
   | { kind: "tool"; id: string; tool: ToolPart }
   | { kind: "sources"; id: string; sources: SourceLink[] }
-) & { at?: number };
+) & {
+  at?: number;
+  /**
+   * True = this block is FYI only and was NOT part of the model's context — a
+   * pre-filtered (dropped) hook, a suppressed bot body, the full untruncated
+   * payload, or a `[skip:fyi]` / `[skip:ignore]` reason. Mirrors the frontend
+   * source of truth (`web/v3/lib/transcriptParts.ts`); the chat pane renders
+   * these in the blue "Not sent to the agent (FYI)" box. Absent = in-context.
+   */
+  notInContext?: boolean;
+};
 
 export type ThreadMessagesResponse = {
   threadId: string;
@@ -104,8 +114,18 @@ function atOf(entry: RawEntry): { at?: number } {
  *  the first-run lead ("Triggered by …") and the resume lead. */
 const TRIGGER_RE = /^(Triggered by |New event on |\d+ new events on )/;
 
-/** The agent's terminal status line, e.g. "[skip] PR #12: …" / "[ok] …". */
-const STATUS_LINE_RE = /^\s*\[(skip|ok|pass|done)\]/i;
+/**
+ * The agent's (or a synthetic skip session's) terminal status line, e.g.
+ * "[skip] PR #12: …" / "[ok] …" / "[skip:fyi] …" / "[skip:ignore] …". The
+ * optional `:suffix` distinguishes prefilter/label drops from a plain skip. */
+const STATUS_LINE_RE = /^\s*\[(skip|ok|pass|done)(?::([a-z]+))?\]/i;
+
+/**
+ * FYI status markers — a `[skip:fyi]` (prefilter / bot-noise drop) or
+ * `[skip:ignore]` (`claw:ignore` label) line was never sent to the agent, so
+ * its part is flagged `notInContext` and rendered in the blue FYI box. A plain
+ * `[skip]` / `[ok]` stays an in-context system notice. */
+const FYI_STATUS_SUFFIXES = new Set(["fyi", "ignore"]);
 
 /** Pending tool_use awaiting its tool_result, keyed by tool_use id. */
 type PendingTool = { partIndex: number; tool: ToolPart };
@@ -241,9 +261,20 @@ export class TranscriptParser {
       const id = `${idx}:${block++}`;
       if (b?.type === "text" && typeof b.text === "string" && b.text.trim()) {
         // The agent's terminal status line ("[skip]/[ok] …") reads as a system
-        // notice, not a chat message.
-        if (STATUS_LINE_RE.test(b.text)) {
-          this.parts.push({ kind: "system", id, text: b.text.trim(), ...at });
+        // notice, not a chat message. A `[skip:fyi]` / `[skip:ignore]` variant
+        // was never sent to the agent → flag it `notInContext` so the chat pane
+        // routes it to the blue FYI box.
+        const statusMatch = STATUS_LINE_RE.exec(b.text);
+        if (statusMatch) {
+          const suffix = statusMatch[2]?.toLowerCase();
+          const fyi = suffix != null && FYI_STATUS_SUFFIXES.has(suffix);
+          this.parts.push({
+            kind: "system",
+            id,
+            text: b.text.trim(),
+            ...at,
+            ...(fyi ? { notInContext: true } : {}),
+          });
         } else {
           this.parts.push({ kind: "text", id, role: "assistant", markdown: b.text, ...at });
         }

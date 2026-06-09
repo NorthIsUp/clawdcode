@@ -7,6 +7,13 @@ import {
   readSentryPayload,
   renderHookSummaryMarkdown,
 } from "../hooks/match";
+import {
+  buildHookEssentials,
+  HOOK_LIMITS,
+  isBotActor,
+  prefilterReason,
+  truncateText,
+} from "../../shared/hookEssentials";
 import { parseTriggers, defaultSentryRule, PROD_SENTRY_PROJECT_PATTERNS } from "../hooks/schema";
 
 const SENTRY_ISSUE = {
@@ -144,5 +151,157 @@ describe("datadog matching", () => {
   test("scope falls back to monitor", () => {
     const noAgg = { ...DATADOG_ALERT, aggreg_key: undefined };
     expect(extractHookScope("datadog:alert", noAgg)).toBe("dd-monitor-789");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Hook Context Diet — essentials layer
+// ---------------------------------------------------------------------------
+
+const PR_COMMENT = (login: string, body: string) => ({
+  action: "created",
+  repository: { full_name: "org/repo" },
+  sender: { login },
+  issue: { number: 42, title: "Fix the flaky test" },
+  comment: { user: { login }, body, html_url: "https://gh/c/1" },
+});
+
+describe("truncateText — marker math", () => {
+  test("under the limit passes through with 0 dropped", () => {
+    expect(truncateText("hello world", 280)).toEqual({ text: "hello world", truncatedChars: 0 });
+  });
+  test("over the limit appends …⟨+N⟩ counting dropped chars", () => {
+    const s = "a".repeat(300);
+    const { text, truncatedChars } = truncateText(s, 280);
+    expect(truncatedChars).toBe(20);
+    expect(text).toBe(`${"a".repeat(280)}…⟨+20⟩`);
+  });
+  test("max 0 drops the body entirely but still counts it", () => {
+    expect(truncateText("body text here", 0)).toEqual({ text: "", truncatedChars: 14 });
+  });
+  test("collapses whitespace to a single line", () => {
+    expect(truncateText("a\n\n  b\tc", 280).text).toBe("a b c");
+  });
+  test("empty / non-string yields empty", () => {
+    expect(truncateText("   ", 280)).toEqual({ text: "", truncatedChars: 0 });
+    expect(truncateText(null, 280)).toEqual({ text: "", truncatedChars: 0 });
+  });
+});
+
+describe("isBotActor", () => {
+  test.each([
+    ["greptile-bot", true],
+    ["coderabbitai[bot]", true],
+    ["dependabot[bot]", true],
+    ["github-actions[bot]", true],
+    ["sonarqubecloud[bot]", true],
+    ["renovate[bot]", true],
+    ["alice", false],
+    ["robert", false],
+    [undefined, false],
+  ])("%s → %s", (login, expected) => {
+    expect(isBotActor(login as string | undefined)).toBe(expected);
+  });
+});
+
+describe("buildHookEssentials — github", () => {
+  test("issue_comment: compact headline + facts + truncated body", () => {
+    const body = "please rebase onto main, CI is red. " + "z".repeat(500);
+    const e = buildHookEssentials("issue_comment", PR_COMMENT("alice", body));
+    expect(e.source).toBe("github");
+    expect(e.headline).toBe("org/repo#42 — Fix the flaky test");
+    expect(e.facts).toContainEqual({ label: "author", value: "alice" });
+    expect(e.body?.fromBot).toBe(false);
+    expect(e.body?.text.length).toBeLessThanOrEqual(HOOK_LIMITS.freeText + 12);
+    expect(e.body?.truncatedChars).toBeGreaterThan(0);
+    expect(e.body?.text).toContain("please rebase onto main");
+  });
+
+  test("bot comment: body suppressed entirely (fromBot, empty text)", () => {
+    const e = buildHookEssentials("issue_comment", PR_COMMENT("greptile-bot", "X".repeat(3000)));
+    expect(e.body?.fromBot).toBe(true);
+    expect(e.body?.text).toBe("");
+    expect(e.body?.truncatedChars).toBe(3000);
+  });
+
+  test("pull_request_review surfaces the review state as a fact", () => {
+    const e = buildHookEssentials("pull_request_review", {
+      action: "submitted",
+      repository: { full_name: "org/repo" },
+      sender: { login: "bob" },
+      pull_request: { number: 42, title: "T", html_url: "https://gh/pr/42" },
+      review: { state: "changes_requested", body: "two nits" },
+    });
+    expect(e.facts).toContainEqual({ label: "review", value: "changes_requested" });
+    expect(e.body?.text).toBe("two nits");
+  });
+
+  test("review-comment with path/line records an `at` fact", () => {
+    const e = buildHookEssentials("pull_request_review_comment", {
+      action: "created",
+      repository: { full_name: "org/repo" },
+      sender: { login: "alice" },
+      pull_request: { number: 42, title: "T" },
+      comment: { user: { login: "alice" }, body: "nit", path: "src/x.ts", line: 12 },
+    });
+    expect(e.facts).toContainEqual({ label: "at", value: "src/x.ts:12" });
+  });
+});
+
+describe("buildHookEssentials — sentry/datadog (identity only, no stacktrace)", () => {
+  test("sentry: project/level/culprit/count, never breadcrumbs", () => {
+    const e = buildHookEssentials("sentry:issue", SENTRY_ISSUE);
+    expect(e.source).toBe("sentry");
+    expect(e.facts).toContainEqual({ label: "project", value: "clara-prod" });
+    expect(e.facts).toContainEqual({ label: "level", value: "error" });
+    expect(e.body).toBeUndefined();
+    expect(JSON.stringify(e)).not.toContain("breadcrumb");
+  });
+  test("datadog: priority/status/tags + truncated message body", () => {
+    const e = buildHookEssentials("datadog:alert", DATADOG_ALERT);
+    expect(e.source).toBe("datadog");
+    expect(e.facts).toContainEqual({ label: "priority", value: "P1" });
+    expect(e.body?.text).toBe("p99 > 2s");
+  });
+});
+
+describe("renderHookSummaryMarkdown — compact output", () => {
+  test("no legacy bullet boilerplate; one headline + one facts line", () => {
+    const md = renderHookSummaryMarkdown("issue_comment", PR_COMMENT("alice", "hi there"));
+    expect(md).not.toContain("**repo**");
+    expect(md).not.toContain("**sender**");
+    expect(md).not.toContain("**event**");
+    expect(md).toContain("org/repo#42 — Fix the flaky test");
+    expect(md).toContain("> hi there");
+  });
+  test("bot body renders the suppression note, not the text", () => {
+    const md = renderHookSummaryMarkdown(
+      "issue_comment",
+      PR_COMMENT("greptile-bot", "huge review dump ".repeat(200)),
+    );
+    expect(md).toContain("(body suppressed");
+    expect(md).not.toContain("huge review dump huge");
+  });
+});
+
+describe("prefilterReason — bot-noise drop, recorded not prompted", () => {
+  test("bot comment with no allowlist → bot-noise skip reason", () => {
+    expect(prefilterReason("issue_comment", PR_COMMENT("greptile-bot", "x"))).toBe(
+      "bot noise: greptile-bot",
+    );
+  });
+  test("human comment is never prefiltered", () => {
+    expect(prefilterReason("issue_comment", PR_COMMENT("alice", "x"))).toBeNull();
+  });
+  test("allowlisted bot (Greptile-as-trigger) is NOT prefiltered", () => {
+    expect(prefilterReason("issue_comment", PR_COMMENT("greptile-bot", "x"), ["greptile-bot"])).toBeNull();
+  });
+  test("a bot excluded from the allowlist is still prefiltered", () => {
+    expect(
+      prefilterReason("issue_comment", PR_COMMENT("greptile-bot", "x"), ["*", "!*-bot"]),
+    ).toBe("bot noise: greptile-bot");
+  });
+  test("non-comment events are never prefiltered", () => {
+    expect(prefilterReason("pull_request", { sender: { login: "greptile-bot" } })).toBeNull();
   });
 });

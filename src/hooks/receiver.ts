@@ -17,6 +17,7 @@ import {
   prRuleSkipReason,
   readPrPayload,
 } from "./match";
+import { prefilterReason } from "../../shared/hookEssentials";
 
 /**
  * GitHub webhook receiver. Verifies HMAC-SHA256 signature using a secret
@@ -51,6 +52,10 @@ export interface WebhookDeps {
     deliveryId: string,
     payload: unknown,
     reason: string,
+    /** True when this is a PREFILTER drop (bot-noise / non-actionable) — the
+     *  delivery never reaches the model. Drives the `[skip:fyi]` marker +
+     *  blue "not in context" chat treatment. */
+    prefilter?: boolean,
   ) => Promise<void> | void;
 }
 
@@ -214,6 +219,17 @@ export async function dispatchHook(
       if (cfg === undefined || cfg === false) {
         continue; // not interested
       }
+      // `true` = any commenter (incl. bots — an explicit opt-in); an object
+      // filters by glob. Compute the allowlist up front so the narrowing is
+      // clean for both the fire decision and the bot-noise prefilter.
+      const allowlist = cfg === true ? undefined : cfg.user;
+      const wouldFire = cfg === true || (!!actor && matchPatternList(allowlist ?? [], actor));
+      // Bot-noise prefilter: only when the actor is a bot the config would NOT
+      // fire on anyway (an explicitly-allowed/triggering bot is never dropped —
+      // don't break Greptile-as-trigger setups). It RELABELS the would-be
+      // "not matched" skip as a prefilter `[skip:fyi]` drop so the chat
+      // blue-boxes the suppressed bot body rather than showing a plain skip.
+      const noiseReason = wouldFire ? null : prefilterReason(event, payload, allowlist);
       if (ignored) {
         routines.push({ job: job.name, outcome: "skip", reason: IGNORE_REASON });
         void deps.onHookSkip?.(job.name, event, id, payload, IGNORE_REASON);
@@ -221,10 +237,15 @@ export async function dispatchHook(
         const reason = selfSkipReason(actor ?? "");
         routines.push({ job: job.name, outcome: "skip", reason });
         void deps.onHookSkip?.(job.name, event, id, payload, reason);
-      } else if (cfg === true || (actor && matchPatternList(cfg.user, actor))) {
+      } else if (wouldFire) {
         matched.push(job.name);
         routines.push({ job: job.name, outcome: "trigger" });
         void deps.onHookFire(job.name, event, id, payload);
+      } else if (noiseReason) {
+        // Bot-noise drop: recorded as a PREFILTER skip (dropped before the
+        // model ever sees it), distinct from a plain config-rule skip.
+        routines.push({ job: job.name, outcome: "skip", reason: noiseReason, prefilter: true });
+        void deps.onHookSkip?.(job.name, event, id, payload, noiseReason, true);
       } else {
         const reason = `comment actor \`${actor ?? "?"}\` not matched by the comment user filter`;
         routines.push({ job: job.name, outcome: "skip", reason });

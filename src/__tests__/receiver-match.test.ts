@@ -60,6 +60,31 @@ async function skipReasons(event: string, body: unknown, jobs: Job[]): Promise<s
   return reasons;
 }
 
+/** Capture skip (reason, prefilter) pairs so tests can assert the prefilter
+ *  `[skip:fyi]` bot-noise drops distinctly from plain config skips. */
+async function skipOutcomes(
+  event: string,
+  body: unknown,
+  jobs: Job[],
+): Promise<{ reason: string; prefilter: boolean }[]> {
+  const out: { reason: string; prefilter: boolean }[] = [];
+  await handleWebhook(ghRequest(event, body), {
+    getJobs: () => jobs,
+    onHookFire: () => {},
+    onHookSkip: (
+      _name: string,
+      _e: string,
+      _d: string,
+      _p: unknown,
+      reason: string,
+      prefilter?: boolean,
+    ) => {
+      out.push({ reason, prefilter: prefilter === true });
+    },
+  });
+  return out;
+}
+
 describe("webhook matcher — config is authoritative", () => {
   test("comment on a main-targeting PR fires when comments: true", async () => {
     const job = makeJob("pr-comments", [{ comments: true }]);
@@ -199,9 +224,13 @@ describe("webhook matcher — config is authoritative", () => {
     expect(reasons.some((r) => r.includes("base branch") && r.includes("main"))).toBe(true);
   });
 
-  test("bot comment under humans-only emits a user-filter skip reason", async () => {
+  // A humans-only filter (`!*[bot]`) that excludes a bot is exactly the
+  // bot-noise case the context diet targets: the delivery is dropped BEFORE the
+  // model as a prefilter `[skip:fyi]` drop (so the chat blue-boxes the
+  // suppressed bot body), not a plain user-filter skip row.
+  test("bot comment under humans-only is a prefilter bot-noise drop", async () => {
     const job = makeJob("pr-comments", [{ comments: { user: ["*", "!*[bot]"] } }]);
-    const reasons = await skipReasons(
+    const outcomes = await skipOutcomes(
       "issue_comment",
       {
         action: "created",
@@ -212,7 +241,27 @@ describe("webhook matcher — config is authoritative", () => {
       },
       [job],
     );
-    expect(reasons.some((r) => r.includes("not matched by the comment user filter"))).toBe(true);
+    const noise = outcomes.find((o) => o.prefilter);
+    expect(noise).toBeDefined();
+    expect(noise?.reason).toContain("bot noise");
+  });
+
+  // A non-bot actor excluded by an explicit glob still gets the plain
+  // user-filter skip reason (no prefilter — it's a config decision, not noise).
+  test("human excluded by the comment filter gets a plain user-filter skip", async () => {
+    const job = makeJob("pr-comments", [{ comments: { user: ["alice"] } }], false);
+    const outcomes = await skipOutcomes(
+      "issue_comment",
+      {
+        action: "created",
+        repository: { full_name: "org/repo" },
+        issue: { number: 4, pull_request: { url: "x" } },
+        comment: { user: { login: "bob" } },
+        sender: { login: "bob" },
+      },
+      [job],
+    );
+    expect(outcomes.some((o) => !o.prefilter && o.reason.includes("not matched"))).toBe(true);
   });
 });
 

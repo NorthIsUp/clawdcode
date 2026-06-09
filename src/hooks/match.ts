@@ -7,6 +7,10 @@
  *   - State starts at "not included" and flips per match.
  */
 
+import {
+  buildHookEssentials,
+  renderHookEssentialsMarkdown,
+} from "../../shared/hookEssentials";
 import type { DatadogRule, PrRule, SentryRule } from "./schema";
 
 export interface PrPayload {
@@ -544,170 +548,6 @@ export function extractHookLabel(event: string, payload: unknown): string | null
 }
 
 /**
- * Distill a GitHub webhook payload into the small object we hand to a
- * job's prompt. GitHub payloads are huge (repo metadata is repeated 3-4
- * times, every actor inlines a dozen API URLs, the PR body itself can
- * run to hundreds of lines), but a job only needs the identifiers and
- * the human-meaningful state. Anything missing is recoverable via
- * `gh pr view <repo>#<n> --json …` from inside the agent.
- *
- * Currently handles the four PR-class events. Unknown event types fall
- * back to a minimal `{ event, action, sender, repo }` envelope.
- */
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: one branch per event shape — flattening just hides the structure.
-export function summarizeHookPayload(event: string, payload: unknown): unknown {
-  if (typeof payload !== "object" || payload === null) {
-    return { event };
-  }
-  const root = payload as Record<string, unknown>;
-
-  if (event.startsWith("sentry:")) {
-    return summarizeSentryPayload(event, root);
-  }
-  if (event.startsWith("datadog:")) {
-    return summarizeDatadogPayload(event, root);
-  }
-
-  const action = typeof root.action === "string" ? root.action : undefined;
-  const repo = readPath(root, ["repository", "full_name"]) ?? undefined;
-  const sender = readPath(root, ["sender", "login"]) ?? undefined;
-  const envelope: Record<string, unknown> = { event, action, repo, sender };
-
-  const pr = pickPullRequest(event, root);
-  if (pr && typeof pr.number === "number") {
-    // Some shapes synthesized by pickPullRequest only carry `number`;
-    // try the real top-level pull_request for fuller data.
-    const fullPr =
-      typeof root.pull_request === "object" && root.pull_request !== null
-        ? (root.pull_request as Record<string, unknown>)
-        : pr;
-    envelope.pr = {
-      number: pr.number,
-      title: readPath(fullPr, ["title"]) ?? undefined,
-      url: readPath(fullPr, ["html_url"]) ?? undefined,
-      state: readPath(fullPr, ["state"]) ?? undefined,
-      draft: typeof fullPr.draft === "boolean" ? fullPr.draft : undefined,
-      head: readPath(fullPr, ["head", "ref"]) ?? undefined,
-      base: readPath(fullPr, ["base", "ref"]) ?? undefined,
-      author: readPath(fullPr, ["user", "login"]) ?? undefined,
-    };
-  }
-
-  if (event === "pull_request_review" && typeof root.review === "object" && root.review !== null) {
-    const review = root.review as Record<string, unknown>;
-    envelope.review = {
-      state: readPath(review, ["state"]) ?? undefined,
-      url: readPath(review, ["html_url"]) ?? undefined,
-      // Include short review body but cap length — long reviews can be
-      // fetched via gh pr view --json reviews.
-      body: truncate(readPath(review, ["body"]), 500),
-    };
-  }
-
-  if (
-    (event === "issue_comment" || event === "pull_request_review_comment") &&
-    typeof root.comment === "object" &&
-    root.comment !== null
-  ) {
-    const comment = root.comment as Record<string, unknown>;
-    envelope.comment = {
-      url: readPath(comment, ["html_url"]) ?? undefined,
-      author: readPath(comment, ["user", "login"]) ?? undefined,
-      // Per-line comments include file + line context.
-      path: readPath(comment, ["path"]) ?? undefined,
-      line:
-        typeof comment.line === "number"
-          ? comment.line
-          : typeof comment.original_line === "number"
-            ? comment.original_line
-            : undefined,
-      body: truncate(readPath(comment, ["body"]), 2000),
-    };
-  }
-
-  return prune(envelope);
-}
-
-/** Distill a Sentry webhook into the small object handed to the prompt.
- *  Sentry bodies inline the full event (stacktrace, breadcrumbs, etc.) —
- *  the agent fetches detail via the Sentry MCP / web URL, so we keep just
- *  the identity + a short culprit/title. */
-function summarizeSentryPayload(event: string, root: Record<string, unknown>): unknown {
-  const s = readSentryPayload(root);
-  const issue =
-    typeof root.data === "object" && root.data !== null
-      ? ((root.data as Record<string, unknown>).issue as Record<string, unknown> | undefined)
-      : undefined;
-  const url =
-    readPath(issue ?? {}, ["web_url"]) ??
-    readPath(issue ?? {}, ["permalink"]) ??
-    readPath(root, ["data", "event", "web_url"]) ??
-    undefined;
-  return prune({
-    event,
-    action: s?.action || undefined,
-    project: s?.project || undefined,
-    level: s?.level || undefined,
-    title:
-      readPath(issue ?? {}, ["title"]) ?? readPath(root, ["data", "event", "title"]) ?? undefined,
-    culprit: readPath(issue ?? {}, ["culprit"]) ?? undefined,
-    count: issue && typeof issue.count !== "undefined" ? String(issue.count) : undefined,
-    url,
-  });
-}
-
-/** Distill a Datadog webhook. Datadog payloads are user-shaped, so we
- *  surface the canonical template fields plus the message body. */
-function summarizeDatadogPayload(event: string, root: Record<string, unknown>): unknown {
-  const d = readDatadogPayload(root);
-  return prune({
-    event,
-    monitor: d?.monitor || undefined,
-    priority: d?.priority || undefined,
-    type: d?.type || undefined,
-    status: readPath(root, ["status"]) ?? readPath(root, ["alert_status"]) ?? undefined,
-    title: readPath(root, ["title"]) ?? readPath(root, ["event_title"]) ?? undefined,
-    message: truncate(readPath(root, ["message"]) ?? readPath(root, ["event_msg"]), 1000),
-    tags: d && d.tags.length > 0 ? d.tags : undefined,
-    link: readPath(root, ["link"]) ?? undefined,
-    hostname: readPath(root, ["hostname"]) ?? undefined,
-  });
-}
-
-/** Drop undefined/null fields recursively so the rendered JSON is tight. */
-function prune(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return value.map(prune);
-  }
-  if (value && typeof value === "object") {
-    const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value)) {
-      if (v === undefined || v === null) {
-        continue;
-      }
-      const pruned = prune(v);
-      if (pruned === undefined) {
-        continue;
-      }
-      out[k] = pruned;
-    }
-    return out;
-  }
-  return value;
-}
-
-function truncate(value: unknown, max: number): string | undefined {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return undefined;
-  }
-  return trimmed.length > max ? `${trimmed.slice(0, max)}… [truncated]` : trimmed;
-}
-
-/**
  * Build a structured trigger record from a webhook payload, persisted
  * on the session-meta entry so the Runs view can render
  * "comment on PR #415" instead of "scheduled" for hook-driven sessions.
@@ -771,132 +611,16 @@ export function buildHookTrigger(
 }
 
 /**
- * Render the summary as a markdown bullet list — the format we hand to
- * the agent in the prompt. Markdown beats JSON/YAML here because:
- *   - URLs become tokenized as single linkified units
- *   - the agent reads bullet lists more naturally than structured data
- *     when the goal is comprehension, not parsing
- *   - ~25% fewer tokens than the equivalent JSON
- * If the agent needs structured access, it can `gh pr view <repo>#<n>`.
+ * Render the compact hook summary handed to the agent in the prompt.
+ *
+ * Thin alias over the DRY essentials layer (`shared/hookEssentials.ts`):
+ * `buildHookEssentials` distills the payload, `renderHookEssentialsMarkdown`
+ * formats it. All truncation limits + bot-noise suppression live there — this
+ * keeps the old name working for the prompt formatter without a per-event
+ * renderer here.
  */
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: linear "build a bullet list per event shape"; helpers would shred the flow.
 export function renderHookSummaryMarkdown(event: string, payload: unknown): string {
-  const s = summarizeHookPayload(event, payload) as Record<string, unknown>;
-  const lines: string[] = [];
-  const ev = s.event ?? event;
-  const action = s.action ? ` (${s.action})` : "";
-  lines.push(`- **event**: ${ev}${action}`);
-
-  // Sentry / Datadog summaries have their own field set — render and
-  // return early.
-  if (typeof ev === "string" && ev.startsWith("sentry:")) {
-    if (s.project) {
-      lines.push(`- **project**: ${s.project}`);
-    }
-    if (s.level) {
-      lines.push(`- **level**: ${s.level}`);
-    }
-    if (s.title) {
-      lines.push(s.url ? `- **issue**: [${s.title}](${s.url})` : `- **issue**: ${s.title}`);
-    }
-    if (s.culprit) {
-      lines.push(`  - culprit: \`${s.culprit}\``);
-    }
-    if (s.count) {
-      lines.push(`  - count: ${s.count}`);
-    }
-    return lines.join("\n");
-  }
-  if (typeof ev === "string" && ev.startsWith("datadog:")) {
-    if (s.monitor) {
-      lines.push(`- **monitor**: ${s.monitor}`);
-    }
-    if (s.priority) {
-      lines.push(`- **priority**: ${s.priority}`);
-    }
-    if (s.status) {
-      lines.push(`- **status**: ${s.status}`);
-    }
-    if (s.title) {
-      lines.push(s.link ? `- **alert**: [${s.title}](${s.link})` : `- **alert**: ${s.title}`);
-    }
-    if (Array.isArray(s.tags) && s.tags.length > 0) {
-      lines.push(`  - tags: ${(s.tags as string[]).join(", ")}`);
-    }
-    if (s.hostname) {
-      lines.push(`  - host: ${s.hostname}`);
-    }
-    if (typeof s.message === "string") {
-      lines.push(`  - ${oneLine(s.message)}`);
-    }
-    return lines.join("\n");
-  }
-
-  if (s.repo) {
-    lines.push(`- **repo**: ${s.repo}`);
-  }
-  if (s.sender) {
-    lines.push(`- **sender**: ${s.sender}`);
-  }
-
-  const pr = s.pr as Record<string, unknown> | undefined;
-  if (pr && typeof pr.number === "number") {
-    const titlePart = pr.title ? ` — ${pr.title}` : "";
-    const linkText = `#${pr.number}${titlePart}`;
-    const prLine = pr.url ? `- **PR**: [${linkText}](${pr.url})` : `- **PR**: ${linkText}`;
-    lines.push(prLine);
-    const subs: string[] = [];
-    if (pr.state || typeof pr.draft === "boolean") {
-      const draftBit = typeof pr.draft === "boolean" ? ` · draft: ${pr.draft}` : "";
-      subs.push(`state: ${pr.state ?? "?"}${draftBit}`);
-    }
-    if (pr.head || pr.base) {
-      subs.push(`head: \`${pr.head ?? "?"}\` → base: \`${pr.base ?? "?"}\``);
-    }
-    if (pr.author) {
-      subs.push(`author: ${pr.author}`);
-    }
-    for (const sub of subs) {
-      lines.push(`  - ${sub}`);
-    }
-  }
-
-  const review = s.review as Record<string, unknown> | undefined;
-  if (review) {
-    const rState = review.state ?? "?";
-    const reviewLine = review.url
-      ? `- **Review**: ${rState} — [link](${review.url})`
-      : `- **Review**: ${rState}`;
-    lines.push(reviewLine);
-    if (typeof review.body === "string") {
-      lines.push(`  - body: ${oneLine(review.body)}`);
-    }
-  }
-
-  const comment = s.comment as Record<string, unknown> | undefined;
-  if (comment) {
-    const author = comment.author ?? "?";
-    const location =
-      comment.path && typeof comment.line === "number"
-        ? ` at \`${comment.path}:${comment.line}\``
-        : comment.path
-          ? ` at \`${comment.path}\``
-          : "";
-    const cLine = comment.url
-      ? `- **Comment** by ${author}${location} — [link](${comment.url})`
-      : `- **Comment** by ${author}${location}`;
-    lines.push(cLine);
-    if (typeof comment.body === "string") {
-      lines.push(`  - body: ${oneLine(comment.body)}`);
-    }
-  }
-
-  return lines.join("\n");
-}
-
-/** Collapse a multi-line string to one line for inline-bullet rendering. */
-function oneLine(value: string): string {
-  return value.replace(/\s+/g, " ").trim();
+  return renderHookEssentialsMarkdown(buildHookEssentials(event, payload));
 }
 
 function pickPullRequest(

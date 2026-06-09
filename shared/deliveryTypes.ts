@@ -27,6 +27,11 @@ export interface DeliveryRoutine {
   outcome: "trigger" | "skip";
   /** Why it skipped (config filter, self-skip, claw:ignore, …). Unset for triggers. */
   reason?: string;
+  /** True = dropped BEFORE the model (bot-noise / non-actionable prefilter),
+   *  distinct from a config-rule skip. Drives the blue "FYI / not-in-context"
+   *  treatment in the chat (the synthetic skip session is marked `[skip:fyi]`).
+   *  Unset for ordinary config/self/ignore skips and for triggers. */
+  prefilter?: boolean;
 }
 
 export type DeliveryStatus = "ok" | "duplicate" | "bad-signature" | "missing-secret" | "error";

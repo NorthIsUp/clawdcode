@@ -18,8 +18,8 @@ import {
   CLAW_IGNORE_SKIP_REASON,
   extractHookLabel,
   extractHookScope,
-  renderHookSummaryMarkdown,
 } from "../hooks/match";
+import { buildHookEssentials, renderHookEssentialsMarkdown } from "../../shared/hookEssentials";
 import { writeStaticSkipSession } from "../hooks/skip";
 import type { Job } from "../jobs";
 import { buildJobThreadId, clearJobSchedule, loadJobs, snapshotJobFrontmatter } from "../jobs";
@@ -88,38 +88,89 @@ export function buildCoalescedHookPrompt(
   msgs: QueuedMessage[],
   isNewSession = true,
 ): string {
-  const blocks = msgs.map((m, i) => {
-    // A web composer reply (spec §8): render the raw user text as a plain
-    // user turn, not a hook summary. Payload is `{ type:"user-message", text }`.
+  // A web composer reply (spec §8) renders as raw user text, not a hook block.
+  const isWebMsg = (m: QueuedMessage) => m.event === "web:message";
+  const webText = (m: QueuedMessage): string => {
+    const p = m.payload as { text?: unknown } | null | undefined;
+    return typeof p?.text === "string" ? p.text : "";
+  };
+
+  // The hook (non-web) messages, distilled to compact essentials once each.
+  const hookMsgs = msgs.filter((m) => !isWebMsg(m));
+  const body = formatIncomingHooks(scope, msgs);
+
+  if (!isNewSession) {
+    // Resume: routine instructions are already in context — send only the
+    // compact event block + a one-line nudge. NOT the full prompt.
+    return `${body}\n\nHandle with the context you already have.`;
+  }
+
+  // New session: the compact block + the full routine prompt. (A pure
+  // web:message new session has no hook block; just send the text + prompt.)
+  void hookMsgs;
+  return `${body}\n\n${prompt}`;
+}
+
+/**
+ * Render the `## Incoming hook(s)` block for a coalesced batch. Compact,
+ * minimal-token: a single headline + `·`-joined facts + one truncated body
+ * line per event (via the DRY essentials layer). Web composer replies pass
+ * through as raw text. No `Triggered by`, no `(delivery <id>)`, no per-event
+ * `**repo**:`/`**sender**:` boilerplate.
+ */
+function formatIncomingHooks(scope: string, msgs: QueuedMessage[]): string {
+  const single = msgs.length === 1;
+
+  if (single) {
+    const m = msgs[0];
     if (m.event === "web:message") {
       const p = m.payload as { text?: unknown } | null | undefined;
       return typeof p?.text === "string" ? p.text : "";
     }
-    const source = m.event.startsWith("sentry:")
-      ? "Sentry"
-      : m.event.startsWith("datadog:")
-        ? "Datadog"
-        : "GitHub";
-    const n = msgs.length > 1 ? `${i + 1}. ` : "";
-    return `${n}Triggered by ${source} ${m.event} (delivery ${m.id}):\n\n${renderHookSummaryMarkdown(m.event, m.payload)}`;
-  });
-  const body = blocks.join("\n\n");
-
-  if (!isNewSession) {
-    // Resume: the routine instructions are already in context — send only the
-    // new event(s) + a brief nudge. NOT the full prompt.
-    const lead =
-      msgs.length > 1
-        ? `${msgs.length} new events on \`${scope}\` since you last ran — handle them with the context you already have:`
-        : `New event on \`${scope}\` since you last ran — handle it with the context you already have:`;
-    return `${lead}\n\n${body}`;
+    const e = buildHookEssentials(m.event, m.payload);
+    return `## Incoming hook · ${e.source} ${e.event}\n${renderHookEssentialsMarkdown(e)}`;
   }
 
-  const header =
-    msgs.length > 1
-      ? `${msgs.length} new events on scope \`${scope}\` since you last ran — handle them together:\n\n`
-      : "";
-  return `${header}${body}\n\n${prompt}`;
+  // Coalesced (N>1): one numbered one-liner per event under a single header.
+  // The header already carries the scope/repo, so each line leads with the
+  // event · action + actor + the one body/state snippet — not the full repo
+  // headline (which would just repeat the scope).
+  const lines = msgs.map((m, i) => {
+    const n = `${i + 1}. `;
+    if (m.event === "web:message") {
+      const p = m.payload as { text?: unknown } | null | undefined;
+      const text = typeof p?.text === "string" ? p.text : "";
+      return `${n}message — ${oneLineClamp(text, 160)}`;
+    }
+    const e = buildHookEssentials(m.event, m.payload);
+    const lead = e.action ? `${e.event} · ${e.action}` : e.event;
+    return `${n}${lead}${eventOneLiner(e)}`;
+  });
+  return `## Incoming hooks (${msgs.length}) · ${scope}\n${lines.join("\n")}`;
+}
+
+/** The actor + body snippet (or suppression note) suffix for a coalesced
+ *  one-liner. The scope header already shows the repo, so this leads with the
+ *  author/review-state rather than repeating the headline. */
+function eventOneLiner(e: ReturnType<typeof buildHookEssentials>): string {
+  const author = e.facts.find((f) => f.label === "author")?.value;
+  const state = e.facts.find((f) => f.label === "review")?.value;
+  const who = author ? ` by ${author}` : state ? ` (${state})` : "";
+  if (e.body) {
+    if (e.body.fromBot && !e.body.text) {
+      return `${who} — (bot body suppressed)`;
+    }
+    if (e.body.text) {
+      return `${who} — "${e.body.text}"`;
+    }
+  }
+  // No body — fall back to the headline so the line still identifies the event.
+  return `${who} — ${e.headline}`;
+}
+
+function oneLineClamp(s: string, max: number): string {
+  const collapsed = s.replace(/\s+/g, " ").trim();
+  return collapsed.length > max ? `${collapsed.slice(0, max)}…` : collapsed;
 }
 
 async function ensureWebBundleBuilt(): Promise<void> {
@@ -1042,7 +1093,7 @@ export async function start(args: string[] = []) {
           // run (self-skip, user/branch/etc.). Record a skip session — no
           // Claude spawned — with the reason, trigger, and full payload so
           // it's visible (and reprocessable) in the Runs view.
-          onHookSkip: async (jobName, event, deliveryId, payload, reason) => {
+          onHookSkip: async (jobName, event, deliveryId, payload, reason, prefilter) => {
             const job = currentJobs.find((j) => j.name === jobName);
             if (!job) {
               return;
@@ -1053,9 +1104,16 @@ export async function start(args: string[] = []) {
               const threadId = `${base}:hook:${hookScope}`;
               const trig = buildHookTrigger(event, payload);
               const prNum = trig.pr?.number;
-              // A `claw:ignore` skip is marked `[skip:ignore]` so it's visibly
-              // distinct from config/self skips in the chat + runs surfaces.
-              const marker = reason === CLAW_IGNORE_SKIP_REASON ? "skip:ignore" : "skip";
+              // Marker drives the chat treatment:
+              //   - `[skip:fyi]`    → prefilter drop (bot-noise / non-actionable);
+              //                       blue "not sent to the agent" box.
+              //   - `[skip:ignore]` → `claw:ignore` label; visibly distinct.
+              //   - `[skip]`        → ordinary config/self skip.
+              const marker = prefilter
+                ? "skip:fyi"
+                : reason === CLAW_IGNORE_SKIP_REASON
+                  ? "skip:ignore"
+                  : "skip";
               const message = prNum
                 ? `[${marker}] PR #${prNum}: ${reason}`
                 : `[${marker}] ${reason}`;

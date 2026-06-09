@@ -4286,6 +4286,18 @@
       border-color: color-mix(in oklab, var(--color-error) 40%, transparent);
     }
   }
+  .border-info\/30 {
+    border-color: var(--color-info);
+    @supports (color: color-mix(in lab, red, red)) {
+      border-color: color-mix(in oklab, var(--color-info) 30%, transparent);
+    }
+  }
+  .border-info\/40 {
+    border-color: var(--color-info);
+    @supports (color: color-mix(in lab, red, red)) {
+      border-color: color-mix(in oklab, var(--color-info) 40%, transparent);
+    }
+  }
   .border-input {
     border-color: var(--color-base-300);
   }
@@ -4452,6 +4464,12 @@
     background-color: var(--color-error);
     @supports (color: color-mix(in lab, red, red)) {
       background-color: color-mix(in oklab, var(--color-error) 15%, transparent);
+    }
+  }
+  .bg-info\/10 {
+    background-color: var(--color-info);
+    @supports (color: color-mix(in lab, red, red)) {
+      background-color: color-mix(in oklab, var(--color-info) 10%, transparent);
     }
   }
   .bg-info\/15 {
@@ -4687,6 +4705,9 @@
   }
   .pr-7 {
     padding-right: calc(var(--spacing) * 7);
+  }
+  .pr-9 {
+    padding-right: calc(var(--spacing) * 9);
   }
   .pb-1 {
     padding-bottom: calc(var(--spacing) * 1);
@@ -4999,6 +5020,12 @@
   }
   .text-info {
     color: var(--color-info);
+  }
+  .text-info-content\/80 {
+    color: var(--color-info-content);
+    @supports (color: color-mix(in lab, red, red)) {
+      color: color-mix(in oklab, var(--color-info-content) 80%, transparent);
+    }
   }
   .text-muted-foreground {
     color: var(--color-base-content);
@@ -5354,6 +5381,9 @@
   }
   .\[react\:🔥\] {
     react: 🔥;
+  }
+  .\[skip\:fyi\] {
+    skip: fyi;
   }
   .\[skip\:ignore\] {
     skip: ignore;

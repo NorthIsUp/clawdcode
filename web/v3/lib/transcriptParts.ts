@@ -49,6 +49,20 @@ export type ChatPart = (
 ) & {
   /** Epoch ms of the transcript entry this part came from (for timestamps). */
   at?: number;
+  /**
+   * True = this block is FYI only and was NOT part of the model's context — a
+   * pre-filtered (dropped) hook, a suppressed bot body, the full untruncated
+   * payload, or a `[skip:fyi]` / `[skip:ignore]` reason. The chat pane renders
+   * these in a distinct blue "Not sent to the agent (FYI)" box.
+   *
+   * Mirrors the backend's recorded-decision shape: a `DeliveryRoutine` with
+   * `prefilter: true` yields a synthetic `[skip:fyi]` session, which the parser
+   * (`src/ui/services/threadParts.ts`) maps to a `system` part with this flag.
+   *
+   * Absent (falsy) = normal in-context block. Truncated essentials are still
+   * in-context, so they do NOT set this flag.
+   */
+  notInContext?: boolean;
 };
 
 /** Page of parts returned by GET /api/v3/threads/:id/messages. */

@@ -62,13 +62,15 @@ export interface StartWebUiOptions {
     deliveryId: string,
     payload: unknown,
   ) => Promise<void> | void;
-  /** Config-driven skip callback (see WebhookDeps.onHookSkip). */
+  /** Config-driven skip callback (see WebhookDeps.onHookSkip). `prefilter` is
+   *  true for bot-noise / non-actionable drops that never reach the model. */
   onHookSkip?: (
     jobName: string,
     event: string,
     deliveryId: string,
     payload: unknown,
     reason: string,
+    prefilter?: boolean,
   ) => Promise<void> | void;
   /** Register a callback that fires whenever a job starts or finishes. The
    *  callback receives the full live status snapshot. Returns an
