@@ -207,5 +207,34 @@ describe("parseTranscript (spec §6)", () => {
     const parts = parseTranscript(t);
     expect(parts[0]?.kind).toBe("system");
     expect(parts[0]?.at).toBe(Date.parse("2026-06-08T23:00:00.000Z"));
+    // A plain [skip] is in-context (base SystemPart), so NOT flagged.
+    expect(parts[0]?.notInContext).toBeUndefined();
+  });
+
+  test("a [skip:fyi] prefilter line is a system notice flagged notInContext (FYI box)", () => {
+    const t = JSON.stringify({
+      type: "assistant",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "[skip:fyi] PR #42: bot noise: greptile-bot" }],
+      },
+    });
+    const parts = parseTranscript(t);
+    expect(parts[0]?.kind).toBe("system");
+    expect(parts[0]).toMatchObject({ kind: "system", notInContext: true });
+    // text is kept verbatim (mirrors the plain-[skip] behavior).
+    expect((parts[0] as { text: string }).text).toContain("[skip:fyi]");
+  });
+
+  test("a [skip:ignore] label line is also flagged notInContext", () => {
+    const t = JSON.stringify({
+      type: "assistant",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "[skip:ignore] claw:ignore label present" }],
+      },
+    });
+    const parts = parseTranscript(t);
+    expect(parts[0]).toMatchObject({ kind: "system", notInContext: true });
   });
 });
