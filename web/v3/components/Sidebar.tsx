@@ -3,11 +3,20 @@ import { BOTTOM_NAV } from "../App";
 import { useQueueTree } from "../hooks/useQueueTree";
 import type { TreeSource } from "../lib/tree";
 import type { V3View } from "../router";
-import { SectionTree } from "./SectionTree";
+import { SectionTree, type SortMode } from "./SectionTree";
 import { ThemePicker } from "./ThemePicker";
 import { cn } from "./ui/utils";
 
 const COLLAPSE_KEY = "clawdcode:v3:collapsed";
+const SORT_KEY = "clawdcode:v3:sort";
+
+function loadSort(): SortMode {
+  try {
+    return localStorage.getItem(SORT_KEY) === "num" ? "num" : "recent";
+  } catch {
+    return "recent";
+  }
+}
 
 type CollapseMap = Record<string, boolean>;
 
@@ -69,6 +78,16 @@ export function Sidebar({
     setCollapsed((prev) => ({ ...prev, [source]: !prev[source] }));
   }, []);
 
+  const [sortMode, setSortMode] = useState<SortMode>(loadSort);
+  const changeSort = useCallback((m: SortMode) => {
+    setSortMode(m);
+    try {
+      localStorage.setItem(SORT_KEY, m);
+    } catch {
+      // ignore unavailable storage
+    }
+  }, []);
+
   return (
     <>
       <div className="flex items-center gap-2 border-b border-base-300 px-3 py-3">
@@ -115,6 +134,8 @@ export function Sidebar({
             onSelectThread={onSelectThread}
             collapsed={collapsed}
             onToggleSection={toggleSection}
+            sortMode={sortMode}
+            onSortChange={changeSort}
           />
         )}
       </div>

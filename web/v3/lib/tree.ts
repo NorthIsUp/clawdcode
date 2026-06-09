@@ -35,6 +35,12 @@ export interface TreeItem {
   routines: ThreadRef[];
   /** Latest activity across all routines (for sort). */
   lastAt: number;
+  /** GitHub items: the org/repo this PR belongs to (sidebar groups by it). */
+  repo?: string;
+  /** GitHub items: PR number (for `#num` display + sort-by-number). */
+  num?: number;
+  /** GitHub items: PR title — the "name" shown after `#num`. */
+  name?: string;
 }
 
 export interface TreeSection {
@@ -82,14 +88,37 @@ export function sourceForEvent(m: QueueMessage): TreeSource {
   return "routines";
 }
 
+/** Read an extracted field value by label (e.g. the PR "title"). */
+function fieldValue(m: QueueMessage, label: string): string | undefined {
+  return m.fields?.find((f) => f.label === label)?.value || undefined;
+}
+
+interface ItemInfo {
+  key: string;
+  title: string;
+  repo?: string;
+  num?: number;
+  name?: string;
+}
+
 /** Subject key + title for the item a row belongs to. */
-function itemFor(source: TreeSource, m: QueueMessage): { key: string; title: string } {
+function itemFor(source: TreeSource, m: QueueMessage): ItemInfo {
   if (source === "github") {
     const repo = m.prRepo ?? "?";
-    const num = m.prNumber == null ? "" : `#${m.prNumber}`;
-    const key = `${repo}${num}`;
-    const detail = m.keys?.key2 || m.keys?.key1 || "";
-    return { key, title: detail ? `${key} · ${detail}` : key };
+    const num = m.prNumber ?? null;
+    const key = `${repo}#${num ?? ""}`;
+    // The important info per the sidebar IA is `#num — name`; the org/repo is a
+    // collapsible group header, not repeated on every row.
+    const name = fieldValue(m, "title") || "";
+    const title = num == null ? repo : `#${num}${name ? ` — ${name}` : ""}`;
+    const info: ItemInfo = { key, title, repo };
+    if (num != null) {
+      info.num = num;
+    }
+    if (name) {
+      info.name = name;
+    }
+    return info;
   }
   if (source === "sentry" || source === "datadog" || source === "linear") {
     // Tickets/issues/monitors are keyed by their provider id (e.g. ENG-204).
@@ -125,14 +154,27 @@ export function buildTree(messages: QueueMessage[]): SidebarTree {
       continue;
     }
 
-    const { key, title } = itemFor(source, m);
-    let item = items.get(key);
-    if (!item) {
-      item = { key, title, routines: [], lastAt: 0 };
-      items.set(key, item);
-    } else if (title.length > item.title.length) {
-      // Prefer the richest title we've seen (a later row may carry keys).
-      item.title = title;
+    const info = itemFor(source, m);
+    let item = items.get(info.key);
+    if (item) {
+      // A later row may carry the richer PR title — adopt it.
+      if (info.name && info.name.length > (item.name?.length ?? 0)) {
+        item.name = info.name;
+        item.title = info.title;
+      } else if (info.title.length > item.title.length) {
+        item.title = info.title;
+      }
+    } else {
+      item = {
+        key: info.key,
+        title: info.title,
+        routines: [],
+        lastAt: 0,
+        ...(info.repo ? { repo: info.repo } : {}),
+        ...(info.num == null ? {} : { num: info.num }),
+        ...(info.name ? { name: info.name } : {}),
+      };
+      items.set(info.key, item);
     }
 
     const at = rowAt(m);
