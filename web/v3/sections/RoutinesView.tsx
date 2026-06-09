@@ -1,4 +1,16 @@
-import { CalendarClock, Eye, Pencil, Plus, RefreshCw, Save, UploadCloud } from "lucide-react";
+import {
+  Bug,
+  CalendarClock,
+  Eye,
+  GitPullRequest,
+  LineChart,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Save,
+  Trash2,
+  UploadCloud,
+} from "lucide-react";
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 import {
@@ -9,15 +21,26 @@ import {
   writeJobFile,
 } from "../../api/jobs";
 import { listRepos, pullRepo, type RepoStatus, syncRepo } from "../../api/repos";
-// Reuse the existing routine editor + schedule helpers + readout from web/ui —
-// they depend only on web/api/* + darwin-ui, so they render unchanged in v3.
 import { MarkdownView } from "../../ui/components/MarkdownView";
+import { DatadogHookEditor, SentryHookEditor } from "../../ui/components/ProviderHookEditor";
 import { RoutineEditor } from "../../ui/components/RoutineEditor";
+import { ScheduleEditor } from "../../ui/components/ScheduleEditor";
 import { ScheduleReadout } from "../../ui/components/ScheduleReadout";
-import { TriggersEditor } from "../../ui/components/TriggersEditor";
+// Reuse the existing routine editor + schedule helpers + readout + the leaf
+// schedule / provider hook editors from web/ui — they depend only on
+// web/api/* + darwin-ui, so they render unchanged in v3. The GitHub portion is
+// replaced by the v3-native GitHubTriggersPanel (the clear 2×2 matrix).
+import {
+  type DatadogRule,
+  defaultDatadogRule,
+  defaultSentryRule,
+  type HookConfig,
+  type SentryRule,
+} from "../../ui/hookConfig";
 import { type JobFrontmatter, readFrontmatter, writeFrontmatter } from "../../ui/schedule";
 import { useAsync } from "../../ui/useAsync";
 import type { MainPaneProps } from "../App";
+import { GitHubTriggersPanel } from "../components/GitHubTriggersPanel";
 import { Button } from "../components/ui/button";
 import { cn } from "../components/ui/utils";
 
@@ -456,8 +479,10 @@ function FileView({ slug, file, onBack }: { slug: string; file: string; onBack: 
   );
 }
 
-/** Config tab body: enabled toggle + unified Triggers editor + notify. Pure
- *  controlled — parent owns the JobFrontmatter draft (mirrors web/ui). */
+/** Config tab body: enabled toggle + v3-native Triggers layout + notify. Pure
+ *  controlled — parent owns the JobFrontmatter draft (mirrors web/ui). The
+ *  GitHub portion is the clear 2×2 GitHubTriggersPanel; schedule + Sentry +
+ *  Datadog reuse the web/ui leaf editors. */
 function ConfigPane({
   value,
   onChange,
@@ -486,7 +511,7 @@ function ConfigPane({
 
       <hr className="border-base-300" />
 
-      <TriggersEditor value={value} onChange={onChange} />
+      <TriggersLayout value={value} onChange={onChange} />
 
       <hr className="border-base-300" />
 
@@ -512,5 +537,204 @@ function ConfigPane({
         </fieldset>
       </section>
     </div>
+  );
+}
+
+/**
+ * v3-native triggers layout (spec §2.1). Replaces the monolithic web/ui
+ * `TriggersEditor` inside the v3 Config tab with: schedules + recurring, the
+ * clear GitHub 2×2 matrix (`GitHubTriggersPanel`), and the existing Sentry /
+ * Datadog editors. All sections read/write the same `JobFrontmatter.hookConfig`
+ * via merge discipline so they never clobber each other.
+ */
+function TriggersLayout({
+  value,
+  onChange,
+}: {
+  value: JobFrontmatter;
+  onChange: (next: JobFrontmatter) => void;
+}) {
+  const cfg = value.hookConfig;
+  const schedules = value.schedules;
+  const scheduleActive = schedules.length > 0;
+  const sentryActive = cfg?.sentry !== undefined && cfg?.sentry !== false;
+  const datadogActive = cfg?.datadog !== undefined && cfg?.datadog !== false;
+
+  function addSchedule() {
+    onChange({ ...value, schedules: [...schedules, "*/5 * * * *"] });
+  }
+  function updateScheduleAt(i: number, cron: string) {
+    const next = schedules.slice();
+    next[i] = cron;
+    onChange({ ...value, schedules: next });
+  }
+  function removeScheduleAt(i: number) {
+    const next = schedules.filter((_, j) => j !== i);
+    onChange({ ...value, schedules: next, recurring: next.length > 0 ? value.recurring : null });
+  }
+
+  /** Mutate a draft HookConfig then persist — dropping the block when no
+   *  trigger remains (mirrors web/ui TriggersEditor.mutateHookConfig). */
+  function mutateHookConfig(fn: (draft: HookConfig) => void) {
+    const draft: HookConfig = cfg ? { ...cfg, pr: [...cfg.pr] } : { skipSelf: true, pr: [] };
+    fn(draft);
+    const commentsActive =
+      draft.comments === true || (typeof draft.comments === "object" && draft.comments !== null);
+    const anyTrigger =
+      draft.pr.length > 0 ||
+      commentsActive ||
+      (draft.sentry !== undefined && draft.sentry !== false) ||
+      (draft.datadog !== undefined && draft.datadog !== false);
+    onChange({ ...value, hookConfig: anyTrigger ? draft : null });
+  }
+
+  return (
+    <section className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <h3 className="text-sm font-semibold mr-1">Triggers</h3>
+        <Button variant="outline" size="sm" onClick={addSchedule}>
+          <Plus className="size-3.5" /> schedule
+        </Button>
+        {!sentryActive && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              mutateHookConfig((d) => {
+                d.sentry = defaultSentryRule();
+              })
+            }
+          >
+            <Plus className="size-3.5" /> sentry hook
+          </Button>
+        )}
+        {!datadogActive && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              mutateHookConfig((d) => {
+                d.datadog = defaultDatadogRule();
+              })
+            }
+          >
+            <Plus className="size-3.5" /> dd hook
+          </Button>
+        )}
+      </div>
+
+      {schedules.map((cron, i) => (
+        <TriggerCard
+          // biome-ignore lint/suspicious/noArrayIndexKey: schedules are positional with no stable id.
+          key={`schedule-${i}`}
+          icon={<CalendarClock size={14} className="opacity-70" />}
+          label={schedules.length > 1 ? `Schedule ${i + 1}` : "Schedule"}
+          onRemove={() => removeScheduleAt(i)}
+        >
+          <ScheduleEditor cron={cron} onChange={(next) => updateScheduleAt(i, next)} />
+        </TriggerCard>
+      ))}
+
+      {scheduleActive && (
+        <label className="flex items-center gap-3 cursor-pointer px-1">
+          <input
+            type="checkbox"
+            className="toggle toggle-primary toggle-sm"
+            checked={value.recurring ?? false}
+            onChange={(e) => onChange({ ...value, recurring: e.target.checked })}
+          />
+          <div className="min-w-0">
+            <div className="text-sm font-medium">Recurring</div>
+            <div className="text-xs text-base-content/60">
+              Re-arm after each run instead of firing once. Applies to all schedules.
+            </div>
+          </div>
+        </label>
+      )}
+
+      {/* GitHub — the clear 2×2 matrix. Always shown (easy defaults seed a new
+          routine the moment a box is ticked). */}
+      <div className="rounded-lg border border-base-300 bg-base-100 p-4">
+        <div className="mb-3 inline-flex items-center gap-1.5 text-sm font-semibold">
+          <GitPullRequest size={14} className="opacity-70" /> GitHub
+        </div>
+        <GitHubTriggersPanel value={value} onChange={onChange} />
+      </div>
+
+      {sentryActive && cfg?.sentry !== undefined && (
+        <TriggerCard
+          icon={<Bug size={14} className="opacity-70" />}
+          label="Sentry hooks"
+          onRemove={() =>
+            mutateHookConfig((d) => {
+              delete d.sentry;
+            })
+          }
+        >
+          <SentryHookEditor
+            value={cfg.sentry as boolean | SentryRule}
+            onChange={(next) =>
+              mutateHookConfig((d) => {
+                d.sentry = next;
+              })
+            }
+          />
+        </TriggerCard>
+      )}
+
+      {datadogActive && cfg?.datadog !== undefined && (
+        <TriggerCard
+          icon={<LineChart size={14} className="opacity-70" />}
+          label="Datadog hooks"
+          onRemove={() =>
+            mutateHookConfig((d) => {
+              delete d.datadog;
+            })
+          }
+        >
+          <DatadogHookEditor
+            value={cfg.datadog as boolean | DatadogRule}
+            onChange={(next) =>
+              mutateHookConfig((d) => {
+                d.datadog = next;
+              })
+            }
+          />
+        </TriggerCard>
+      )}
+    </section>
+  );
+}
+
+function TriggerCard({
+  icon,
+  label,
+  onRemove,
+  children,
+}: {
+  icon: ReactNode;
+  label: string;
+  onRemove: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <section className="rounded-lg border border-base-300 bg-base-100 p-4">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <span className="inline-flex items-center gap-1.5 text-sm font-semibold">
+          {icon}
+          {label}
+        </span>
+        <button
+          type="button"
+          className="btn btn-ghost btn-xs"
+          onClick={onRemove}
+          aria-label={`Remove ${label}`}
+          title={`Remove ${label}`}
+        >
+          <Trash2 size={14} />
+        </button>
+      </div>
+      {children}
+    </section>
   );
 }

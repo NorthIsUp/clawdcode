@@ -920,16 +920,20 @@ export async function start(args: string[] = []) {
               const threadId = `${base}:hook:${hookScope}`;
               const trig = buildHookTrigger(event, payload);
               const prNum = trig.pr?.number;
-              // Marker drives the chat treatment:
-              //   - `[skip:fyi]`    → prefilter drop (bot-noise / non-actionable);
-              //                       blue "not sent to the agent" box.
+              // Marker drives the chat treatment. ALL of these are config-driven
+              // skips — the delivery never reached the model — so each renders in
+              // the blue "not sent to the agent (FYI)" box (notInContext):
+              //   - `[skip:fyi]`    → prefilter drop (bot-noise / non-actionable).
               //   - `[skip:ignore]` → `claw:ignore` label; visibly distinct.
-              //   - `[skip]`        → ordinary config/self skip.
+              //   - `[skip:rule]`   → ordinary config/self filter (the matcher's
+              //                       rule didn't match). FYI; "skipped by a rule".
+              // (A plain `[skip]` is reserved for the AGENT'S OWN skip — emitted by
+              // a real run that chose to pass — which stays in-context.)
               const marker = prefilter
                 ? "skip:fyi"
                 : reason === CLAW_IGNORE_SKIP_REASON
                   ? "skip:ignore"
-                  : "skip";
+                  : "skip:rule";
               const message = prNum
                 ? `[${marker}] PR #${prNum}: ${reason}`
                 : `[${marker}] ${reason}`;

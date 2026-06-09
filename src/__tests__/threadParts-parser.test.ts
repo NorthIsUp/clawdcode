@@ -201,14 +201,29 @@ describe("parseTranscript (spec §6)", () => {
       timestamp: "2026-06-08T23:00:00.000Z",
       message: {
         role: "assistant",
-        content: [{ type: "text", text: "[skip] PR #1195: action edited not in the action filter" }],
+        content: [{ type: "text", text: "[skip] PR #1195: looks fine, nothing to do" }],
       },
     });
     const parts = parseTranscript(t);
     expect(parts[0]?.kind).toBe("system");
     expect(parts[0]?.at).toBe(Date.parse("2026-06-08T23:00:00.000Z"));
-    // A plain [skip] is in-context (base SystemPart), so NOT flagged.
+    // A plain [skip] with a free-form (agent) reason is in-context, NOT flagged.
     expect(parts[0]?.notInContext).toBeUndefined();
+  });
+
+  test("a plain [skip] with a FILTER reason is a SYSTEM skip (notInContext), not the agent", () => {
+    // Older transcripts emitted a plain [skip] for config-filter rejections; the
+    // reason wording ("not in the action filter") marks it as a system skip.
+    const t = JSON.stringify({
+      type: "assistant",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "[skip] PR #1670: action `edited` not in the action filter" }],
+      },
+    });
+    const parts = parseTranscript(t);
+    expect(parts[0]?.kind).toBe("system");
+    expect(parts[0]?.notInContext).toBe(true);
   });
 
   test("a [skip:fyi] prefilter line is a system notice flagged notInContext (FYI box)", () => {
@@ -224,6 +239,19 @@ describe("parseTranscript (spec §6)", () => {
     expect(parts[0]).toMatchObject({ kind: "system", notInContext: true });
     // text is kept verbatim (mirrors the plain-[skip] behavior).
     expect((parts[0] as { text: string }).text).toContain("[skip:fyi]");
+  });
+
+  test("a [skip:rule] config/self-filter line is flagged notInContext (FYI box)", () => {
+    const t = JSON.stringify({
+      type: "assistant",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "[skip:rule] PR #7: base branch `main` excluded by the branch filter" }],
+      },
+    });
+    const parts = parseTranscript(t);
+    expect(parts[0]).toMatchObject({ kind: "system", notInContext: true });
+    expect((parts[0] as { text: string }).text).toContain("[skip:rule]");
   });
 
   test("a [skip:ignore] label line is also flagged notInContext", () => {

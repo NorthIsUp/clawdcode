@@ -201,8 +201,7 @@ function parseSentry(raw: unknown): boolean | SentryRule {
   if (typeof raw === "object" && !Array.isArray(raw)) {
     const obj = raw as Record<string, unknown>;
     return {
-      project:
-        obj.project === undefined ? [...PROD_SENTRY_PROJECT_PATTERNS] : asList(obj.project),
+      project: obj.project === undefined ? [...PROD_SENTRY_PROJECT_PATTERNS] : asList(obj.project),
       level: asList(obj.level),
       action: asList(obj.action),
     };
@@ -297,4 +296,201 @@ function asList(v: unknown): string[] {
     return v.filter((x): x is string => typeof x === "string");
   }
   return [];
+}
+
+// ===========================================================================
+// The simple GitHub-triggers model — browser-safe mirror of the block in
+// `src/hooks/schema.ts`. The v3 editor imports THIS file (the daemon schema
+// can't be bundled into the browser). Keep the two copies in sync; the
+// round-trip tests on both sides guard against drift.
+// ===========================================================================
+
+export interface GitHubAdvanced {
+  /** Base-branch globs for the PR-updates rule (default `["!main"]`). */
+  base: string[];
+  /** Required/excluded PR labels (default `[]`). */
+  labels: string[];
+  /** Draft handling: false = skip drafts, true = drafts only, "any" = both. */
+  draft: DraftValue;
+  /** Repo globs (default any repo). */
+  repo: string[];
+}
+
+export interface GitHubTriggers {
+  humans: { prUpdates: boolean; comments: boolean };
+  bots: { prUpdates: boolean; comments: boolean };
+  advanced: GitHubAdvanced;
+  /** skip_self modifier (default true). */
+  skipSelf: boolean;
+}
+
+export function defaultGitHubAdvanced(): GitHubAdvanced {
+  return { base: ["!main"], labels: [], draft: false, repo: ["*/*"] };
+}
+
+/** Easy defaults for a NEW GitHub routine: respond to humans (PR updates +
+ *  comments), ignore bot noise, skip self. */
+export function defaultGitHubTriggers(): GitHubTriggers {
+  return {
+    humans: { prUpdates: true, comments: true },
+    bots: { prUpdates: false, comments: false },
+    advanced: defaultGitHubAdvanced(),
+    skipSelf: true,
+  };
+}
+
+/** Actor-class → `user` glob list. Both (or neither) → anyone; a single class
+ *  narrows. Single source for the matrix ↔ glob mapping. */
+export function classGlob(humans: boolean, bots: boolean): string[] {
+  if ((humans && bots) || !(humans || bots)) return ["*"];
+  if (humans) return ["*", "!*[bot]"];
+  return ["*[bot]"];
+}
+
+/** A recognized class glob → which actor classes it selects, or null when the
+ *  glob is bespoke and the simple matrix can't represent it. */
+export function authorsFromGlob(user: string[]): { humans: boolean; bots: boolean } | null {
+  if (user.length === 1 && user[0] === "*") return { humans: true, bots: true };
+  if (user.length === 2 && user[0] === "*" && user[1] === "!*[bot]") {
+    return { humans: true, bots: false };
+  }
+  if (user.length === 1 && user[0] === "*[bot]") return { humans: false, bots: true };
+  return null;
+}
+
+function sameSet(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  const sb = new Set(b);
+  return a.every((x) => sb.has(x));
+}
+
+/**
+ * Project the simple matrix down to a HookConfig. Returns `null` when no GitHub
+ * trigger is selected (both categories off). The matrix owns ONLY `pr` /
+ * `comments` / `skipSelf`; the caller must preserve any pre-existing
+ * `sentry` / `datadog` (merge, not replace).
+ */
+export function gitHubTriggersToHookConfig(m: GitHubTriggers): HookConfig | null {
+  const pr: PrRule[] = [];
+  const prHumans = m.humans.prUpdates;
+  const prBots = m.bots.prUpdates;
+  if (prHumans || prBots) {
+    pr.push({
+      repo: m.advanced.repo.length === 1 ? (m.advanced.repo[0] as string) : [...m.advanced.repo],
+      user: classGlob(prHumans, prBots),
+      action: [...DEFAULT_PR_ACTIONS],
+      branch: [...m.advanced.base],
+      labels: [...m.advanced.labels],
+      draft: m.advanced.draft,
+    });
+  }
+
+  let comments: HookConfig["comments"];
+  const cHumans = m.humans.comments;
+  const cBots = m.bots.comments;
+  if (cHumans || cBots) {
+    comments = cHumans && cBots ? true : { user: classGlob(cHumans, cBots) };
+  }
+
+  if (pr.length === 0 && comments === undefined) return null;
+
+  const cfg: HookConfig = { pr, skipSelf: m.skipSelf };
+  if (comments !== undefined) cfg.comments = comments;
+  return cfg;
+}
+
+/**
+ * Project a HookConfig up to the simple matrix, plus a `representable` flag.
+ * Non-representable configs (>1 PR rule, non-default actions, bespoke globs,
+ * or a sentry/datadog block) must fall back to raw YAML editing.
+ */
+export function hookConfigToGitHubTriggers(cfg: HookConfig | null): {
+  matrix: GitHubTriggers;
+  representable: boolean;
+} {
+  const matrix = defaultGitHubTriggers();
+  matrix.humans = { prUpdates: false, comments: false };
+  matrix.bots = { prUpdates: false, comments: false };
+
+  if (!cfg) {
+    return { matrix, representable: true };
+  }
+
+  matrix.skipSelf = cfg.skipSelf !== false;
+  let representable = cfg.sentry === undefined && cfg.datadog === undefined;
+
+  if (cfg.pr.length > 1) representable = false;
+  const rule = cfg.pr[0];
+  if (rule) {
+    if (!sameSet(rule.action, DEFAULT_PR_ACTIONS)) representable = false;
+    const classes = authorsFromGlob(rule.user);
+    if (classes) {
+      matrix.humans.prUpdates = classes.humans;
+      matrix.bots.prUpdates = classes.bots;
+    } else {
+      representable = false;
+      matrix.humans.prUpdates = true;
+      matrix.bots.prUpdates = true;
+    }
+    matrix.advanced = {
+      base: [...rule.branch],
+      labels: [...rule.labels],
+      draft: rule.draft,
+      repo: Array.isArray(rule.repo) ? [...rule.repo] : [rule.repo],
+    };
+  }
+
+  const c = cfg.comments;
+  if (c === true) {
+    matrix.humans.comments = true;
+    matrix.bots.comments = true;
+  } else if (c && typeof c === "object") {
+    const classes = authorsFromGlob(c.user);
+    if (classes) {
+      matrix.humans.comments = classes.humans;
+      matrix.bots.comments = classes.bots;
+    } else {
+      representable = false;
+      matrix.humans.comments = true;
+      matrix.bots.comments = true;
+    }
+  }
+
+  return { matrix, representable };
+}
+
+/** Plain-English readout of the matrix for the editor's summary line. */
+export function summarizeGitHubTriggers(m: GitHubTriggers): string {
+  const cat = (humans: boolean, bots: boolean): string | null => {
+    if (humans && bots) return "anyone";
+    if (humans) return "humans";
+    if (bots) return "bots";
+    return null;
+  };
+  const prActor = cat(m.humans.prUpdates, m.bots.prUpdates);
+  const commentActor = cat(m.humans.comments, m.bots.comments);
+
+  const clauses: string[] = [];
+  if (prActor && commentActor && prActor === commentActor) {
+    clauses.push(`PR updates and comments from ${prActor}`);
+  } else {
+    if (prActor) clauses.push(`PR updates from ${prActor}`);
+    if (commentActor) clauses.push(`comments from ${commentActor}`);
+  }
+  if (clauses.length === 0) return "No GitHub triggers.";
+
+  let line = `Fires on ${clauses.join(" and ")}.`;
+
+  const extras: string[] = [];
+  const adv = m.advanced;
+  const base = adv.base;
+  const baseDefault = base.length === 1 && base[0] === "!main";
+  if ((m.humans.prUpdates || m.bots.prUpdates) && !baseDefault && base.length > 0) {
+    extras.push(`targeting ${base.join(", ")}`);
+  }
+  if (adv.labels.length > 0) extras.push(`labels ${adv.labels.join(", ")}`);
+  if (adv.draft === true) extras.push("drafts only");
+  else if (adv.draft === "any") extras.push("incl. drafts");
+  if (extras.length > 0) line += ` · ${extras.join(" · ")}`;
+  return line;
 }
