@@ -4582,6 +4582,9 @@
       background-color: color-mix(in oklab, var(--color-error) 15%, transparent);
     }
   }
+  .bg-info {
+    background-color: var(--color-info);
+  }
   .bg-info\/10 {
     background-color: var(--color-info);
     @supports (color: color-mix(in lab, red, red)) {
