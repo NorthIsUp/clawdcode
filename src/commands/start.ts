@@ -1276,25 +1276,43 @@ export async function start(args: string[] = []) {
     }, 30_000),
   );
 
-  // --- Jobs repos periodic pull (one interval per repo) ---
-  for (const repo of currentSettings.jobsRepos) {
-    if (repo.url && repo.intervalSeconds > 0) {
-      const repoUrl = repo.url;
-      const intervalMs = repo.intervalSeconds * 1000;
-      intervals.push(
-        setInterval(async () => {
+  // --- Routines auto-sync: pull every jobs repo on a schedule (default 5m) ---
+  // One scheduler tick (60s) that re-reads `currentSettings.jobsRepos` fresh —
+  // so it reacts to repos added/changed after boot — and pulls each git repo
+  // once its interval has elapsed. The interval defaults to 5 minutes (a repo
+  // may configure a faster one); the prior loop skipped any repo with
+  // intervalSeconds ≤ 0 entirely, so unconfigured routines never synced. The
+  // 30s hot-reload then picks up the freshly-pulled .md files.
+  const lastRepoPull = new Map<string, number>();
+  const ROUTINE_SYNC_DEFAULT_MS = 5 * 60 * 1000;
+  intervals.push(
+    setInterval(() => {
+      const now = Date.now();
+      for (const repo of currentSettings.jobsRepos) {
+        if (repo.kind === "plugin" || !repo.url) {
+          continue;
+        }
+        const intervalMs =
+          repo.intervalSeconds && repo.intervalSeconds > 0
+            ? repo.intervalSeconds * 1000
+            : ROUTINE_SYNC_DEFAULT_MS;
+        if (now - (lastRepoPull.get(repo.url) ?? 0) < intervalMs) {
+          continue;
+        }
+        lastRepoPull.set(repo.url, now);
+        void (async () => {
           try {
             const status = await pullRepo(repo);
             if (status.lastError) {
-              console.warn(`[${ts()}] jobsRepo[${repoUrl}]: ${status.lastError}`);
+              console.warn(`[${ts()}] jobsRepo[${repo.url}]: ${status.lastError}`);
             }
           } catch (e) {
-            console.warn(`[${ts()}] jobsRepo[${repoUrl}] pull error: ${String(e)}`);
+            console.warn(`[${ts()}] jobsRepo[${repo.url}] pull error: ${String(e)}`);
           }
-        }, intervalMs),
-      );
-    }
-  }
+        })();
+      }
+    }, 60_000),
+  );
 
   // --- Cron tick (every 60s) ---
   function updateState() {
