@@ -410,10 +410,11 @@ function ThreadRow({
  */
 function ThreadBadge({ ref_ }: { ref_: ThreadRef }) {
   const { status, outcome } = ref_;
-  // Bioluminescent status language (spec §14): coral breathing = live/running,
-  // teal = resolved, amber = queued, red = failed/error, faint = pass/no-op.
+  // Status language: running = info/blue (in-progress, NOT red — red is reserved
+  // for errors), queued = amber, failed/error = red, resolved = teal, pass =
+  // faint. `pulse` gives running the live "breathing" dot.
   if (status === "running") {
-    return <StatusDot tone="primary" label="running" pulse title="agent is running" />;
+    return <StatusDot tone="info" label="running" pulse title="agent is running" />;
   }
   if (status === "pending") {
     return <StatusDot tone="warning" label="queued" title="queued — waiting to run" />;
@@ -432,6 +433,7 @@ function ThreadBadge({ ref_ }: { ref_: ThreadRef }) {
 
 const TONE_DOT: Record<string, string> = {
   primary: "bg-primary",
+  info: "bg-info",
   success: "bg-success",
   warning: "bg-warning",
   error: "bg-error",
@@ -439,6 +441,7 @@ const TONE_DOT: Record<string, string> = {
 };
 const TONE_TEXT: Record<string, string> = {
   primary: "text-primary",
+  info: "text-info",
   success: "text-success",
   warning: "text-warning",
   error: "text-error",
