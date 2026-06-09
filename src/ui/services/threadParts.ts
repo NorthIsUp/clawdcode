@@ -86,11 +86,19 @@ const TRIGGER_RE = /^(Triggered by |New event on |\d+ new events on )/;
 const STATUS_LINE_RE = /^\s*\[(skip|ok|pass|done)(?::([a-z]+))?\]/i;
 
 /**
- * FYI status markers — a `[skip:fyi]` (prefilter / bot-noise drop) or
- * `[skip:ignore]` (`claw:ignore` label) line was never sent to the agent, so
- * its part is flagged `notInContext` and rendered in the blue FYI box. A plain
- * `[skip]` / `[ok]` stays an in-context system notice. */
-const FYI_STATUS_SUFFIXES = new Set(["fyi", "ignore"]);
+ * FYI status markers — a config-driven skip line was never sent to the agent,
+ * so its part is flagged `notInContext` and rendered in the blue FYI box:
+ *   - `[skip:fyi]`    → prefilter / bot-noise drop
+ *   - `[skip:ignore]` → `claw:ignore` label
+ *   - `[skip:rule]`   → matcher rule (user/branch/self filter) didn't match
+ * A plain `[skip]` / `[ok]` is the AGENT'S OWN output and stays in-context. */
+const FYI_STATUS_SUFFIXES = new Set(["fyi", "ignore", "rule"]);
+
+/** A plain `[skip]` whose reason reads like a config-filter rejection (older
+ *  transcripts didn't tag filter skips as `[skip:rule]`) — these are SYSTEM
+ *  skips that never reached the model. Mirrors the matcher's skip-reason wording. */
+const FILTER_REASON_RE =
+  /not in the .*filter|no (?:pr|sentry|datadog) rule matched|does(?:n't| not) match|excluded by|skip[_ ]?self|draft|claw:ignore|label/i;
 
 /** Pending tool_use awaiting its tool_result, keyed by tool_use id. */
 type PendingTool = { partIndex: number; tool: ToolPart };
@@ -231,8 +239,15 @@ export class TranscriptParser {
         // routes it to the blue FYI box.
         const statusMatch = STATUS_LINE_RE.exec(b.text);
         if (statusMatch) {
+          const verb = statusMatch[1]?.toLowerCase();
           const suffix = statusMatch[2]?.toLowerCase();
-          const fyi = suffix != null && FYI_STATUS_SUFFIXES.has(suffix);
+          // FYI (never reached the model) when it's a tagged filter/ignore skip,
+          // OR a plain `[skip]` whose reason reads like a config-filter rejection
+          // (older transcripts didn't tag those) — both are SYSTEM skips, not the
+          // agent's own decision.
+          const fyi =
+            (suffix != null && FYI_STATUS_SUFFIXES.has(suffix)) ||
+            (verb === "skip" && suffix == null && FILTER_REASON_RE.test(b.text));
           this.parts.push({
             kind: "system",
             id,

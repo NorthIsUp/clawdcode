@@ -3742,6 +3742,9 @@
   .max-w-\[14rem\] {
     max-width: 14rem;
   }
+  .max-w-\[16rem\] {
+    max-width: 16rem;
+  }
   .max-w-\[60\%\] {
     max-width: 60%;
   }
@@ -3894,6 +3897,9 @@
   .cursor-default {
     cursor: default;
   }
+  .cursor-help {
+    cursor: help;
+  }
   .cursor-not-allowed {
     cursor: not-allowed;
   }
@@ -3945,6 +3951,9 @@
   }
   .grid-cols-5 {
     grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+  .grid-cols-\[5rem_1fr_1fr\] {
+    grid-template-columns: 5rem 1fr 1fr;
   }
   .grid-cols-\[max-content_1fr\] {
     grid-template-columns: max-content 1fr;
@@ -4083,6 +4092,9 @@
       margin-block-start: calc(calc(var(--spacing) * 6) * var(--tw-space-y-reverse));
       margin-block-end: calc(calc(var(--spacing) * 6) * calc(1 - var(--tw-space-y-reverse)));
     }
+  }
+  .gap-x-2 {
+    column-gap: calc(var(--spacing) * 2);
   }
   .gap-x-3 {
     column-gap: calc(var(--spacing) * 3);
@@ -4323,6 +4335,12 @@
   .border-transparent {
     border-color: transparent;
   }
+  .border-warning\/40 {
+    border-color: var(--color-warning);
+    @supports (color: color-mix(in lab, red, red)) {
+      border-color: color-mix(in oklab, var(--color-warning) 40%, transparent);
+    }
+  }
   .border-zinc-200 {
     border-color: var(--color-zinc-200);
   }
@@ -4533,6 +4551,12 @@
   .bg-warning {
     background-color: var(--color-warning);
   }
+  .bg-warning\/10 {
+    background-color: var(--color-warning);
+    @supports (color: color-mix(in lab, red, red)) {
+      background-color: color-mix(in oklab, var(--color-warning) 10%, transparent);
+    }
+  }
   .bg-warning\/15 {
     background-color: var(--color-warning);
     @supports (color: color-mix(in lab, red, red)) {
@@ -4566,6 +4590,12 @@
   }
   .object-cover {
     object-fit: cover;
+  }
+  .checkbox-sm {
+    @layer daisyui.l1.l2 {
+      padding: 0.1875rem;
+      --size: calc(var(--size-selector, 0.25rem) * 5);
+    }
   }
   .checkbox-xs {
     @layer daisyui.l1.l2 {
@@ -4907,6 +4937,12 @@
       --alert-color: var(--color-warning);
     }
   }
+  .checkbox-primary {
+    @layer daisyui.l1.l2 {
+      color: var(--color-primary-content);
+      --input-color: var(--color-primary);
+    }
+  }
   .link-primary {
     @layer daisyui.l1.l2 {
       color: var(--color-primary);
@@ -5052,6 +5088,12 @@
   .text-warning {
     color: var(--color-warning);
   }
+  .text-warning-content\/90 {
+    color: var(--color-warning-content);
+    @supports (color: color-mix(in lab, red, red)) {
+      color: color-mix(in oklab, var(--color-warning-content) 90%, transparent);
+    }
+  }
   .text-zinc-700 {
     color: var(--color-zinc-700);
   }
@@ -5094,6 +5136,18 @@
   }
   .underline {
     text-decoration-line: underline;
+  }
+  .decoration-base-content\/30 {
+    text-decoration-color: var(--color-base-content);
+    @supports (color: color-mix(in lab, red, red)) {
+      text-decoration-color: color-mix(in oklab, var(--color-base-content) 30%, transparent);
+    }
+  }
+  .decoration-dotted {
+    text-decoration-style: dotted;
+  }
+  .underline-offset-2 {
+    text-underline-offset: 2px;
   }
   .underline-offset-4 {
     text-underline-offset: 4px;
@@ -5379,11 +5433,17 @@
   .\[react\:🔥\] {
     react: 🔥;
   }
+  .\[skip\:\*\] {
+    skip: *;
+  }
   .\[skip\:fyi\] {
     skip: fyi;
   }
   .\[skip\:ignore\] {
     skip: ignore;
+  }
+  .\[skip\:rule\] {
+    skip: rule;
   }
   .range-sm {
     @layer daisyui.l1.l2 {

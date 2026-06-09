@@ -230,22 +230,8 @@ function ItemBlock({
   activeThreadId: string | null;
   onSelectThread: (threadId: string) => void;
 }) {
-  // A single-routine item is shown flat (no nested disclosure): the item row
-  // is itself the chat link. Multi-routine items expand to their threads.
-  const single = item.routines.length === 1;
-  if (single) {
-    const ref = item.routines[0]!;
-    return (
-      <ThreadRow
-        label={item.title}
-        ref_={ref}
-        active={activeThreadId === ref.threadId}
-        onSelect={() => onSelectThread(ref.threadId)}
-        indent="pl-9"
-      />
-    );
-  }
-
+  // Every item is a disclosure — even a single-routine PR — so you can always
+  // see WHICH routine (.md) handled it, not just the PR title.
   return (
     <Collapsible defaultOpen>
       <CollapsibleTrigger className="group flex w-full items-center gap-1.5 px-3 py-1 pl-7 text-left text-sm hover:bg-base-200/60">
