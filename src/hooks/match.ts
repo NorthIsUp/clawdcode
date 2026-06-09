@@ -200,6 +200,15 @@ export function evalSentryRule(rule: SentryRule, p: SentryPayload): { ok: boolea
   if (rule.project.length > 0 && !matchPatternList(rule.project, p.project)) {
     return { ok: false, reason: `project \`${p.project || "?"}\` not in the project filter` };
   }
+  if (
+    rule.environment.length > 0 &&
+    !(p.environment && matchPatternList(rule.environment, p.environment))
+  ) {
+    return {
+      ok: false,
+      reason: `environment \`${p.environment || "?"}\` not in the environment filter`,
+    };
+  }
   if (rule.level.length > 0 && !(p.level && matchPatternList(rule.level, p.level))) {
     return { ok: false, reason: `level \`${p.level || "?"}\` not in the level filter` };
   }

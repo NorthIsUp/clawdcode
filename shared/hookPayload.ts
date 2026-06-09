@@ -173,6 +173,8 @@ export function tagListSkipReason(patterns: string[], tags: string[]): string | 
 export interface SentryPayload {
   /** Project slug (`data.issue.project.slug` / `data.event.project`). */
   project: string;
+  /** Deploy environment (`production`, `staging`, …) when present. */
+  environment: string;
   /** Issue level (`error`, `warning`, `fatal`, …) when present. */
   level: string;
   /** Top-level `action` (`created`, `resolved`, `ignored`, …). */
@@ -200,7 +202,13 @@ export function readSentryPayload(raw: unknown): SentryPayload | null {
     readPath(root, ["data", "event", "level"]) ??
     readPath(root, ["data", "error", "level"]) ??
     "";
-  return { project, level, action };
+  const environment =
+    readPath(root, ["data", "event", "environment"]) ??
+    readPath(root, ["data", "error", "environment"]) ??
+    readPath(root, ["data", "issue", "metadata", "environment"]) ??
+    readPath(root, ["data", "environment"]) ??
+    "";
+  return { project, environment, level, action };
 }
 
 // ---------------------------------------------------------------------------
