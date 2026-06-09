@@ -142,44 +142,37 @@ function sseResponse(req: Request, setup: (send: (data: unknown) => void) => () 
 
 export function startWebUi(opts: StartWebUiOptions): WebServerHandle {
   ensureWebBuilt();
+
+  // Dev API proxy target — validated ONCE at startup, not per-request. Only
+  // enabled when CLAWDCODE_DEV_API_PROXY is a valid http(s) URL AND we are not
+  // in production, so a stray env var in a prod deploy can never turn the
+  // daemon into an auth-bypassing forwarder. Null = disabled (the normal case).
+  const devProxyBase: string | null = (() => {
+    const raw = process.env.CLAWDCODE_DEV_API_PROXY?.trim();
+    if (!raw) return null;
+    if (process.env.NODE_ENV === "production") {
+      console.error("[clawdcode] CLAWDCODE_DEV_API_PROXY ignored in production");
+      return null;
+    }
+    try {
+      const u = new URL(raw);
+      if (u.protocol !== "http:" && u.protocol !== "https:") {
+        throw new Error(`unsupported protocol ${u.protocol}`);
+      }
+      console.error(`[clawdcode] DEV API proxy ON → ${u.origin} (local auth bypassed for /api/*)`);
+      return raw.replace(/\/+$/, "");
+    } catch (err) {
+      console.error(`[clawdcode] CLAWDCODE_DEV_API_PROXY invalid, ignoring: ${String(err)}`);
+      return null;
+    }
+  })();
+
   const server = Bun.serve({
     hostname: opts.host,
     port: opts.port,
     idleTimeout: 0,
     fetch: async (req) => {
       const url = new URL(req.url);
-
-      // Dev mode: when CLAWDCODE_DEV_API_PROXY is set (e.g. to a prod daemon on
-      // the tailnet), forward every /api/* request upstream so the locally-built
-      // UI renders real data. Same-origin for the browser (no CORS); the local
-      // bearer/cookie is stripped so the upstream's own auth (tailnet trust)
-      // applies. Streams the response body, so SSE endpoints work. Dev-only —
-      // a no-op unless the env var is present.
-      const devProxy = process.env.CLAWDCODE_DEV_API_PROXY;
-      if (devProxy && url.pathname.startsWith("/api/")) {
-        const target = `${devProxy.replace(/\/+$/, "")}${url.pathname}${url.search}`;
-        const fwd = new Headers(req.headers);
-        fwd.delete("host");
-        fwd.delete("authorization");
-        fwd.delete("cookie");
-        const init: RequestInit = { method: req.method, headers: fwd, redirect: "manual" };
-        if (req.method !== "GET" && req.method !== "HEAD") {
-          init.body = await req.arrayBuffer();
-        }
-        try {
-          const upstream = await fetch(target, init);
-          const outHeaders = new Headers(upstream.headers);
-          for (const h of ["content-encoding", "content-length", "transfer-encoding", "connection"]) {
-            outHeaders.delete(h);
-          }
-          return new Response(upstream.body, { status: upstream.status, headers: outHeaders });
-        } catch (err) {
-          return new Response(JSON.stringify({ error: `dev proxy failed: ${String(err)}` }), {
-            status: 502,
-            headers: { "Content-Type": "application/json" },
-          });
-        }
-      }
 
       // Task 1.2: Reject DNS rebinding attacks via Host header validation.
       // Wildcard bind addresses (0.0.0.0, ::) mean the user opted into remote access —
@@ -208,6 +201,37 @@ export function startWebUi(opts: StartWebUiOptions): WebServerHandle {
           if (!allowedOrigins.has(origin)) {
             return new Response("Bad Origin", { status: 403 });
           }
+        }
+      }
+
+      // Dev API proxy (validated at startup → `devProxyBase`). Forward /api/*
+      // upstream so the locally-built UI renders real data. Placed AFTER the
+      // host + CSRF guards (so rebinding/cross-origin protection still applies)
+      // but before the bearer-token gate (the local UI shouldn't need the local
+      // token — the upstream authorizes via its own tailnet trust, so we strip
+      // the local bearer/cookie). Streams the body, so SSE endpoints work.
+      if (devProxyBase && url.pathname.startsWith("/api/")) {
+        const target = `${devProxyBase}${url.pathname}${url.search}`;
+        const fwd = new Headers(req.headers);
+        fwd.delete("host");
+        fwd.delete("authorization");
+        fwd.delete("cookie");
+        const init: RequestInit = { method: req.method, headers: fwd, redirect: "manual" };
+        if (req.method !== "GET" && req.method !== "HEAD") {
+          init.body = await req.arrayBuffer();
+        }
+        try {
+          const upstream = await fetch(target, init);
+          const outHeaders = new Headers(upstream.headers);
+          for (const h of ["content-encoding", "content-length", "transfer-encoding", "connection"]) {
+            outHeaders.delete(h);
+          }
+          return new Response(upstream.body, { status: upstream.status, headers: outHeaders });
+        } catch (err) {
+          return new Response(JSON.stringify({ error: `dev proxy failed: ${String(err)}` }), {
+            status: 502,
+            headers: { "Content-Type": "application/json" },
+          });
         }
       }
 
