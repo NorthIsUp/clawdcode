@@ -163,11 +163,44 @@ function SeverityPills({
 // Sentry
 // ---------------------------------------------------------------------------
 
+/** Environment globs that count as "production". The common case is prod-only,
+ *  so the editor exposes this as a single toggle rather than a glob list. */
+const PROD_ENV_PATTERNS = ["prod-*", "*-prod", "prod", "production"];
+
 /** An explicit "match every Sentry event" rule (every project, any severity,
  *  any action). Used instead of the bare `true`, which the backend deliberately
  *  downgrades to PROD-ONLY matching — so the toggle now means what it says. */
 function sentryMatchAll(): SentryRule {
   return { project: ["*"], environment: [], level: [], action: [] };
+}
+
+/** "Production only" toggle: ON ⇒ prod environment globs; OFF ⇒ any env. */
+function ProdOnlyToggle({
+  environment,
+  onChange,
+}: {
+  environment: string[];
+  onChange: (next: string[]) => void;
+}) {
+  const prodOnly = environment.length > 0;
+  return (
+    <label className="flex cursor-pointer items-center justify-between gap-3">
+      <span className="flex flex-col">
+        <span className="text-sm font-medium text-base-content">Production only</span>
+        <span className="text-[11px] text-base-content/50">
+          {prodOnly ? "Only prod environments." : "Any environment (incl. staging/dev)."}
+        </span>
+      </span>
+      <input
+        type="checkbox"
+        role="switch"
+        aria-label="Production only"
+        className="toggle toggle-sm toggle-primary"
+        checked={prodOnly}
+        onChange={(e) => onChange(e.target.checked ? [...PROD_ENV_PATTERNS] : [])}
+      />
+    </label>
+  );
 }
 
 /** Is the current value "match any"? Treats a literal `true` (legacy, was
@@ -212,12 +245,9 @@ export function SentryHookEditor({
             onChange={(next) => onChange({ ...rule, project: next })}
             hint="Project slugs. Glob patterns ok. * matches any project."
           />
-          <PillList
-            label="Environment"
-            items={rule.environment}
-            placeholder="production, prod-*"
+          <ProdOnlyToggle
+            environment={rule.environment}
             onChange={(next) => onChange({ ...rule, environment: next })}
-            hint="Deploy environment. Glob patterns ok. Empty matches any. This is where “prod-only” belongs — not the project slug."
           />
           <SeverityPills
             selected={rule.level}
