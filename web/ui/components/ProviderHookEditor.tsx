@@ -167,7 +167,7 @@ function SeverityPills({
  *  any action). Used instead of the bare `true`, which the backend deliberately
  *  downgrades to PROD-ONLY matching — so the toggle now means what it says. */
 function sentryMatchAll(): SentryRule {
-  return { project: ["*"], level: [], action: [] };
+  return { project: ["*"], environment: [], level: [], action: [] };
 }
 
 /** Is the current value "match any"? Treats a literal `true` (legacy, was
@@ -179,6 +179,7 @@ function isSentryMatchAny(v: boolean | SentryRule): boolean {
   return (
     v.project.length === 1 &&
     v.project[0] === "*" &&
+    v.environment.length === 0 &&
     v.level.length === 0 &&
     v.action.length === 0
   );
@@ -207,9 +208,16 @@ export function SentryHookEditor({
           <PillList
             label="Project"
             items={rule.project}
-            placeholder="my-app, frontend-*"
+            placeholder="clara-backend, javascript-*"
             onChange={(next) => onChange({ ...rule, project: next })}
             hint="Project slugs. Glob patterns ok. * matches any project."
+          />
+          <PillList
+            label="Environment"
+            items={rule.environment}
+            placeholder="production, prod-*"
+            onChange={(next) => onChange({ ...rule, environment: next })}
+            hint="Deploy environment. Glob patterns ok. Empty matches any. This is where “prod-only” belongs — not the project slug."
           />
           <SeverityPills
             selected={rule.level}

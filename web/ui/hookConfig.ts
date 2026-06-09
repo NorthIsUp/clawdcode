@@ -29,6 +29,7 @@ interface CommentRule {
 /** Mirror of src/hooks/schema.ts SentryRule. */
 export interface SentryRule {
   project: string[];
+  environment: string[];
   level: string[];
   action: string[];
 }
@@ -60,9 +61,15 @@ export interface HookConfig {
   skipSelf: boolean;
 }
 
-/** Best-effort defaults for a new Sentry rule (match any project). */
+/** Best-effort defaults for a new Sentry rule: any project, prod environments
+ *  only (the prod-only guard lives in `environment`, not the project slug). */
 export function defaultSentryRule(): SentryRule {
-  return { project: ["*"], level: [], action: [] };
+  return {
+    project: ["*"],
+    environment: ["prod-*", "*-prod", "prod", "production"],
+    level: [],
+    action: [],
+  };
 }
 
 /** Best-effort defaults for a new Datadog rule (match any monitor). */
@@ -189,19 +196,22 @@ export function parseTriggers(content: string): ParsedTriggers {
   return { schedules, hookConfig };
 }
 
-// Mirrors src/hooks/schema.ts: Sentry triggers default to production
-// projects only. `project: ["*"]` opts into all projects.
-const PROD_SENTRY_PROJECT_PATTERNS = ["*-prod", "prod-*", "production"];
+// Mirrors src/hooks/schema.ts: Sentry triggers default to any project but PROD
+// ENVIRONMENTS only (the prod scope lives in environment, not the project slug).
+// `environment: ["*"]` (or `[]`) opts into all environments.
+const PROD_SENTRY_ENV_PATTERNS = ["prod-*", "*-prod", "prod", "production"];
 
 function parseSentry(raw: unknown): boolean | SentryRule {
   if (raw === true || raw === "true") {
-    return { project: [...PROD_SENTRY_PROJECT_PATTERNS], level: [], action: [] };
+    return { project: ["*"], environment: [...PROD_SENTRY_ENV_PATTERNS], level: [], action: [] };
   }
   if (raw === false || raw === "false" || raw === null || raw === undefined) return false;
   if (typeof raw === "object" && !Array.isArray(raw)) {
     const obj = raw as Record<string, unknown>;
     return {
-      project: obj.project === undefined ? [...PROD_SENTRY_PROJECT_PATTERNS] : asList(obj.project),
+      project: obj.project === undefined ? ["*"] : asList(obj.project),
+      environment:
+        obj.environment === undefined ? [...PROD_SENTRY_ENV_PATTERNS] : asList(obj.environment),
       level: asList(obj.level),
       action: asList(obj.action),
     };

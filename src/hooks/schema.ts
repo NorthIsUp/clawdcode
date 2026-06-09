@@ -38,8 +38,13 @@ export interface CommentRule {
  * `true` is the "match any Sentry event" shorthand.
  */
 export interface SentryRule {
-  /** Sentry project slug globs (e.g. `["clara-prod-*", "!staging"]`). */
+  /** Sentry project slug globs (e.g. `["clara-backend", "javascript-*"]`).
+   *  Empty/`["*"]` = any project. */
   project: string[];
+  /** Environment globs (`production`, `prod-*`, …). The "prod-only" intent
+   *  lives HERE, not in the project slug (projects like `clara-backend` aren't
+   *  named for their env). Empty = any environment. */
+  environment: string[];
   /** Issue level globs (`error`, `warning`, `fatal`, `info`, `debug`). */
   level: string[];
   /** Resource action globs (`created`, `resolved`, `ignored`, `assigned`,
@@ -200,24 +205,36 @@ export function parseTriggers(rawOn: unknown, topLevelSkipSelf: unknown): Parsed
  *  Matched with `matchPatternList` globs against the payload project slug, so
  *  this covers `clara-prod`, `prod-api`, `production`, etc. — but not staging
  *  or dev. Opt into everything with an explicit `project: ["*"]`. */
-export const PROD_SENTRY_PROJECT_PATTERNS = ["*-prod", "prod-*", "production"];
+/** Default ENVIRONMENT globs for a bare `on: - sentry` — the "prod-only" guard.
+ *  Sentry environments are named for the deploy (`production`, `prod-v1`,
+ *  `clara-prod`), so this is where prod-scoping belongs (not the project slug). */
+export const PROD_SENTRY_ENV_PATTERNS = ["prod-*", "*-prod", "prod", "production"];
 
-/** A Sentry rule with the prod-only project default and no level/action
- *  filter — what a bare `on: - sentry: true` (or `{}`) resolves to. */
+/** A Sentry rule that matches ANY project but only PROD environments, with no
+ *  level/action filter — what a bare `on: - sentry: true` (or `{}`) resolves to.
+ *  The prod-only guard lives in `environment`, so it works across projects whose
+ *  slugs aren't named for their env (e.g. `clara-backend`). */
 export function defaultSentryRule(): SentryRule {
-  return { project: [...PROD_SENTRY_PROJECT_PATTERNS], level: [], action: [] };
+  return {
+    project: ["*"],
+    environment: [...PROD_SENTRY_ENV_PATTERNS],
+    level: [],
+    action: [],
+  };
 }
 
-/** Parse `on.sentry`. `true` / `{}` → prod projects only (the safe default);
- *  object with explicit `project` → that filter (use `["*"]` for all
- *  projects); unset / false → off (returns false). */
+/** Parse `on.sentry`. `true` / `{}` → any project, prod environments (the safe
+ *  default); object with explicit fields → that filter (use `environment: ["*"]`
+ *  or `[]` for all envs); unset / false → off (returns false). */
 function parseSentry(raw: unknown): boolean | SentryRule {
   if (raw === true || raw === "true") return defaultSentryRule();
   if (raw === false || raw === "false" || raw === null || raw === undefined) return false;
   if (typeof raw === "object" && !Array.isArray(raw)) {
     const obj = raw as Record<string, unknown>;
     return {
-      project: obj.project === undefined ? [...PROD_SENTRY_PROJECT_PATTERNS] : asList(obj.project),
+      project: obj.project === undefined ? ["*"] : asList(obj.project),
+      environment:
+        obj.environment === undefined ? [...PROD_SENTRY_ENV_PATTERNS] : asList(obj.environment),
       level: obj.level === undefined ? [] : asList(obj.level),
       action: obj.action === undefined ? [] : asList(obj.action),
     };
