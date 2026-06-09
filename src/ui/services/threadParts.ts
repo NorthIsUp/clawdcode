@@ -367,11 +367,22 @@ export async function tail(
   if (st.size <= byteOffset) {
     return { parts: [], byteOffset };
   }
-  // Read only the appended bytes.
+  // Read the appended bytes, but only CONSUME up to the last newline. The claude
+  // CLI appends jsonl incrementally, so a poll can fire mid-write: the trailing
+  // partial line would fail JSON.parse and be dropped, and advancing byteOffset
+  // past it would lose that transcript entry forever (a missing message, or a
+  // tool_result that never pairs → a spinner stuck forever). Leave the partial
+  // line unconsumed; the next tail re-reads it once it's complete.
   const fh = await readFile(resolved.filePath);
   const slice = fh.subarray(byteOffset).toString("utf-8");
+  const lastNl = slice.lastIndexOf("\n");
+  if (lastNl < 0) {
+    // No complete line appended yet — wait for the rest.
+    return { parts: [], byteOffset };
+  }
+  const consumed = slice.slice(0, lastNl + 1);
   const before = parser.parts.length;
-  parser.feed(slice);
+  parser.feed(consumed);
   const newParts = parser.parts.slice(before);
-  return { parts: newParts, byteOffset: st.size };
+  return { parts: newParts, byteOffset: byteOffset + Buffer.byteLength(consumed, "utf-8") };
 }
