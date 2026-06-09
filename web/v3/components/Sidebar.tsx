@@ -3,13 +3,18 @@ import { useQueueTree } from "../hooks/useQueueTree";
 import { useScheduledRoutines } from "../hooks/useScheduledRoutines";
 import { BOTTOM_NAV } from "../nav";
 import { deferredUntilForThread } from "../lib/queuedUntil";
-import type { SidebarTree, TreeSource } from "../lib/tree";
+import type { SidebarTree } from "../lib/tree";
 import type { V3View } from "../router";
 import { SectionTree, type SortMode } from "./SectionTree";
 import { ThemePicker } from "./ThemePicker";
 import { cn } from "./ui/utils";
 
-const COLLAPSE_KEY = "clawdcode:v3:collapsed";
+// The map records which nodes are *open* (`openMap[key] === true`). Everything
+// defaults to closed, so an unknown/new key reads as closed — that's how a
+// first-time visitor (no saved state) sees a fully collapsed tree. The key is
+// bumped from the legacy `:collapsed` map (inverted, sections-only) so old data
+// can't leak the wrong defaults.
+const OPEN_KEY = "clawdcode:v3:open";
 const SORT_KEY = "clawdcode:v3:sort";
 
 function loadSort(): SortMode {
@@ -20,13 +25,18 @@ function loadSort(): SortMode {
   }
 }
 
-type CollapseMap = Record<string, boolean>;
+/**
+ * Open-state for every collapsible node in the sidebar tree, keyed by a stable
+ * id (`nodeKey()` in SectionTree namespaces sections / repo groups / items so
+ * they can't collide). `openMap[key] === true` ⇒ open; absent/false ⇒ closed.
+ */
+export type OpenMap = Record<string, boolean>;
 
-function loadCollapsed(): CollapseMap {
+function loadOpen(): OpenMap {
   try {
-    const raw = localStorage.getItem(COLLAPSE_KEY);
+    const raw = localStorage.getItem(OPEN_KEY);
     if (raw) {
-      return JSON.parse(raw) as CollapseMap;
+      return JSON.parse(raw) as OpenMap;
     }
   } catch {
     // ignore corrupt/unavailable storage
@@ -70,7 +80,9 @@ export function Sidebar({
   // (cron runs never enter the queue), so we splice that section in over the
   // queue-sourced (empty) one. The other four sections stay queue-sourced.
   const { section: scheduledSection, turnByThread } = useScheduledRoutines();
-  const [collapsed, setCollapsed] = useState<CollapseMap>(loadCollapsed);
+  // Read persisted open-state before first paint (lazy init) so the tree never
+  // flashes open-then-closed on load.
+  const [openMap, setOpenMap] = useState<OpenMap>(loadOpen);
 
   // Merge: replace the live tree's "routines" (Schedules) section with the
   // jobs+sessions-sourced one, preserving section order. Then join the per-thread
@@ -108,14 +120,24 @@ export function Sidebar({
 
   useEffect(() => {
     try {
-      localStorage.setItem(COLLAPSE_KEY, JSON.stringify(collapsed));
+      localStorage.setItem(OPEN_KEY, JSON.stringify(openMap));
     } catch {
       // ignore unavailable storage
     }
-  }, [collapsed]);
+  }, [openMap]);
 
-  const toggleSection = useCallback((source: TreeSource) => {
-    setCollapsed((prev) => ({ ...prev, [source]: !prev[source] }));
+  // Toggle any node (section / repo group / item) by its stable key. Absent keys
+  // are closed, so the first toggle opens them; closing deletes the key so the
+  // store stays a clean set of only-open nodes (no unbounded stale growth).
+  const toggleNode = useCallback((key: string) => {
+    setOpenMap((prev) => {
+      if (prev[key]) {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      }
+      return { ...prev, [key]: true };
+    });
   }, []);
 
   const [sortMode, setSortMode] = useState<SortMode>(loadSort);
@@ -172,8 +194,8 @@ export function Sidebar({
             sections={mergedTree}
             activeThreadId={activeThreadId}
             onSelectThread={onSelectThread}
-            collapsed={collapsed}
-            onToggleSection={toggleSection}
+            openMap={openMap}
+            onToggleNode={toggleNode}
             sortMode={sortMode}
             onSortChange={changeSort}
             deferredByThread={deferredByThread}
