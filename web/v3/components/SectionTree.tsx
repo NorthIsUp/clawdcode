@@ -23,6 +23,8 @@ const SECTION_ICON: Record<TreeSource, ComponentType<{ className?: string }>> = 
   github: GitPullRequest,
 };
 
+export type SortMode = "recent" | "num";
+
 export type SectionTreeProps = {
   sections: TreeSection[];
   activeThreadId: string | null;
@@ -30,6 +32,9 @@ export type SectionTreeProps = {
   /** Per-section collapse: `collapsed[source] === true` ⇒ section closed. */
   collapsed: Record<string, boolean>;
   onToggleSection: (source: TreeSource) => void;
+  /** PR sort order (Pull Requests section). */
+  sortMode: SortMode;
+  onSortChange: (mode: SortMode) => void;
 };
 
 export function SectionTree({
@@ -38,6 +43,8 @@ export function SectionTree({
   onSelectThread,
   collapsed,
   onToggleSection,
+  sortMode,
+  onSortChange,
 }: SectionTreeProps) {
   return (
     <div className="flex flex-col">
@@ -49,10 +56,39 @@ export function SectionTree({
           onToggle={() => onToggleSection(section.source)}
           activeThreadId={activeThreadId}
           onSelectThread={onSelectThread}
+          sortMode={sortMode}
+          onSortChange={onSortChange}
         />
       ))}
     </div>
   );
+}
+
+/** Order items by the chosen sort: by PR number (desc) or recency (desc). */
+function sortItems(items: TreeItem[], mode: SortMode): TreeItem[] {
+  const sorted = [...items];
+  if (mode === "num") {
+    sorted.sort((a, b) => (b.num ?? 0) - (a.num ?? 0));
+  } else {
+    sorted.sort((a, b) => b.lastAt - a.lastAt);
+  }
+  return sorted;
+}
+
+/** Group GitHub items by org/repo, repos ordered by most-recent activity. */
+function groupByRepo(items: TreeItem[]): { repo: string; items: TreeItem[]; lastAt: number }[] {
+  const groups = new Map<string, { repo: string; items: TreeItem[]; lastAt: number }>();
+  for (const it of items) {
+    const repo = it.repo ?? "—";
+    let g = groups.get(repo);
+    if (!g) {
+      g = { repo, items: [], lastAt: 0 };
+      groups.set(repo, g);
+    }
+    g.items.push(it);
+    g.lastAt = Math.max(g.lastAt, it.lastAt);
+  }
+  return [...groups.values()].sort((a, b) => b.lastAt - a.lastAt);
 }
 
 function SectionBlock({
@@ -61,15 +97,20 @@ function SectionBlock({
   onToggle,
   activeThreadId,
   onSelectThread,
+  sortMode,
+  onSortChange,
 }: {
   section: TreeSection;
   open: boolean;
   onToggle: () => void;
   activeThreadId: string | null;
   onSelectThread: (threadId: string) => void;
+  sortMode: SortMode;
+  onSortChange: (mode: SortMode) => void;
 }) {
   const Icon = SECTION_ICON[section.source];
   const count = section.items.length;
+  const isGithub = section.source === "github";
   return (
     <Collapsible open={open} className="border-b border-base-300/60 last:border-b-0">
       <CollapsibleTrigger
@@ -88,6 +129,19 @@ function SectionBlock({
       <CollapsibleContent className="pb-1">
         {count === 0 ? (
           <p className="px-3 pb-2 pl-9 text-xs text-base-content/35">No activity yet.</p>
+        ) : isGithub ? (
+          <>
+            <SortBar mode={sortMode} onChange={onSortChange} />
+            {groupByRepo(section.items).map((g) => (
+              <RepoGroup
+                key={g.repo}
+                repo={g.repo}
+                items={sortItems(g.items, sortMode)}
+                activeThreadId={activeThreadId}
+                onSelectThread={onSelectThread}
+              />
+            ))}
+          </>
         ) : (
           section.items.map((item) => (
             <ItemBlock
@@ -98,6 +152,70 @@ function SectionBlock({
             />
           ))
         )}
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
+/** Sort toggle for the Pull Requests section. */
+function SortBar({ mode, onChange }: { mode: SortMode; onChange: (m: SortMode) => void }) {
+  return (
+    <div className="flex items-center gap-1 px-3 pb-1.5 pl-9 text-[10px]">
+      <span className="font-mono uppercase tracking-wide text-base-content/35">sort</span>
+      {(
+        [
+          ["num", "#"],
+          ["recent", "recent"],
+        ] as const
+      ).map(([m, label]) => (
+        <button
+          key={m}
+          type="button"
+          onClick={() => onChange(m)}
+          className={cn(
+            "rounded px-1.5 py-0.5 font-mono transition-colors",
+            mode === m
+              ? "bg-primary/15 text-primary"
+              : "text-base-content/45 hover:bg-base-200 hover:text-base-content/70",
+          )}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** A collapsible org/repo group — the repo is the header; rows are `#num — name`. */
+function RepoGroup({
+  repo,
+  items,
+  activeThreadId,
+  onSelectThread,
+}: {
+  repo: string;
+  items: TreeItem[];
+  activeThreadId: string | null;
+  onSelectThread: (threadId: string) => void;
+}) {
+  return (
+    <Collapsible defaultOpen>
+      <CollapsibleTrigger className="group flex w-full items-center gap-1.5 px-3 py-1 pl-7 text-left hover:bg-base-200/50">
+        <ChevronRight className="size-3 shrink-0 text-base-content/40 transition-transform group-data-[state=open]:rotate-90" />
+        <span className="flex-1 truncate font-mono text-[11px] text-base-content/55" title={repo}>
+          {repo}
+        </span>
+        <span className="font-mono text-[10px] text-base-content/35">{items.length}</span>
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        {items.map((item) => (
+          <ItemBlock
+            key={item.key}
+            item={item}
+            activeThreadId={activeThreadId}
+            onSelectThread={onSelectThread}
+          />
+        ))}
       </CollapsibleContent>
     </Collapsible>
   );

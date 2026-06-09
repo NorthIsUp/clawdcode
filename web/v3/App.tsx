@@ -1,5 +1,10 @@
 import { CircleHelp, Cog, MessagesSquare, Webhook, Workflow } from "lucide-react";
-import type { ComponentType } from "react";
+import {
+  type ComponentType,
+  type MouseEvent as ReactMouseEvent,
+  useCallback,
+  useState,
+} from "react";
 import { ChatPane } from "./components/ChatPane";
 import { Sidebar } from "./components/Sidebar";
 import type { V3View } from "./router";
@@ -76,15 +81,60 @@ export const BOTTOM_NAV: {
   { view: "about", label: "About", Icon: CircleHelp },
 ];
 
+const SIDEBAR_W_KEY = "clawdcode:v3:sidebarW";
+const SIDEBAR_MIN = 220;
+const SIDEBAR_MAX = 560;
+
+function loadSidebarWidth(): number {
+  try {
+    const v = Number(localStorage.getItem(SIDEBAR_W_KEY));
+    if (v >= SIDEBAR_MIN && v <= SIDEBAR_MAX) {
+      return v;
+    }
+  } catch {
+    // ignore
+  }
+  return 288;
+}
+
 export default function App() {
   const { route, goto, selectThread } = useRoute();
   const threadId = selectedThreadId(route);
   const MainView = MAIN_VIEWS[route.view];
 
+  const [sidebarW, setSidebarW] = useState(loadSidebarWidth);
+  // Drag-to-resize the sidebar (the divider between the two zones). Width is
+  // clamped and persisted so it survives reloads.
+  const onResizeStart = useCallback((e: ReactMouseEvent) => {
+    e.preventDefault();
+    const onMove = (ev: MouseEvent) => {
+      setSidebarW(Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, ev.clientX)));
+    };
+    const onUp = () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      document.body.style.userSelect = "";
+      setSidebarW((w) => {
+        try {
+          localStorage.setItem(SIDEBAR_W_KEY, String(w));
+        } catch {
+          // ignore
+        }
+        return w;
+      });
+    };
+    document.body.style.userSelect = "none";
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  }, []);
+
   return (
     <div className="v3-shell h-screen flex overflow-hidden text-base-content">
-      {/* Zone 1: sidebar (hook tree + bottom nav). Owned by Sidebar agent. */}
-      <aside className="shrink-0 w-72 max-w-[80vw] border-r border-base-300 bg-base-100/85 backdrop-blur-sm flex flex-col overflow-hidden">
+      {/* Zone 1: sidebar (hook tree + bottom nav). */}
+      <aside
+        style={{ width: sidebarW }}
+        className="shrink-0 max-w-[85vw] border-r border-base-300 bg-base-100/85 backdrop-blur-sm flex flex-col overflow-hidden"
+      >
         <Sidebar
           activeView={route.view}
           activeThreadId={threadId}
@@ -93,7 +143,15 @@ export default function App() {
         />
       </aside>
 
-      {/* Zone 2: main pane. Owned by Chat-pane + Bottom-nav agents. */}
+      {/* Drag handle between the zones. */}
+      <button
+        type="button"
+        aria-label="Resize sidebar"
+        onMouseDown={onResizeStart}
+        className="w-1 shrink-0 cursor-col-resize border-0 bg-base-300/30 p-0 transition-colors hover:bg-primary/50"
+      />
+
+      {/* Zone 2: main pane. */}
       <main className="v3-main flex-1 min-w-0 flex flex-col overflow-hidden">
         <MainView threadId={threadId} />
       </main>

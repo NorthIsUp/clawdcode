@@ -93,6 +93,7 @@ export function extractHookFields(event: string, payload: unknown): DeliveryFiel
     const num = read(payload, ["pull_request", "number"]);
     push(out, "repo", pr?.repo);
     push(out, "PR", num ? `#${num}` : null);
+    push(out, "title", read(payload, ["pull_request", "title"]));
     push(out, "linear", linearTaskId(payload));
     push(out, "action", pr?.action);
     push(out, "author", pr?.user);
@@ -110,6 +111,11 @@ export function extractHookFields(event: string, payload: unknown): DeliveryFiel
     push(out, "repo", read(payload, ["repository", "full_name"]));
     const num = read(payload, ["issue", "number"]) ?? read(payload, ["pull_request", "number"]);
     push(out, "PR", num ? `#${num}` : null);
+    push(
+      out,
+      "title",
+      read(payload, ["pull_request", "title"]) ?? read(payload, ["issue", "title"]),
+    );
     push(out, "linear", linearTaskId(payload));
     push(out, "action", read(payload, ["action"]));
     push(out, "actor", read(payload, ["sender", "login"]));
