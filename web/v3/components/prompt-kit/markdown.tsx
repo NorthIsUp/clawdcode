@@ -24,6 +24,18 @@ function extractLanguage(className?: string): string {
   return match?.[1] ?? "plaintext"
 }
 
+// Pick a shiki theme that matches the active v3 theme — github-light on the
+// light themes, a dark theme everywhere else. Without this, code blocks render
+// white-on-white inside the dark themes (the "white box" bug).
+function shikiThemeForActive(): string {
+  const t =
+    typeof document !== "undefined"
+      ? document.documentElement.getAttribute("data-theme")
+      : null
+  const light = t === "tidepool" || t === "contrast-light"
+  return light ? "github-light" : "github-dark-default"
+}
+
 const INITIAL_COMPONENTS: Partial<Components> = {
   code: function CodeComponent({ className, children, ...props }) {
     const isInline =
@@ -48,7 +60,11 @@ const INITIAL_COMPONENTS: Partial<Components> = {
 
     return (
       <CodeBlock {...(className ? { className } : {})}>
-        <CodeBlockCode code={children as string} language={language} />
+        <CodeBlockCode
+          code={children as string}
+          language={language}
+          theme={shikiThemeForActive()}
+        />
       </CodeBlock>
     )
   },
