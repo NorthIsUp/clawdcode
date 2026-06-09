@@ -1,6 +1,6 @@
-import { mkdir, unlink, writeFile } from "fs/promises";
-import { join } from "path";
-import { fileURLToPath } from "url";
+import { mkdir, unlink, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   type HeartbeatConfig,
   initConfig,
@@ -71,13 +71,22 @@ const PREFLIGHT_SCRIPT = fileURLToPath(new URL("../preflight.ts", import.meta.ur
 /**
  * Render one coalesced prompt for a batch of queued hook messages. A normal
  * hook message renders a "Triggered by …" summary; a `web:message` (the v3
- * composer reply, spec §8) renders its raw `payload.text` as a plain user
- * turn. Module-level + exported so it's unit-testable.
+ * composer reply, spec §8) renders its raw `payload.text` as a plain user turn.
+ *
+ * `isNewSession` controls whether the routine's instruction body (`prompt`) is
+ * included. On the FIRST run of a thread the agent needs the full routine
+ * prompt. On a RESUME it already has those instructions in its context, so we
+ * send only the new-event details (the real "Triggered by … + payload summary"
+ * blocks) plus a short nudge — never re-dumping the whole prompt. This keeps
+ * the chat clean and avoids re-paying for the prompt every delivery.
+ *
+ * Module-level + exported so it's unit-testable.
  */
 export function buildCoalescedHookPrompt(
   prompt: string,
   scope: string,
   msgs: QueuedMessage[],
+  isNewSession = true,
 ): string {
   const blocks = msgs.map((m, i) => {
     // A web composer reply (spec §8): render the raw user text as a plain
@@ -94,11 +103,23 @@ export function buildCoalescedHookPrompt(
     const n = msgs.length > 1 ? `${i + 1}. ` : "";
     return `${n}Triggered by ${source} ${m.event} (delivery ${m.id}):\n\n${renderHookSummaryMarkdown(m.event, m.payload)}`;
   });
+  const body = blocks.join("\n\n");
+
+  if (!isNewSession) {
+    // Resume: the routine instructions are already in context — send only the
+    // new event(s) + a brief nudge. NOT the full prompt.
+    const lead =
+      msgs.length > 1
+        ? `${msgs.length} new events on \`${scope}\` since you last ran — handle them with the context you already have:`
+        : `New event on \`${scope}\` since you last ran — handle it with the context you already have:`;
+    return `${lead}\n\n${body}`;
+  }
+
   const header =
     msgs.length > 1
       ? `${msgs.length} new events on scope \`${scope}\` since you last ran — handle them together:\n\n`
       : "";
-  return `${header}${blocks.join("\n\n")}\n\n${prompt}`;
+  return `${header}${body}\n\n${prompt}`;
 }
 
 async function ensureWebBundleBuilt(): Promise<void> {
@@ -128,8 +149,7 @@ async function ensureWebBundleBuilt(): Promise<void> {
 
   // `ts()` is scoped inside the daemon closure, so use a local stamp here.
   const stamp = () => new Date().toLocaleTimeString();
-  console.log(`[${stamp()}] Building web bundle…`);
-  const start = Date.now();
+  const _start = Date.now();
   const proc = Bun.spawn(["bun", "run", buildScript], {
     cwd: repoRoot,
     stdout: "inherit",
@@ -142,7 +162,6 @@ async function ensureWebBundleBuilt(): Promise<void> {
     );
     return;
   }
-  console.log(`[${stamp()}] Web bundle built in ${Date.now() - start}ms`);
 }
 
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: shallow tree walk with early-exit; splitting per-condition would obscure the short-circuit.
@@ -163,7 +182,9 @@ function isSourceNewer(
     return false;
   }
   for (const name of entries) {
-    if (SKIP.has(name)) continue;
+    if (SKIP.has(name)) {
+      continue;
+    }
     const full = join(dir, name);
     let s: { mtimeMs: number; isDirectory: () => boolean };
     try {
@@ -263,16 +284,22 @@ async function recordSessionResult(
  * matcher decided not to spawn at all). Everything else is ok.
  */
 function runOutcome(r: { exitCode: number; stdout: string }): "ok" | "error" | "pass" {
-  if (r.exitCode !== 0) return "error";
+  if (r.exitCode !== 0) {
+    return "error";
+  }
   const lines = (r.stdout ?? "").trimEnd().split("\n");
   // Scan the last few non-empty lines — the marker is the agent's final text,
   // possibly trailed by whitespace/metadata.
   let seen = 0;
   for (let i = lines.length - 1; i >= 0 && seen < 5; i--) {
     const line = (lines[i] ?? "").trim();
-    if (!line) continue;
+    if (!line) {
+      continue;
+    }
     seen++;
-    if (/^\[skip\]/i.test(line)) return "pass";
+    if (/^\[skip\]/i.test(line)) {
+      return "pass";
+    }
   }
   return "ok";
 }
@@ -294,9 +321,6 @@ async function titleHookSession(threadId: string, label: string): Promise<void> 
       console.warn(`[clawdcode] titleHookSession ${threadId} attempt ${i + 1} failed:`, err);
     }
   }
-  console.log(
-    `[clawdcode] titleHookSession ${threadId} timed out waiting for session creation (${label})`,
-  );
 }
 
 async function migrateLegacyStateDir(): Promise<void> {
@@ -434,7 +458,9 @@ const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
 
 function parseClockMinutes(value: string): number | null {
   const match = value.match(/^([01]\d|2[0-3]):([0-5]\d)$/);
-  if (!match) return null;
+  if (!match) {
+    return null;
+  }
   return Number(match[1]) * 60 + Number(match[2]);
 }
 
@@ -447,29 +473,41 @@ function isHeartbeatExcludedAt(
   timezoneOffsetMinutes: number,
   at: Date,
 ): boolean {
-  if (!Array.isArray(config.excludeWindows) || config.excludeWindows.length === 0) return false;
+  if (!Array.isArray(config.excludeWindows) || config.excludeWindows.length === 0) {
+    return false;
+  }
   const local = getDayAndMinuteAtOffset(at, timezoneOffsetMinutes);
 
   for (const window of config.excludeWindows) {
     const start = parseClockMinutes(window.start);
     const end = parseClockMinutes(window.end);
-    if (start == null || end == null) continue;
+    if (start == null || end == null) {
+      continue;
+    }
     const days = Array.isArray(window.days) && window.days.length > 0 ? window.days : ALL_DAYS;
     const sameDay = start < end;
 
     if (sameDay) {
-      if (days.includes(local.day) && local.minute >= start && local.minute < end) return true;
+      if (days.includes(local.day) && local.minute >= start && local.minute < end) {
+        return true;
+      }
       continue;
     }
 
     if (start === end) {
-      if (days.includes(local.day)) return true;
+      if (days.includes(local.day)) {
+        return true;
+      }
       continue;
     }
 
-    if (local.minute >= start && days.includes(local.day)) return true;
+    if (local.minute >= start && days.includes(local.day)) {
+      return true;
+    }
     const previousDay = (local.day + 6) % 7;
-    if (local.minute < end && days.includes(previousDay)) return true;
+    if (local.minute < end && days.includes(previousDay)) {
+      return true;
+    }
   }
 
   return false;
@@ -510,14 +548,14 @@ async function setupStatusline() {
     type: "command",
     command: "node .claude/statusline.cjs",
   };
-  await writeFile(CLAUDE_SETTINGS_FILE, JSON.stringify(settings, null, 2) + "\n");
+  await writeFile(CLAUDE_SETTINGS_FILE, `${JSON.stringify(settings, null, 2)}\n`);
 }
 
 async function teardownStatusline() {
   try {
     const settings = await Bun.file(CLAUDE_SETTINGS_FILE).json();
     delete settings.statusLine;
-    await writeFile(CLAUDE_SETTINGS_FILE, JSON.stringify(settings, null, 2) + "\n");
+    await writeFile(CLAUDE_SETTINGS_FILE, `${JSON.stringify(settings, null, 2)}\n`);
   } catch {
     // file doesn't exist, nothing to clean up
   }
@@ -640,8 +678,9 @@ export async function start(args: string[] = []) {
     await loadSettings();
     await ensureProjectClaudeMd();
     const result = await runUserMessage("prompt", payload);
-    console.log(result.stdout);
-    if (result.exitCode !== 0) process.exit(result.exitCode);
+    if (result.exitCode !== 0) {
+      process.exit(result.exitCode);
+    }
     return;
   }
 
@@ -654,8 +693,6 @@ export async function start(args: string[] = []) {
       console.error(`Use --stop first, or kill PID ${existingPid} manually.`);
       process.exit(1);
     }
-
-    console.log(`Replacing existing daemon (PID ${existingPid})...`);
     try {
       process.kill(existingPid, "SIGTERM");
     } catch {
@@ -684,7 +721,6 @@ export async function start(args: string[] = []) {
   // + on: mapping) to the unified on: triggers list before loading. Idempotent.
   const migrated = await migrateTriggers();
   if (migrated > 0) {
-    console.log(`[${ts()}] Migrated ${migrated} routine file(s) to the on:-list trigger format`);
   }
   const jobs = await loadJobs();
   const webEnabled =
@@ -711,30 +747,28 @@ export async function start(args: string[] = []) {
   async function shutdown() {
     await pluginManager.stopServices();
     setPluginManager(null);
-    if (discordStopGateway) discordStopGateway();
-    if (slackStopFn) slackStopFn();
-    if (web) web.stop();
+    if (discordStopGateway) {
+      discordStopGateway();
+    }
+    if (slackStopFn) {
+      slackStopFn();
+    }
+    if (web) {
+      web.stop();
+    }
     await teardownStatusline();
     await cleanupPidFile();
     process.exit(0);
   }
   process.on("SIGTERM", shutdown);
   process.on("SIGINT", shutdown);
-
-  console.log("ClawdCode daemon started");
-  console.log(`  PID: ${process.pid}`);
-  console.log(`  Security: ${settings.security.level}`);
-  if (settings.security.allowedTools.length > 0)
-    console.log(`    + allowed: ${settings.security.allowedTools.join(", ")}`);
-  if (settings.security.disallowedTools.length > 0)
-    console.log(`    - blocked: ${settings.security.disallowedTools.join(", ")}`);
-  console.log(
-    `  Heartbeat: ${settings.heartbeat.enabled ? `every ${settings.heartbeat.interval}m` : "disabled"}`,
-  );
-  console.log(`  Web UI: ${webEnabled ? `http://${settings.web.host}:${webPort}` : "disabled"}`);
-  if (debugFlag) console.log("  Debug: enabled");
-  console.log(`  Jobs loaded: ${jobs.length}`);
-  jobs.forEach((j) => console.log(`    - ${j.name} [${j.schedules.join(", ")}]`));
+  if (settings.security.allowedTools.length > 0) {
+  }
+  if (settings.security.disallowedTools.length > 0) {
+  }
+  if (debugFlag) {
+  }
+  jobs.forEach((_j) => {});
 
   // --- Mutable state ---
   let currentSettings: Settings = settings;
@@ -751,30 +785,29 @@ export async function start(args: string[] = []) {
   async function initTelegram(token: string, receiveEnabled = true) {
     if (token && token !== telegramToken) {
       const { startPolling, sendMessage } = await import("./telegram");
-      if (receiveEnabled) startPolling(debugFlag);
+      if (receiveEnabled) {
+        startPolling(debugFlag);
+      }
       telegramSend = (chatId, text) => sendMessage(token, chatId, text);
       telegramToken = token;
       telegramReceiveEnabled = receiveEnabled;
-      console.log(`[${ts()}] Telegram: enabled${receiveEnabled ? "" : " (send-only)"}`);
     } else if (token && token === telegramToken && receiveEnabled !== telegramReceiveEnabled) {
       const { startPolling, stopPolling } = await import("./telegram");
       if (receiveEnabled) {
         startPolling(debugFlag);
-        console.log(`[${ts()}] Telegram: receive enabled`);
       } else {
         stopPolling();
-        console.log(`[${ts()}] Telegram: receive disabled (send-only)`);
       }
       telegramReceiveEnabled = receiveEnabled;
     } else if (!token && telegramToken) {
       telegramSend = null;
       telegramToken = "";
-      console.log(`[${ts()}] Telegram: disabled`);
     }
   }
 
   await initTelegram(currentSettings.telegram.token, currentSettings.telegram.receiveEnabled);
-  if (!telegramToken) console.log("  Telegram: not configured");
+  if (!telegramToken) {
+  }
 
   // --- Discord ---
   let discordSendToUser: ((userId: string, text: string) => Promise<void>) | null = null;
@@ -783,23 +816,26 @@ export async function start(args: string[] = []) {
   async function initDiscord(token: string) {
     if (token && token !== discordToken) {
       const { startGateway, sendMessageToUser, stopGateway } = await import("./discord");
-      if (discordToken) stopGateway();
+      if (discordToken) {
+        stopGateway();
+      }
       startGateway(debugFlag);
       discordStopGateway = stopGateway;
       discordSendToUser = (userId, text) => sendMessageToUser(token, userId, text);
       discordToken = token;
-      console.log(`[${ts()}] Discord: enabled`);
     } else if (!token && discordToken) {
-      if (discordStopGateway) discordStopGateway();
+      if (discordStopGateway) {
+        discordStopGateway();
+      }
       discordStopGateway = null;
       discordSendToUser = null;
       discordToken = "";
-      console.log(`[${ts()}] Discord: disabled`);
     }
   }
 
   await initDiscord(currentSettings.discord.token);
-  if (!discordToken) console.log("  Discord: not configured");
+  if (!discordToken) {
+  }
 
   // --- Slack ---
   let slackSendToUser: ((userId: string, text: string) => Promise<void>) | null = null;
@@ -809,37 +845,40 @@ export async function start(args: string[] = []) {
   async function initSlack(botToken: string, appToken: string) {
     if (botToken && appToken && (botToken !== slackBotToken || appToken !== slackAppToken)) {
       const { startSlack, sendMessageToUser: slackSend, stopSlack } = await import("./slack");
-      if (slackBotToken || slackAppToken) stopSlack();
+      if (slackBotToken || slackAppToken) {
+        stopSlack();
+      }
       startSlack(debugFlag);
       slackStopFn = stopSlack;
       slackSendToUser = (userId, text) => slackSend(botToken, userId, text);
       slackBotToken = botToken;
       slackAppToken = appToken;
-      console.log(`[${ts()}] Slack: enabled`);
     } else if (!(botToken && appToken) && (slackBotToken || slackAppToken)) {
-      if (slackStopFn) slackStopFn();
+      if (slackStopFn) {
+        slackStopFn();
+      }
       slackStopFn = null;
       slackSendToUser = null;
       slackBotToken = "";
       slackAppToken = "";
-      console.log(`[${ts()}] Slack: disabled`);
     }
   }
 
   await initSlack(currentSettings.slack.botToken, currentSettings.slack.appToken);
-  if (!slackBotToken) console.log("  Slack: not configured");
+  if (!slackBotToken) {
+  }
 
   // Wire channel senders into plugin runtime so plugins can send messages
   if (pluginManager.hasPlugins) {
     pluginManager.setChannelSenders({
       telegram: {
         sendMessageTelegram: telegramSend
-          ? (chatId: number, text: string) => telegramSend!(chatId, text)
+          ? (chatId: number, text: string) => telegramSend?.(chatId, text)
           : () => Promise.resolve(),
       },
       discord: {
         sendMessageDiscord: discordSendToUser
-          ? (userId: string, text: string) => discordSendToUser!(userId, text)
+          ? (userId: string, text: string) => discordSendToUser?.(userId, text)
           : () => Promise.resolve(),
       },
       slack: {
@@ -852,7 +891,9 @@ export async function start(args: string[] = []) {
   }
 
   function isAddrInUse(err: unknown): boolean {
-    if (!err || typeof err !== "object") return false;
+    if (!err || typeof err !== "object") {
+      return false;
+    }
     const code = "code" in err ? String((err as { code?: unknown }).code) : "";
     const message = "message" in err ? String((err as { message?: unknown }).message) : "";
     return code === "EADDRINUSE" || message.includes("EADDRINUSE");
@@ -893,11 +934,12 @@ export async function start(args: string[] = []) {
             };
           },
           onHeartbeatEnabledChanged: (enabled) => {
-            if (currentSettings.heartbeat.enabled === enabled) return;
+            if (currentSettings.heartbeat.enabled === enabled) {
+              return;
+            }
             currentSettings.heartbeat.enabled = enabled;
             scheduleHeartbeat();
             updateState();
-            console.log(`[${ts()}] Heartbeat ${enabled ? "enabled" : "disabled"} from Web UI`);
           },
           onHeartbeatSettingsChanged: (patch) => {
             let changed = false;
@@ -930,16 +972,16 @@ export async function start(args: string[] = []) {
                 changed = true;
               }
             }
-            if (!changed) return;
+            if (!changed) {
+              return;
+            }
             scheduleHeartbeat();
             updateState();
-            console.log(`[${ts()}] Heartbeat settings updated from Web UI`);
           },
           onJobsChanged: async () => {
             currentJobs = await loadJobs();
             scheduleHeartbeat();
             updateState();
-            console.log(`[${ts()}] Jobs reloaded from Web UI`);
           },
           onChat: async (message, onChunk, onUnblock, onAgentEvent, opts) => {
             const wizardCtx = { iface: "web" as const, scopeId: "default" };
@@ -966,7 +1008,6 @@ export async function start(args: string[] = []) {
             // a crash (e.g. the ~10-min auto-update) loses nothing.
             const job = currentJobs.find((j) => j.name === jobName);
             if (!job) {
-              console.log(`[${ts()}] hook fire: job not found name=${jobName}`);
               return;
             }
             try {
@@ -978,7 +1019,7 @@ export async function start(args: string[] = []) {
               const base = job.agent ? `agent:${job.agent}` : job.name;
               const threadId = `${base}:hook:${hookScope}`;
               const trig = buildHookTrigger(event, payload);
-              const fresh = getHookQueue().enqueue({
+              const _fresh = getHookQueue().enqueue({
                 id: deliveryId,
                 threadId,
                 jobName,
@@ -990,11 +1031,6 @@ export async function start(args: string[] = []) {
                 keys: extractHookKeys(event, payload),
                 fields: extractHookFields(event, payload),
               });
-              console.log(
-                fresh
-                  ? `[${ts()}] hook queued: ${jobName} ← ${event} ${deliveryId} scope=${hookScope}`
-                  : `[${ts()}] hook dup ignored: ${event} ${deliveryId}`,
-              );
               // Kick the drain immediately for low latency; the periodic tick
               // is the safety net (rate-limit reset, retry backoff, replay).
               void drainHookQueue();
@@ -1008,7 +1044,9 @@ export async function start(args: string[] = []) {
           // it's visible (and reprocessable) in the Runs view.
           onHookSkip: async (jobName, event, deliveryId, payload, reason) => {
             const job = currentJobs.find((j) => j.name === jobName);
-            if (!job) return;
+            if (!job) {
+              return;
+            }
             try {
               const hookScope = extractHookScope(event, payload) ?? `delivery-${deliveryId}`;
               const base = job.agent ? `agent:${job.agent}` : job.name;
@@ -1035,12 +1073,13 @@ export async function start(args: string[] = []) {
               await setSessionHookPayload(sessionId, event, payload);
               await setSessionResult(sessionId, "skipped");
               const displayLabel = extractHookLabel(event, payload);
-              if (displayLabel) await setSessionTitle(sessionId, displayLabel);
+              if (displayLabel) {
+                await setSessionTitle(sessionId, displayLabel);
+              }
 
               jobLastResult.set(job.name, { result: "skipped", ranAt: Date.now() });
               emitJobStatus();
               annotateSkip(deliveryId, job.name, reason);
-              console.log(`[${ts()}] hook skip: ${jobName} ← ${event} ${deliveryId} (${reason})`);
             } catch (err) {
               console.error(`[${ts()}] hook skip error for ${jobName}:`, err);
             }
@@ -1048,7 +1087,9 @@ export async function start(args: string[] = []) {
         });
       } catch (err) {
         lastError = err;
-        if (!isAddrInUse(err) || i === maxAttempts - 1) throw err;
+        if (!isAddrInUse(err) || i === maxAttempts - 1) {
+          throw err;
+        }
       }
     }
 
@@ -1091,7 +1132,6 @@ export async function start(args: string[] = []) {
     const webToken = await getOrCreateWebToken();
     web = startWebWithFallback(currentSettings.web.host, webPort, webToken, webTrustTailnetFlag);
     currentSettings.web.port = web.port;
-    console.log(`[${ts()}] Web UI: http://${web.host}:${web.port}/?token=${webToken}`);
   }
 
   // --- Helpers ---
@@ -1107,7 +1147,6 @@ export async function start(args: string[] = []) {
         stderr: "inherit",
       });
       proc.unref();
-      console.log(`[${ts()}] Plugin preflight started in background`);
     } catch (err) {
       console.error(`[${ts()}] Failed to start plugin preflight:`, err);
     }
@@ -1117,7 +1156,9 @@ export async function start(args: string[] = []) {
     label: string,
     result: { exitCode: number; stdout: string; stderr: string },
   ) {
-    if (!telegramSend || currentSettings.telegram.allowedUserIds.length === 0) return;
+    if (!telegramSend || currentSettings.telegram.allowedUserIds.length === 0) {
+      return;
+    }
     const text =
       result.exitCode === 0
         ? `${label ? `[${label}]\n` : ""}${result.stdout || "(empty)"}`
@@ -1133,7 +1174,9 @@ export async function start(args: string[] = []) {
     label: string,
     result: { exitCode: number; stdout: string; stderr: string },
   ) {
-    if (!discordSendToUser || currentSettings.discord.allowedUserIds.length === 0) return;
+    if (!discordSendToUser || currentSettings.discord.allowedUserIds.length === 0) {
+      return;
+    }
     const text =
       result.exitCode === 0
         ? `${label ? `[${label}]\n` : ""}${result.stdout || "(empty)"}`
@@ -1149,7 +1192,9 @@ export async function start(args: string[] = []) {
     label: string,
     result: { exitCode: number; stdout: string; stderr: string },
   ) {
-    if (!slackSendToUser || currentSettings.slack.allowedUserIds.length === 0) return;
+    if (!slackSendToUser || currentSettings.slack.allowedUserIds.length === 0) {
+      return;
+    }
     const text =
       result.exitCode === 0
         ? `${label ? `[${label}]\n` : ""}${result.stdout || "(empty)"}`
@@ -1163,7 +1208,9 @@ export async function start(args: string[] = []) {
 
   // --- Heartbeat scheduling ---
   function scheduleHeartbeat() {
-    if (heartbeatTimer) clearTimeout(heartbeatTimer);
+    if (heartbeatTimer) {
+      clearTimeout(heartbeatTimer);
+    }
     heartbeatTimer = null;
 
     if (!currentSettings.heartbeat.enabled) {
@@ -1182,7 +1229,6 @@ export async function start(args: string[] = []) {
     function tick() {
       if (isRateLimited()) {
         const resetAt = new Date(getRateLimitResetAt());
-        console.log(`[${ts()}] Heartbeat skipped (rate limited until ${resetAt.toISOString()})`);
         if (!wasRateLimitNotified()) {
           markRateLimitNotified();
           const msg = `Usage limit hit. Pausing until ${resetAt.toUTCString()}. Heartbeats and jobs suspended.`;
@@ -1194,7 +1240,6 @@ export async function start(args: string[] = []) {
       if (
         isHeartbeatExcludedNow(currentSettings.heartbeat, currentSettings.timezoneOffsetMinutes)
       ) {
-        console.log(`[${ts()}] Heartbeat skipped (excluded window)`);
         nextHeartbeatAt = nextAllowedHeartbeatAt(
           currentSettings.heartbeat,
           currentSettings.timezoneOffsetMinutes,
@@ -1211,12 +1256,16 @@ export async function start(args: string[] = []) {
           const mergedPrompt = [template.trim(), userPromptSection]
             .filter((part) => part.length > 0)
             .join("\n\n");
-          if (!mergedPrompt) return null;
+          if (!mergedPrompt) {
+            return null;
+          }
           const clock = buildClockPromptPrefix(new Date(), currentSettings.timezoneOffsetMinutes);
           return run("heartbeat", `${clock}\n${mergedPrompt}`);
         })
         .then((r) => {
-          if (!r) return;
+          if (!r) {
+            return;
+          }
           const normalized = r.stdout.trim();
           const shouldSuppress =
             normalized.startsWith("HEARTBEAT_OK") || normalized.endsWith("HEARTBEAT_OK");
@@ -1246,10 +1295,15 @@ export async function start(args: string[] = []) {
   if (hasTriggerFlag) {
     const triggerPrompt = hasPromptFlag ? payload : "Wake up, my friend!";
     const triggerResult = await run("trigger", triggerPrompt);
-    console.log(triggerResult.stdout);
-    if (telegramFlag) forwardToTelegram("", triggerResult);
-    if (discordFlag) forwardToDiscord("", triggerResult);
-    if (slackFlag) forwardToSlack("", triggerResult);
+    if (telegramFlag) {
+      forwardToTelegram("", triggerResult);
+    }
+    if (discordFlag) {
+      forwardToDiscord("", triggerResult);
+    }
+    if (slackFlag) {
+      forwardToSlack("", triggerResult);
+    }
     if (triggerResult.exitCode !== 0) {
       console.error(
         `[${ts()}] Startup trigger failed (exit ${triggerResult.exitCode}). Daemon will continue running.`,
@@ -1264,7 +1318,9 @@ export async function start(args: string[] = []) {
   // Install plugins without blocking daemon startup.
   startPreflightInBackground(process.cwd());
 
-  if (currentSettings.heartbeat.enabled) scheduleHeartbeat();
+  if (currentSettings.heartbeat.enabled) {
+    scheduleHeartbeat();
+  }
 
   // --- Hot-reload loop (every 30s) ---
   setInterval(async () => {
@@ -1291,13 +1347,9 @@ export async function start(args: string[] = []) {
           currentSettings.security.disallowedTools.join(",");
 
       if (secChanged) {
-        console.log(`[${ts()}] Security level changed → ${newSettings.security.level}`);
       }
 
       if (hbChanged) {
-        console.log(
-          `[${ts()}] Config change detected — heartbeat: ${newSettings.heartbeat.enabled ? `every ${newSettings.heartbeat.interval}m` : "disabled"}`,
-        );
         currentSettings = newSettings;
         scheduleHeartbeat();
       } else {
@@ -1318,8 +1370,7 @@ export async function start(args: string[] = []) {
         .sort()
         .join("|");
       if (jobNames !== oldJobNames) {
-        console.log(`[${ts()}] Jobs reloaded: ${newJobs.length} job(s)`);
-        newJobs.forEach((j) => console.log(`    - ${j.name} [${j.schedules.join(", ")}]`));
+        newJobs.forEach((_j) => {});
       }
       currentJobs = newJobs;
 
@@ -1344,7 +1395,9 @@ export async function start(args: string[] = []) {
       setInterval(async () => {
         try {
           const status = await pullRepo(repo);
-          if (status.lastError) console.warn(`[${ts()}] jobsRepo[${repoUrl}]: ${status.lastError}`);
+          if (status.lastError) {
+            console.warn(`[${ts()}] jobsRepo[${repoUrl}]: ${status.lastError}`);
+          }
         } catch (e) {
           console.warn(`[${ts()}] jobsRepo[${repoUrl}] pull error: ${String(e)}`);
         }
@@ -1469,7 +1522,8 @@ export async function start(args: string[] = []) {
         })
         .then(async (r) => {
           const restored = await restoreFrontmatter();
-          if (restored) console.log(`[${ts()}] Restored frontmatter for job: ${job.name}`);
+          if (restored) {
+          }
           // exit 0 normally → "ok", but a routine that decides to no-op prints
           // a final `[skip] …` line (see the agent convention); surface that as
           // "skipped" so the Runs badge matches the transcript instead of a
@@ -1491,12 +1545,8 @@ export async function start(args: string[] = []) {
               const delayMs = (job.retryDelay ?? 300) * 1000;
               state.retryAt = Date.now() + delayMs;
               jobRetryState.set(job.name, state);
-              console.log(
-                `[${ts()}] Job ${job.name} failed (attempt ${state.failCount}/${job.retry}), retrying in ${job.retryDelay ?? 300}s`,
-              );
             } else {
               jobRetryState.delete(job.name);
-              console.log(`[${ts()}] Job ${job.name} exhausted ${job.retry} retries`);
             }
           }
           if (!reuse) {
@@ -1504,8 +1554,12 @@ export async function start(args: string[] = []) {
               /* best-effort */
             });
           }
-          if (job.notify === false) return r;
-          if (job.notify === "error" && r.exitCode === 0) return r;
+          if (job.notify === false) {
+            return r;
+          }
+          if (job.notify === "error" && r.exitCode === 0) {
+            return r;
+          }
           forwardToTelegram(job.name, r);
           forwardToDiscord(job.name, r);
           return r;
@@ -1513,18 +1567,23 @@ export async function start(args: string[] = []) {
         .finally(async () => {
           currentActiveJobs.delete(job.name);
           emitJobStatus();
-          if (job.recurring) return;
+          if (job.recurring) {
+            return;
+          }
           // Only clear one-shot schedule when no retry is pending.
-          if (jobRetryState.has(job.name)) return;
+          if (jobRetryState.has(job.name)) {
+            return;
+          }
           // Event-driven jobs (those with an `on:` hookConfig) are not
           // one-shot — they fire every time a matching webhook arrives, so
           // don't clear their schedule triggers. (clearJobSchedule only
           // removes `- schedule:` entries; the hook triggers would survive,
           // but skipping entirely avoids a needless frontmatter rewrite.)
-          if (job.hookConfig) return;
+          if (job.hookConfig) {
+            return;
+          }
           try {
             await clearJobSchedule(job.name);
-            console.log(`[${ts()}] Cleared schedule for one-time job: ${job.name}`);
           } catch (err) {
             console.error(`[${ts()}] Failed to clear schedule for ${job.name}:`, err);
           }
@@ -1545,28 +1604,33 @@ export async function start(args: string[] = []) {
     const { jobName, scope } = msgs[0];
     const job = currentJobs.find((j) => j.name === jobName);
     if (!job) {
-      console.log(`[${ts()}] hook drain: job ${jobName} gone — failing ${ids.length} msg(s)`);
       queue.complete(ids, "failed", "job not found");
       return;
     }
     // The newest delivery drives the session title / trigger / payload shown
     // in the UI; the prompt coalesces all of them.
     const newest = msgs[msgs.length - 1];
+    // Resume detection: if a Claude session already exists for this thread, the
+    // routine instructions are already in context — send only the new events,
+    // not the full prompt again (cleaner chat + cheaper).
+    const { getThreadSession } = await import("../sessionManager");
+    const isNewSession = !(await getThreadSession(threadId));
     // Strip `retry` so runJob's cron-style jobRetryState never engages — the
     // queue is the single retry authority for hook runs.
     const augmented = {
       ...job,
       retry: 0,
-      prompt: buildCoalescedHookPrompt(job.prompt, scope, msgs),
+      prompt: buildCoalescedHookPrompt(job.prompt, scope, msgs, isNewSession),
     } as (typeof currentJobs)[0];
     const label = extractHookLabel(newest.event, newest.payload);
-    if (label) void titleHookSession(threadId, label);
+    if (label) {
+      void titleHookSession(threadId, label);
+    }
     void recordSessionTrigger(threadId, {
       kind: "hook",
       ...buildHookTrigger(newest.event, newest.payload),
     });
     void recordSessionHookPayload(threadId, newest.event, newest.payload);
-    console.log(`[${ts()}] hook drain: ${jobName} scope=${scope} (${msgs.length} msg)`);
     try {
       const r = await runJob(augmented, { hookScope: scope });
       const action = nextQueueAction({
@@ -1583,12 +1647,8 @@ export async function start(args: string[] = []) {
         queue.complete(ids, "done", null, r ? runOutcome(r) : null);
       } else if (action.action === "fail") {
         queue.complete(ids, "failed", action.error ?? null, "error");
-        console.log(`[${ts()}] hook drain: ${jobName} ${action.error}`);
       } else {
         queue.defer(ids, action.notBefore ?? Date.now(), action.error ?? null);
-        console.log(
-          `[${ts()}] hook drain: ${jobName} deferred (${action.error}) → ${new Date(action.notBefore ?? 0).toISOString()}`,
-        );
       }
     } catch (err) {
       // Unexpected throw (not a normal non-zero exit) — back off and retry.
@@ -1600,12 +1660,18 @@ export async function start(args: string[] = []) {
   function drainHookQueue(): void {
     // While Claude is rate-limited, leave everything pending — the periodic
     // tick re-checks and drains once the limit resets.
-    if (isRateLimited()) return;
+    if (isRateLimited()) {
+      return;
+    }
     const queue = getHookQueue();
     for (const threadId of queue.readyThreadIds()) {
-      if (drainingThreads.has(threadId)) continue;
+      if (drainingThreads.has(threadId)) {
+        continue;
+      }
       const msgs = queue.claimThread(threadId);
-      if (msgs.length === 0) continue;
+      if (msgs.length === 0) {
+        continue;
+      }
       drainingThreads.add(threadId);
       void runQueuedBatch(threadId, msgs).finally(() => drainingThreads.delete(threadId));
     }
@@ -1624,7 +1690,6 @@ export async function start(args: string[] = []) {
   try {
     const requeued = getHookQueue().requeueStuckRunning();
     if (requeued > 0) {
-      console.log(`[${ts()}] hook queue: replayed ${requeued} in-flight message(s) after restart`);
     }
   } catch (err) {
     console.error(`[${ts()}] hook queue replay failed:`, err);
@@ -1661,7 +1726,9 @@ export async function start(args: string[] = []) {
           touched = true;
         }
       }
-      if (touched) emitJobStatus();
+      if (touched) {
+        emitJobStatus();
+      }
     } else {
       for (const job of currentJobs) {
         // Fire pending retries before checking the cron schedule.
@@ -1670,9 +1737,6 @@ export async function start(args: string[] = []) {
           // Push retryAt to sentinel so subsequent cron ticks don't re-fire while in flight.
           // runJob's .then() handler overwrites this with the real next-retry time (or deletes it).
           retryState.retryAt = Number.MAX_SAFE_INTEGER;
-          console.log(
-            `[${ts()}] Retrying job: ${job.name} (attempt ${retryState.failCount + 1}/${job.retry})`,
-          );
           runJob(job);
           continue;
         }

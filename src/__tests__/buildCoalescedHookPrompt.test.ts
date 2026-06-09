@@ -62,3 +62,44 @@ describe("buildCoalescedHookPrompt — web:message branch (spec §8)", () => {
     expect(out).toContain("Triggered by GitHub pull_request");
   });
 });
+
+describe("buildCoalescedHookPrompt — resume vs new session", () => {
+  test("new session (default) includes the full routine prompt", () => {
+    const out = buildCoalescedHookPrompt(
+      "ROUTINE-INSTRUCTIONS",
+      "pr-1-x",
+      [msg({ event: "pull_request", payload: { action: "opened" } })],
+      true,
+    );
+    expect(out).toContain("Triggered by GitHub pull_request");
+    expect(out.trim().endsWith("ROUTINE-INSTRUCTIONS")).toBe(true);
+  });
+
+  test("resume keeps the new-event details but DROPS the routine prompt", () => {
+    const out = buildCoalescedHookPrompt(
+      "ROUTINE-INSTRUCTIONS",
+      "pr-1-x",
+      [msg({ event: "pull_request_review_comment", payload: { action: "created" } })],
+      false,
+    );
+    // The real event context is still present...
+    expect(out).toContain("Triggered by GitHub pull_request_review_comment");
+    expect(out).toContain("with the context you already have");
+    // ...but the routine boilerplate is NOT re-sent.
+    expect(out).not.toContain("ROUTINE-INSTRUCTIONS");
+  });
+
+  test("resume with multiple events uses the plural nudge", () => {
+    const out = buildCoalescedHookPrompt(
+      "P",
+      "pr-1-x",
+      [
+        msg({ id: "a", event: "pull_request", payload: { action: "synchronize" } }),
+        msg({ id: "b", event: "pull_request_review_comment", payload: { action: "created" } }),
+      ],
+      false,
+    );
+    expect(out).toContain("2 new events on `pr-1-x`");
+    expect(out).not.toContain("P\n");
+  });
+});
