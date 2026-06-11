@@ -1,16 +1,10 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
 import { type LinearPayload, readLinearPayload } from "../../shared/hookPayload";
-import {
-  attachDeliveryPayload,
-  type Delivery,
-  type DeliveryRoutine,
-  recordDelivery,
-  setDeliveryEvaluation,
-} from "./deliveries";
-import { extractHookFields, extractHookKeys, extractHookPk } from "./evaluate";
+import { type Delivery, type DeliveryRoutine, recordDelivery } from "./deliveries";
+import { extractHookPk } from "./evaluate";
 import { linearRuleSkipReason, matchLinearRule } from "./match";
 import type { ReceiverResult, WebhookDeps } from "./receiver";
 import { defaultLinearRule } from "./schema";
+import { handleSignedWebhook, type WebhookSpec } from "./webhookEnvelope";
 
 /**
  * Linear webhook receiver.
@@ -25,6 +19,11 @@ import { defaultLinearRule } from "./schema";
  *   - matches each routine's `on.linear` rule and fires it via onHookFire,
  *   - records the delivery + evaluation (source "linear") for the UI.
  *
+ * The content-type guard, HMAC auth, dedup, and evaluation recording are the
+ * shared `handleSignedWebhook` pipeline; only the id/summary/@mention
+ * derivation and the match body are Linear-specific (passed as the
+ * `WebhookSpec`).
+ *
  * Webhook + signature docs: https://developers.linear.app/docs/graphql/webhooks
  */
 
@@ -37,66 +36,55 @@ export function getLinearBotMention(): string {
   return process.env.CLAWDCODE_LINEAR_BOT_MENTION ?? "@clawd";
 }
 
-export async function handleLinearWebhook(
+export function handleLinearWebhook(
   req: Request,
   deps: WebhookDeps = {},
 ): Promise<ReceiverResult> {
-  const ctype = req.headers.get("content-type") ?? "";
-  if (!ctype.toLowerCase().includes("application/json")) {
-    return { status: 415, body: { ok: false, error: "json required" } };
-  }
+  const spec: WebhookSpec = {
+    source: "linear",
+    auth: { kind: "hmac", header: "linear-signature", secret: getLinearSecret() },
+    deriveIdentity: (req2, payload) => {
+      const lp = readLinearPayload(payload);
+      lp.mentioned = mentionsBot(lp, getLinearBotMention());
+      const summary = [
+        "linear",
+        lp.type,
+        lp.identifier || null,
+        lp.title || null,
+        lp.mentioned ? "@mention" : "no-mention",
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      return {
+        event: `linear:${lp.type}${lp.action ? `.${lp.action}` : ""}`.toLowerCase(),
+        id: req2.headers.get("linear-delivery") ?? `linear-${Date.now().toString(36)}`,
+        summary,
+      };
+    },
+    match: ({ payload, identity, delivery, deps: d }) =>
+      matchLinear(payload, identity.event, identity.id, delivery, d),
+    // Linear prefers the issue identifier (`ENG-123`) as the delivery pk, falling
+    // back to the generic GitHub-style derivation.
+    derivePk: (event, payload) => readLinearPayload(payload).identifier || extractHookPk(event, payload),
+    recordAttempt: (req2, body, status) => recordLinearAttempt(req2, body, status),
+  };
+  return handleSignedWebhook(req, deps, spec);
+}
 
-  const rawBody = await req.text();
-
-  const secret = getLinearSecret();
-  if (secret) {
-    const sig = req.headers.get("linear-signature") ?? "";
-    if (!verifyLinearSignature(secret, sig, rawBody)) {
-      recordLinearAttempt(req, rawBody, "bad-signature");
-      return { status: 401, body: { ok: false, error: "bad signature" } };
-    }
-  }
-
-  let payload: unknown;
-  try {
-    payload = rawBody ? JSON.parse(rawBody) : {};
-  } catch {
-    recordLinearAttempt(req, rawBody, "error");
-    return { status: 400, body: { ok: false, error: "invalid json" } };
-  }
-
+/** Per-job Linear match pass. The @mention gate lives inside `matchLinearRule`
+ *  (it reads `lp.mentioned`, which the receiver sets from the bot handle). */
+async function matchLinear(
+  payload: unknown,
+  event: string,
+  id: string,
+  delivery: Delivery,
+  deps: WebhookDeps,
+): Promise<DeliveryRoutine[]> {
+  const routines: DeliveryRoutine[] = [];
+  // Re-derive the payload + @mention exactly as deriveIdentity did, so the
+  // matcher sees the same `mentioned` bit (the gate) it surfaced in the summary.
   const lp = readLinearPayload(payload);
   lp.mentioned = mentionsBot(lp, getLinearBotMention());
-  const event = `linear:${lp.type}${lp.action ? `.${lp.action}` : ""}`.toLowerCase();
-  const id = req.headers.get("linear-delivery") ?? `linear-${Date.now().toString(36)}`;
-
-  const summary = [
-    "linear",
-    lp.type,
-    lp.identifier || null,
-    lp.title || null,
-    lp.mentioned ? "@mention" : "no-mention",
-  ]
-    .filter(Boolean)
-    .join(" · ");
-
-  const delivery: Delivery = {
-    id,
-    event,
-    receivedAt: Date.now(),
-    summary,
-    status: "ok",
-    matched: [],
-    payloadSnippet: rawBody.slice(0, 2048),
-  };
-
-  const fresh = recordDelivery(delivery);
-  if (!fresh) {
-    delivery.status = "duplicate";
-    return { status: 200, body: { ok: true, duplicate: true } };
-  }
-
-  const routines: DeliveryRoutine[] = [];
   if (deps.getJobs && deps.onHookFire) {
     try {
       const jobs = await deps.getJobs();
@@ -122,23 +110,7 @@ export async function handleLinearWebhook(
       console.error("[hooks:linear] matcher error:", err);
     }
   }
-
-  attachDeliveryPayload(id, payload);
-  setDeliveryEvaluation(id, {
-    source: "linear",
-    pk: lp.identifier || extractHookPk(event, payload),
-    keys: extractHookKeys(event, payload),
-    fields: extractHookFields(event, payload),
-    routines,
-  });
-
-  return {
-    status: 200,
-    body: {
-      ok: true,
-      ...(delivery.matched.length > 0 ? { matched: delivery.matched } : {}),
-    },
-  };
+  return routines;
 }
 
 /** Does the ticket/comment text @mention the bot handle? */
@@ -147,21 +119,6 @@ function mentionsBot(lp: LinearPayload, handle: string): boolean {
     return false;
   }
   return lp.text.toLowerCase().includes(handle.toLowerCase());
-}
-
-/** HMAC-SHA256 of the raw body, hex-compared constant-time against the
- *  `linear-signature` header. */
-function verifyLinearSignature(secret: string, sig: string, body: string): boolean {
-  if (!sig) {
-    return false;
-  }
-  const expected = createHmac("sha256", secret).update(body, "utf8").digest("hex");
-  const a = Buffer.from(sig, "utf8");
-  const b = Buffer.from(expected, "utf8");
-  if (a.length !== b.length) {
-    return false;
-  }
-  return timingSafeEqual(a, b);
 }
 
 function recordLinearAttempt(req: Request, body: string, status: Delivery["status"]): void {

@@ -1,15 +1,9 @@
-import { timingSafeEqual } from "node:crypto";
-import {
-  attachDeliveryPayload,
-  type Delivery,
-  type DeliveryRoutine,
-  recordDelivery,
-  setDeliveryEvaluation,
-} from "./deliveries";
-import { extractHookFields, extractHookKeys, extractHookPk } from "./evaluate";
+import type { Delivery, DeliveryRoutine } from "./deliveries";
+import { recordDelivery } from "./deliveries";
 import { datadogRuleSkipReason, matchDatadogRule, readDatadogPayload } from "./match";
 import type { ReceiverResult, WebhookDeps } from "./receiver";
 import { defaultDatadogRule } from "./schema";
+import { handleSignedWebhook, type WebhookSpec } from "./webhookEnvelope";
 
 /**
  * Datadog webhook receiver.
@@ -25,6 +19,10 @@ import { defaultDatadogRule } from "./schema";
  * Because the payload shape is user-controlled, clawdcode recommends a
  * canonical webhook payload template in the Datadog integration config
  * (see RECOMMENDED_DATADOG_PAYLOAD). Matching keys off those field names.
+ *
+ * The content-type guard, token auth, dedup, and evaluation recording are the
+ * shared `handleSignedWebhook` pipeline; only the id/summary derivation and the
+ * match body are Datadog-specific (passed as the `WebhookSpec`).
  */
 
 export function getDatadogSecret(): string {
@@ -51,69 +49,53 @@ export const RECOMMENDED_DATADOG_PAYLOAD = {
   date: "$DATE",
 } as const;
 
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: token auth + dedup + per-job match-or-skip read clearly inline; extracting pieces hurts more than it helps.
-export async function handleDatadogWebhook(
+export function handleDatadogWebhook(
   req: Request,
   deps: WebhookDeps = {},
 ): Promise<ReceiverResult> {
-  const ctype = req.headers.get("content-type") ?? "";
-  if (!ctype.toLowerCase().includes("application/json")) {
-    return { status: 415, body: { ok: false, error: "json required" } };
-  }
-
-  const rawBody = await req.text();
-
-  const secret = getDatadogSecret();
-  if (secret) {
-    const url = new URL(req.url);
-    const provided = req.headers.get("x-clawdcode-token") ?? url.searchParams.get("token") ?? "";
-    if (!constantTimeEquals(provided, secret)) {
-      recordDatadogAttempt(rawBody, "bad-signature");
-      return { status: 401, body: { ok: false, error: "bad token" } };
-    }
-  }
-
-  let payload: unknown;
-  try {
-    payload = rawBody ? JSON.parse(rawBody) : {};
-  } catch {
-    recordDatadogAttempt(rawBody, "error");
-    return { status: 400, body: { ok: false, error: "invalid json" } };
-  }
-
-  const event = "datadog:alert";
-  const dp = readDatadogPayload(payload);
-  // Datadog has no delivery id header. Use aggreg_key + transition so a
-  // re-alert and its recovery dedup independently but a duplicate POST of
-  // the same transition collapses.
-  const id = deriveDatadogId(payload);
-
-  const summary = [
-    "datadog",
-    dp?.type || null,
-    dp?.priority || null,
-    dp?.monitor ? `monitor=${dp.monitor}` : null,
-  ]
-    .filter(Boolean)
-    .join(" · ");
-
-  const delivery: Delivery = {
-    id,
-    event,
-    receivedAt: Date.now(),
-    summary,
-    status: "ok",
-    matched: [],
-    payloadSnippet: rawBody.slice(0, 2048),
+  const spec: WebhookSpec = {
+    source: "datadog",
+    // Datadog payloads are not HMAC-signed — shared-token auth (header or
+    // ?token= query param). Unset secret ⇒ accept as-is (dev/testing).
+    auth: { kind: "token", header: "x-clawdcode-token", secret: getDatadogSecret() },
+    deriveIdentity: (_req, payload) => {
+      const dp = readDatadogPayload(payload);
+      const summary = [
+        "datadog",
+        dp?.type || null,
+        dp?.priority || null,
+        dp?.monitor ? `monitor=${dp.monitor}` : null,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      return {
+        event: "datadog:alert",
+        // Datadog has no delivery id header. Use aggreg_key + transition so a
+        // re-alert and its recovery dedup independently but a duplicate POST of
+        // the same transition collapses.
+        id: deriveDatadogId(payload),
+        summary,
+      };
+    },
+    match: ({ payload, identity, delivery, deps: d }) =>
+      matchDatadog(payload, identity.event, identity.id, delivery, d),
+    recordAttempt: (_req, body, status) => recordDatadogAttempt(body, status),
   };
+  return handleSignedWebhook(req, deps, spec);
+}
 
-  const fresh = recordDelivery(delivery);
-  if (!fresh) {
-    delivery.status = "duplicate";
-    return { status: 200, body: { ok: true, duplicate: true } };
-  }
-
+/** Per-job Datadog match pass. Mirrors the other receivers: a `true` rule
+ *  resolves to the priority-floor default, matched jobs fire (and land in
+ *  `delivery.matched`), the rest record a skip with a reason. */
+async function matchDatadog(
+  payload: unknown,
+  event: string,
+  id: string,
+  delivery: Delivery,
+  deps: WebhookDeps,
+): Promise<DeliveryRoutine[]> {
   const routines: DeliveryRoutine[] = [];
+  const dp = readDatadogPayload(payload);
   if (deps.getJobs && deps.onHookFire && dp) {
     try {
       const jobs = await deps.getJobs();
@@ -142,22 +124,7 @@ export async function handleDatadogWebhook(
       console.error("[hooks:datadog] matcher error:", err);
     }
   }
-  attachDeliveryPayload(id, payload);
-  setDeliveryEvaluation(id, {
-    source: "datadog",
-    pk: extractHookPk(event, payload),
-    keys: extractHookKeys(event, payload),
-    fields: extractHookFields(event, payload),
-    routines,
-  });
-
-  return {
-    status: 200,
-    body: {
-      ok: true,
-      ...(delivery.matched.length > 0 ? { matched: delivery.matched } : {}),
-    },
-  };
+  return routines;
 }
 
 /** Build a dedup id from stable payload fields. Falls back to a clock
@@ -174,15 +141,6 @@ function deriveDatadogId(payload: unknown): string {
     }
   }
   return `datadog-${Date.now().toString(36)}`;
-}
-
-function constantTimeEquals(a: string, b: string): boolean {
-  const ab = Buffer.from(a, "utf8");
-  const bb = Buffer.from(b, "utf8");
-  if (ab.length !== bb.length) {
-    return false;
-  }
-  return timingSafeEqual(ab, bb);
 }
 
 function recordDatadogAttempt(body: string, status: Delivery["status"]): void {

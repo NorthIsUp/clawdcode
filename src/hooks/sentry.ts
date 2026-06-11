@@ -1,16 +1,10 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
-import {
-  attachDeliveryPayload,
-  type Delivery,
-  type DeliveryRoutine,
-  recordDelivery,
-  setDeliveryEvaluation,
-} from "./deliveries";
-import { extractHookFields, extractHookKeys, extractHookPk } from "./evaluate";
+import { type Delivery, type DeliveryRoutine, recordDelivery } from "./deliveries";
+import { extractHookPk } from "./evaluate";
 import { matchSentryRule, readSentryPayload, sentryRuleSkipReason } from "./match";
 import type { ReceiverResult, WebhookDeps } from "./receiver";
 import { defaultSentryRule, type SentryRule } from "./schema";
 import { markIssueSeen } from "./sentrySeen";
+import { handleSignedWebhook, type WebhookSpec } from "./webhookEnvelope";
 
 /**
  * Sentry integration-platform webhook receiver.
@@ -24,78 +18,87 @@ import { markIssueSeen } from "./sentrySeen";
  * - The resource type comes from `Sentry-Hook-Resource` (issue, error,
  *   event_alert, metric_alert, comment, …) and is threaded to jobs as the
  *   event `sentry:<resource>`.
+ *
+ * The content-type guard, HMAC auth, dedup, and evaluation recording are the
+ * shared `handleSignedWebhook` pipeline; the Sentry-specific parts (the
+ * `sentry-hook-resource` header → event/summary derivation, and the stateful
+ * first-seen / debounce gate between match and enqueue) live in the
+ * `WebhookSpec` callbacks below.
  */
 
 export function getSentrySecret(): string {
   return process.env.CLAWDCODE_SENTRY_CLIENT_SECRET ?? "";
 }
 
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: signature verify + dedup + per-job match-or-skip read clearly inline; extracting pieces hurts more than it helps.
-export async function handleSentryWebhook(
+/** The `sentry-hook-resource` header value, defaulting to `event`. The single
+ *  source for the resource across deriveIdentity + the matcher (so the
+ *  authoritative header resource — not the body-shape inference — drives both
+ *  the event label and the type filter). */
+function resourceOf(event: string): string {
+  // event is `sentry:<resource>`; strip the prefix back to the resource.
+  return event.slice("sentry:".length) || "event";
+}
+
+export function handleSentryWebhook(
   req: Request,
   deps: WebhookDeps = {},
 ): Promise<ReceiverResult> {
-  const ctype = req.headers.get("content-type") ?? "";
-  if (!ctype.toLowerCase().includes("application/json")) {
-    return { status: 415, body: { ok: false, error: "json required" } };
-  }
+  const spec: WebhookSpec = {
+    source: "sentry",
+    auth: { kind: "hmac", header: "sentry-hook-signature", secret: getSentrySecret() },
+    deriveIdentity: (req2, payload) => {
+      const resource = req2.headers.get("sentry-hook-resource") ?? "event";
+      const sp = readSentryPayload(payload);
+      // The `sentry-hook-resource` header is the authoritative resource type —
+      // use it over the body-shape inference so the type filter is exact.
+      if (sp && resource !== "event") {
+        sp.resource = resource;
+      }
+      const summary = [
+        "sentry",
+        resource,
+        sp?.action || null,
+        sp?.project ? `project=${sp.project}` : null,
+        sp?.level || null,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      return {
+        event: `sentry:${resource}`,
+        id: req2.headers.get("request-id") ?? `sentry-${Date.now().toString(36)}`,
+        summary,
+      };
+    },
+    match: ({ payload, identity, delivery, deps: d }) =>
+      matchSentry(payload, identity.event, identity.id, delivery, d),
+    recordAttempt: (req2, body, status) => recordSentryAttempt(req2, body, status),
+  };
+  return handleSignedWebhook(req, deps, spec);
+}
 
-  const rawBody = await req.text();
-
-  const secret = getSentrySecret();
-  if (secret) {
-    const sig = req.headers.get("sentry-hook-signature") ?? "";
-    if (!verifySentrySignature(secret, sig, rawBody)) {
-      recordSentryAttempt(req, rawBody, "bad-signature");
-      return { status: 401, body: { ok: false, error: "bad signature" } };
-    }
-  }
-
-  let payload: unknown;
-  try {
-    payload = rawBody ? JSON.parse(rawBody) : {};
-  } catch {
-    recordSentryAttempt(req, rawBody, "error");
-    return { status: 400, body: { ok: false, error: "invalid json" } };
-  }
-
-  const resource = req.headers.get("sentry-hook-resource") ?? "event";
-  const event = `sentry:${resource}`;
-  const id = req.headers.get("request-id") ?? `sentry-${Date.now().toString(36)}`;
-
+/**
+ * Per-job Sentry match pass + the stateful first-seen / debounce gate.
+ *
+ * The pure matcher runs first (side-effect-free), collecting the jobs whose
+ * rule matched and recording a skip for the rest. Then the stateful gates run:
+ *  - first-seen is computed ONCE per delivery (not per job) so a single
+ *    new-issue delivery wakes ALL first-seen jobs on its first occurrence;
+ *  - debounce defers the enqueue via `notBefore` so a thundering herd for one
+ *    issue gathers into the coalesced thread before the worker drains it.
+ */
+async function matchSentry(
+  payload: unknown,
+  event: string,
+  id: string,
+  delivery: Delivery,
+  deps: WebhookDeps,
+): Promise<DeliveryRoutine[]> {
+  const routines: DeliveryRoutine[] = [];
+  const resource = resourceOf(event);
   const sp = readSentryPayload(payload);
-  // The `sentry-hook-resource` header is the authoritative resource type — use
-  // it over the body-shape inference so the type filter is exact.
   if (sp && resource !== "event") {
     sp.resource = resource;
   }
-  const summary = [
-    "sentry",
-    resource,
-    sp?.action || null,
-    sp?.project ? `project=${sp.project}` : null,
-    sp?.level || null,
-  ]
-    .filter(Boolean)
-    .join(" · ");
-
-  const delivery: Delivery = {
-    id,
-    event,
-    receivedAt: Date.now(),
-    summary,
-    status: "ok",
-    matched: [],
-    payloadSnippet: rawBody.slice(0, 2048),
-  };
-
-  const fresh = recordDelivery(delivery);
-  if (!fresh) {
-    delivery.status = "duplicate";
-    return { status: 200, body: { ok: true, duplicate: true } };
-  }
-
-  const routines: DeliveryRoutine[] = [];
   if (deps.getJobs && deps.onHookFire && sp) {
     try {
       const jobs = await deps.getJobs();
@@ -160,37 +163,7 @@ export async function handleSentryWebhook(
       console.error("[hooks:sentry] matcher error:", err);
     }
   }
-  attachDeliveryPayload(id, payload);
-  setDeliveryEvaluation(id, {
-    source: "sentry",
-    pk: extractHookPk(event, payload),
-    keys: extractHookKeys(event, payload),
-    fields: extractHookFields(event, payload),
-    routines,
-  });
-
-  return {
-    status: 200,
-    body: {
-      ok: true,
-      ...(delivery.matched.length > 0 ? { matched: delivery.matched } : {}),
-    },
-  };
-}
-
-/** HMAC-SHA256 of the raw body, hex-compared constant-time against the
- *  `sentry-hook-signature` header. */
-function verifySentrySignature(secret: string, sig: string, body: string): boolean {
-  if (!sig) {
-    return false;
-  }
-  const expected = createHmac("sha256", secret).update(body, "utf8").digest("hex");
-  const a = Buffer.from(sig, "utf8");
-  const b = Buffer.from(expected, "utf8");
-  if (a.length !== b.length) {
-    return false;
-  }
-  return timingSafeEqual(a, b);
+  return routines;
 }
 
 function recordSentryAttempt(req: Request, body: string, status: Delivery["status"]): void {
