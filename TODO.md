@@ -38,26 +38,14 @@
 - **Fix:** load `/v3/` against a daemon with a few real deliveries, screenshot
   both themes, tune spacing/contrast (esp. Tidepool coral/teal legibility).
 
-## 2026-06-10 — deploy/restart readiness: ~1min unavailable window
+## 2026-06-10 — verify prod boot timing after #155
 
-- **Where:** src/commands/start.ts:599 (`await ensureAllRepos()`) vs :1060
-  (web server starts listening) vs :1807 (`setReady(true)`)
-- **What:** On every deploy AND every in-place plugin auto-update (the
-  start-claw.sh supervisor pkills+respawns the daemon ~every 10min on a new
-  published version), the daemon is unavailable for ~1min. The infra
-  readinessProbe→/readyz fix (teamclara/infrastructure#449) makes that window
-  CLEAN (503/no-route instead of half-init 502s) but does not SHORTEN it.
-- **Why:** The web server doesn't start listening until line 1060, but
-  `await ensureAllRepos()` (git clone/fetch of all jobsRepos over the network)
-  runs first at line 599. So `/readyz` is unreachable during the slow part —
-  moving `setReady(true)` earlier can't help because the HTTP server isn't up
-  yet. The minute is dominated by the pre-listen git I/O.
-- **Fix:** Reorder startup so the HTTP layer comes up before the git-heavy
-  work: start the web server (at minimum the `/readyz` + `/healthz` + durable
-  webhook-enqueue paths) first, flip `setReady(true)` once the server + SQLite
-  hook queue are open, then run `ensureAllRepos()`/`loadJobs()` in the
-  background. Webhooks accepted early enqueue durably and drain once jobs load;
-  the dashboard can show a "loading jobs" state until then. Shrinks the
-  unavailable window from ~1min to seconds for both deploys and auto-updates.
-  Measure the actual ensureAllRepos duration first (needs prod daemon.log /
-  pod exec — denied this session) to confirm it's the dominant cost.
+- **Where:** prod daemon.log (`boot: settings+… ready+…` line on next restart)
+- **What:** #155 backgrounds ensureAllRepos + the web-bundle rebuild and adds
+  boot-phase marks; local boots hit ready in 17ms-2.3s, but prod has not been
+  measured (pod exec was denied this session).
+- **Why:** if some other phase (e.g. session bootstrap spawning claude) eats
+  seconds in prod, the boot line will show it — check once after the next
+  deploy/auto-update restart.
+- **Fix:** read the `boot:` line from prod logs; if any single mark dominates,
+  background or defer that phase too.
