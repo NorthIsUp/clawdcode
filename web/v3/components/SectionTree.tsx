@@ -471,12 +471,36 @@ function ItemBlock({
         return earliest === 0 ? until : Math.min(earliest, until);
       }, 0)
     : 0;
+
+  // The most-recently-active routine on this item — `item.routines` is sorted
+  // by jobName (not recency), so pick the max `lastAt`. This is the thread we
+  // auto-select on expand so a single click both opens the item AND shows its
+  // chat (skipping the otherwise-required second click into a routine row).
+  const mostRecent = useMemo(
+    () =>
+      item.routines.reduce<ThreadRef | undefined>(
+        (best, r) => (best && best.lastAt >= r.lastAt ? best : r),
+        undefined,
+      ),
+    [item.routines],
+  );
+
+  // Opening an item auto-selects its most-recent routine's chat; collapsing
+  // leaves the current selection untouched (don't yank the chat out from under
+  // the user when they're just tidying the tree).
+  const handleToggle = () => {
+    if (!open && mostRecent) {
+      onSelectThread(mostRecent.threadId);
+    }
+    onToggle();
+  };
+
   // Every item is a disclosure — even a single-routine PR — so you can always
   // see WHICH routine (.md) handled it, not just the PR title.
   return (
     <Collapsible open={open}>
       <CollapsibleTrigger
-        onClick={onToggle}
+        onClick={handleToggle}
         className="group flex w-full items-center gap-1.5 px-3 py-1 pl-7 text-left text-sm hover:bg-base-200/60"
       >
         <ChevronRight className="size-3 shrink-0 text-base-content/40 transition-transform group-data-[state=open]:rotate-90" />
