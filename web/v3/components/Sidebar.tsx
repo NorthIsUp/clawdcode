@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { agoShort, useBuildInfo } from "../hooks/useBuildInfo";
 import { useQueueTree } from "../hooks/useQueueTree";
 import { useScheduledRoutines } from "../hooks/useScheduledRoutines";
 import { BOTTOM_NAV } from "../nav";
@@ -76,6 +77,7 @@ export function Sidebar({
   onSelectView,
 }: SidebarProps) {
   const { tree, messages, loading, error, connected } = useQueueTree();
+  const build = useBuildInfo();
   // Schedules come from scheduled JOBS + their run SESSIONS, not the hook queue
   // (cron runs never enter the queue), so we splice that section in over the
   // queue-sourced (empty) one. The other four sections stay queue-sourced.
@@ -182,6 +184,21 @@ export function Sidebar({
           />
           v3
         </span>
+        {build.version ? (
+          <span
+            className="ml-auto select-text text-right font-mono text-[10px] leading-tight text-base-content/45"
+            title={`build ${build.version}${build.sha ? ` · ${build.sha}` : " · image build"}${
+              build.startedAt
+                ? `\ndeployed ${new Date(build.startedAt).toLocaleString()} (${agoShort(build.startedAt)} ago)`
+                : ""
+            }`}
+          >
+            v{build.version}
+            {build.startedAt ? (
+              <span className="text-base-content/30"> · {agoShort(build.startedAt)}</span>
+            ) : null}
+          </span>
+        ) : null}
       </div>
 
       <div className="flex-1 overflow-y-auto">
