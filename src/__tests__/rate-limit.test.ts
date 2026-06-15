@@ -67,81 +67,46 @@ describe("RATE_LIMIT_RESET_PATTERN — reset time extraction", () => {
   });
 });
 
-describe("parseRateLimitResetTime — DST-correct Pacific parsing", () => {
+describe("parseRateLimitResetTime — honors the message's stated timezone (UTC default)", () => {
+  const wallClock = (epoch: number, timeZone: string): string =>
+    new Intl.DateTimeFormat("en-US", { timeZone, hour: "2-digit", minute: "2-digit", hour12: false }).format(
+      new Date(epoch),
+    );
+
   test("returns null when no time in message", () => {
     expect(parseRateLimitResetTime("You've hit your usage limit")).toBeNull();
     expect(parseRateLimitResetTime("")).toBeNull();
   });
 
-  test("returns a future timestamp for 'resets 1:50am'", () => {
-    const result = parseRateLimitResetTime("You've hit your limit · resets 1:50am");
-    expect(result).not.toBeNull();
-    expect(result!).toBeGreaterThan(Date.now());
+  // THE real Claude message — reports the reset in UTC. The epoch must decode to
+  // 22:10 UTC, NOT 05:10 UTC (the old bug treated it as Pacific and added ~7h).
+  test("'resets 10:10pm (UTC)' → 22:10 UTC (the actual session-limit format)", () => {
+    const r = parseRateLimitResetTime("You've hit your session limit · resets 10:10pm (UTC)");
+    expect(r).not.toBeNull();
+    expect(wallClock(r!, "UTC")).toBe("22:10");
   });
 
-  // Bug 1 (DST fix): the reset epoch must decode to 1:50 AM in Pacific time,
-  // NOT 1:50 AM UTC. Under the old setUTCHours bug, converting back to Pacific
-  // would give ~6:50 PM (PDT) or ~5:50 PM (PST) — not 1:50 AM.
-  test("'resets 1:50am' parses as Pacific local time, not UTC (DST-correct)", () => {
-    const result = parseRateLimitResetTime("Your limit resets 1:50am");
-    expect(result).not.toBeNull();
-
-    // Convert the epoch back to America/Los_Angeles to verify the Pacific wall-
-    // clock time — should be 01:50 regardless of whether it's PDT or PST today.
-    const pacificTime = new Intl.DateTimeFormat("en-US", {
-      timeZone: "America/Los_Angeles",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    }).format(new Date(result!));
-
-    expect(pacificTime).toBe("01:50");
+  test("no timezone stated → defaults to UTC (Claude's format)", () => {
+    expect(wallClock(parseRateLimitResetTime("Your limit resets 1:50am")!, "UTC")).toBe("01:50");
+    expect(wallClock(parseRateLimitResetTime("resets 3pm")!, "UTC")).toBe("15:00");
+    expect(wallClock(parseRateLimitResetTime("resets 1:50am UTC")!, "UTC")).toBe("01:50");
   });
 
-  test("'resets 3pm' parses as 15:00 Pacific, not 15:00 UTC", () => {
-    const result = parseRateLimitResetTime("resets 3pm");
-    expect(result).not.toBeNull();
-
-    const pacificTime = new Intl.DateTimeFormat("en-US", {
-      timeZone: "America/Los_Angeles",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    }).format(new Date(result!));
-
-    expect(pacificTime).toBe("15:00");
+  // Only when the message EXPLICITLY says Pacific do we convert (DST-aware).
+  test("'resets 3pm (PDT)' → 15:00 Pacific (explicit-Pacific path, DST-correct)", () => {
+    const r = parseRateLimitResetTime("resets 3pm (PDT)");
+    expect(r).not.toBeNull();
+    expect(wallClock(r!, "America/Los_Angeles")).toBe("15:00");
   });
 
-  test("reset time is strictly in the future", () => {
+  test("reset time is always in the future (rolls to tomorrow if passed)", () => {
     const now = Date.now();
-    // Use a time that is definitely in the past right now, which forces the
-    // "advance to next day" branch.
-    const result = parseRateLimitResetTime("resets 12:00am"); // midnight
-    expect(result).not.toBeNull();
-    expect(result!).toBeGreaterThan(now);
+    expect(parseRateLimitResetTime("resets 12:00am")!).toBeGreaterThan(now);
   });
 
-  test("am/pm conversion: 12am → 0, 12pm → 12", () => {
-    const noon = parseRateLimitResetTime("resets 12pm");
-    const midnight = parseRateLimitResetTime("resets 12am");
-    expect(noon).not.toBeNull();
-    expect(midnight).not.toBeNull();
-
-    const noonPacific = new Intl.DateTimeFormat("en-US", {
-      timeZone: "America/Los_Angeles",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    }).format(new Date(noon!));
-    const midnightPacific = new Intl.DateTimeFormat("en-US", {
-      timeZone: "America/Los_Angeles",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    }).format(new Date(midnight!));
-
-    expect(noonPacific).toBe("12:00");
-    expect(midnightPacific).toBe("00:00");
+  test("am/pm conversion: 12am → 00:00 UTC, 12pm → 12:00 UTC", () => {
+    expect(wallClock(parseRateLimitResetTime("resets 12pm")!, "UTC")).toBe("12:00");
+    expect(wallClock(parseRateLimitResetTime("resets 12am")!, "UTC")).toBe("00:00");
   });
 });
 
