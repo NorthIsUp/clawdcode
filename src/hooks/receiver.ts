@@ -18,13 +18,16 @@ import {
   matchIssuesRule,
   matchPatternList,
   matchPrRule,
+  matchReviewRule,
   prRuleSkipReason,
   readChecksPayload,
   readIssuesPayload,
   issuesRuleSkipReason,
   readPrPayload,
+  readReviewPayload,
+  reviewRuleSkipReason,
 } from "./match";
-import { defaultChecksRule, defaultIssuesRule } from "./schema";
+import { defaultChecksRule, defaultIssuesRule, defaultReviewRule } from "./schema";
 import { prefilterReason } from "../../shared/hookEssentials";
 
 /**
@@ -231,7 +234,33 @@ export async function dispatchHook(
     // `sender` is the real actor; keying off `comment.user` misclassifies a
     // human acting through an app (e.g. Graphite) as a bot.
     const actor = senderLogin;
+    // A `pull_request_review` event prefers a job's `reviews:` rule (state +
+    // reviewer filter) over its `comments:` rule. issue_comment and
+    // pull_request_review_comment never have a reviews rule and always go
+    // through the comments path below.
+    const reviewPayload = event === "pull_request_review" ? readReviewPayload(payload) : null;
     for (const job of jobs) {
+      const reviewsCfg = job.hookConfig?.reviews;
+      if (reviewPayload && reviewsCfg !== undefined && reviewsCfg !== false) {
+        const rule = reviewsCfg === true ? defaultReviewRule() : reviewsCfg;
+        if (ignored) {
+          routines.push({ job: job.name, outcome: "skip", reason: IGNORE_REASON });
+          void deps.onHookSkip?.(job.name, event, id, payload, IGNORE_REASON);
+        } else if (job.hookConfig?.skipSelf !== false && isSelfActor) {
+          const reason = selfSkipReason(actor ?? "");
+          routines.push({ job: job.name, outcome: "skip", reason });
+          void deps.onHookSkip?.(job.name, event, id, payload, reason);
+        } else if (matchReviewRule(rule, reviewPayload)) {
+          matched.push(job.name);
+          routines.push({ job: job.name, outcome: "trigger" });
+          void deps.onHookFire(job.name, event, id, payload);
+        } else {
+          const reason = reviewRuleSkipReason(rule, reviewPayload);
+          routines.push({ job: job.name, outcome: "skip", reason });
+          void deps.onHookSkip?.(job.name, event, id, payload, reason);
+        }
+        continue;
+      }
       const cfg = job.hookConfig?.comments;
       if (cfg === undefined || cfg === false) {
         continue; // not interested

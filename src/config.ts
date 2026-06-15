@@ -171,6 +171,7 @@ const DEFAULT_SETTINGS: Settings = {
   jobsRepo: { kind: "git", url: "", branch: "main", intervalSeconds: 300 },
   jobsRepos: [],
   git: { name: "", email: "" },
+  hooks: { defaultPrRepo: ["*/*"], defaultPrUser: ["*"] },
 };
 
 export interface HeartbeatExcludeWindow {
@@ -278,11 +279,23 @@ export interface Settings {
    *  containerized deployments where `git config --global user.email` is
    *  unset — without it `git commit` errors with "Author identity unknown". */
   git: GitIdentityConfig;
+  /** Defaults applied to a filtered `pr:` hook rule when it omits `repo`/`user`
+   *  (e.g. a label-only rule like pr-babysit). Both default to "any". Override
+   *  in settings.json — e.g. set `defaultPrUser: ["*", "!*[bot]"]` to exclude
+   *  bots fleet-wide on public repos. */
+  hooks: HooksConfig;
 }
 
 export interface GitIdentityConfig {
   name: string;
   email: string;
+}
+
+export interface HooksConfig {
+  /** Default `repo` glob list for a filtered `pr:` rule that omits it. */
+  defaultPrRepo: string[];
+  /** Default `user` glob list for a filtered `pr:` rule that omits it. */
+  defaultPrUser: string[];
 }
 
 

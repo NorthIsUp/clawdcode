@@ -1,8 +1,23 @@
 import { readdir } from "fs/promises";
 import { join } from "path";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
-import { getAgentsDir, getJobsDir, getJobsDirs } from "./config";
-import { type HookConfig, parseTriggers } from "./hooks/schema";
+import { getAgentsDir, getJobsDir, getJobsDirs, getSettings } from "./config";
+import { DEFAULT_PR_SCOPE, type HookConfig, parseTriggers } from "./hooks/schema";
+
+/** Resolve the per-deploy filtered-`pr:` defaults from settings, falling back to
+ *  the built-in any/any scope when settings aren't loaded yet (tests, early
+ *  boot). `getSettings()` throws before `loadSettings()`, so guard it. */
+function resolvePrDefaults(): { repo: string[]; user: string[] } {
+  try {
+    const h = getSettings().hooks;
+    if (h?.defaultPrRepo && h?.defaultPrUser) {
+      return { repo: h.defaultPrRepo, user: h.defaultPrUser };
+    }
+  } catch {
+    /* settings not loaded — use built-in default */
+  }
+  return DEFAULT_PR_SCOPE;
+}
 
 export interface Job {
   /** Scheduler key. For standalone jobs this is the file stem. For agent-scoped jobs this is "agent/label". */
@@ -129,7 +144,7 @@ function parseJobFile(name: string, content: string): Job | null {
   let schedules: string[] = [];
   let hookConfig: HookConfig | undefined;
   try {
-    const parsed = parseTriggers(fm.on, fm.skip_self);
+    const parsed = parseTriggers(fm.on, fm.skip_self, resolvePrDefaults());
     schedules = parsed.schedules;
     if (parsed.hookConfig) hookConfig = parsed.hookConfig;
   } catch (e) {

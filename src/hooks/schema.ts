@@ -33,6 +33,23 @@ export interface CommentRule {
 }
 
 /**
+ * Match the `pull_request_review` event specifically — distinct from the
+ * `comments` trigger, which fires on the whole review/comment family
+ * (issue_comment + pull_request_review + pull_request_review_comment) and can
+ * only filter by author. A `reviews:` rule narrows to review SUBMISSIONS and
+ * their STATE, so a routine can wake only on (e.g.) an approval instead of on
+ * every comment a PR receives.
+ */
+export interface ReviewRule {
+  /** Review-state globs (`approved`, `changes_requested`, `commented`,
+   *  `dismissed`), matched case-insensitively. Empty = any state. */
+  states: string[];
+  /** Reviewer-login globs with PrRule include/exclude semantics. Empty/`["*"]`
+   *  = any reviewer. */
+  user: string[];
+}
+
+/**
  * Match Sentry integration-platform webhooks. Fields are glob lists with
  * the same include/exclude semantics as PrRule (`!`-prefix excludes).
  * `true` is the "match any Sentry event" shorthand.
@@ -163,6 +180,12 @@ export interface HookConfig {
    *  - `false` / unset              → don't fire on comments
    */
   comments?: boolean | CommentRule;
+  /** Fire on the `pull_request_review` event, filtered by review state / author.
+   *  `true` = any review; an object narrows (e.g. `{ states: [approved] }`).
+   *  Takes precedence over `comments` for review events — a job with both gets
+   *  review events matched here and issue/review-comment events via `comments`.
+   *  Unset = don't fire on reviews (they may still arrive via `comments`). */
+  reviews?: boolean | ReviewRule;
   /** Fire on Sentry webhooks. `true` = any Sentry event; an object filters
    *  by project / level / action. Unset = don't fire on Sentry. */
   sentry?: boolean | SentryRule;
@@ -209,7 +232,11 @@ export interface ParsedTriggers {
  * silently never firing.
  */
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: one branch per supported trigger key.
-export function parseTriggers(rawOn: unknown, topLevelSkipSelf: unknown): ParsedTriggers {
+export function parseTriggers(
+  rawOn: unknown,
+  topLevelSkipSelf: unknown,
+  prDefaults: { repo: string[]; user: string[] } = DEFAULT_PR_SCOPE,
+): ParsedTriggers {
   // skip_self defaults true; only an explicit false disables it. Tolerant of
   // both YAML boolean false and the string "false".
   const skipSelf = !(topLevelSkipSelf === false || topLevelSkipSelf === "false");
@@ -224,6 +251,7 @@ export function parseTriggers(rawOn: unknown, topLevelSkipSelf: unknown): Parsed
   const schedules: string[] = [];
   const prRules: PrRule[] = [];
   let comments: boolean | CommentRule = false;
+  let reviews: boolean | ReviewRule = false;
   let sentry: boolean | SentryRule = false;
   let datadog: boolean | DatadogRule = false;
   let linear: boolean | LinearRule = false;
@@ -264,7 +292,7 @@ export function parseTriggers(rawOn: unknown, topLevelSkipSelf: unknown): Parsed
       case "pr":
         sawEventTrigger = true;
         try {
-          prRules.push(normalizePrRule(val));
+          prRules.push(normalizePrRule(val, prDefaults));
         } catch (e) {
           throw new Error(`on[${i}].pr: ${e instanceof Error ? e.message : String(e)}`);
         }
@@ -272,6 +300,10 @@ export function parseTriggers(rawOn: unknown, topLevelSkipSelf: unknown): Parsed
       case "comments":
         sawEventTrigger = true;
         comments = parseComments(val);
+        break;
+      case "reviews":
+        sawEventTrigger = true;
+        reviews = parseReviews(val);
         break;
       case "sentry":
         sawEventTrigger = true;
@@ -302,6 +334,7 @@ export function parseTriggers(rawOn: unknown, topLevelSkipSelf: unknown): Parsed
   if (sawEventTrigger) {
     hookConfig = { pr: prRules, skipSelf };
     if (comments !== false) hookConfig.comments = comments;
+    if (reviews !== false) hookConfig.reviews = reviews;
     if (sentry !== false) hookConfig.sentry = sentry;
     if (datadog !== false) hookConfig.datadog = datadog;
     if (linear !== false) hookConfig.linear = linear;
@@ -520,6 +553,31 @@ function parseComments(raw: unknown): boolean | CommentRule {
   throw new Error(`\`on.comments\` must be a boolean or { user: [...] }, got ${typeName(raw)}`);
 }
 
+/** A review rule matching ANY review by ANY author — what a bare `on: - reviews`
+ *  (or `reviews: true`) resolves to. Reviews are far lower-volume than the whole
+ *  comment family, so unlike sentry/checks there's no aggressive default here;
+ *  narrow with an explicit `states:` (e.g. `[approved]`). */
+export function defaultReviewRule(): ReviewRule {
+  return { states: [], user: ["*"] };
+}
+
+/** Parse `on.reviews`. `true` / `{}` → any review, any author; object → that
+ *  filter (`states` empty = any state, `user` empty → `["*"]`); unset / false →
+ *  off. */
+function parseReviews(raw: unknown): boolean | ReviewRule {
+  if (raw === true || raw === "true") return defaultReviewRule();
+  if (raw === false || raw === "false" || raw === null || raw === undefined) return false;
+  if (typeof raw === "object" && !Array.isArray(raw)) {
+    const obj = raw as Record<string, unknown>;
+    const user = asList(obj.user);
+    return {
+      states: obj.states === undefined ? [] : asList(obj.states),
+      user: user.length === 0 ? ["*"] : user,
+    };
+  }
+  throw new Error(`\`on.reviews\` must be a boolean or a mapping, got ${typeName(raw)}`);
+}
+
 function fullyOpenPrRule(): PrRule {
   return {
     repo: "*/*",
@@ -542,18 +600,35 @@ function fullyOpenPrRule(): PrRule {
  */
 export const DEFAULT_PR_ACTIONS = ["opened", "synchronize", "reopened"];
 
-function normalizePrRule(raw: unknown): PrRule {
+/** Fallback `repo`/`user` scope for a filtered `pr:` rule that omits them.
+ *  Overridable per-deploy via `settings.hooks.defaultPrRepo`/`defaultPrUser`,
+ *  which `loadJobs` threads into `parseTriggers`; this const is the value used
+ *  when no settings are loaded (tests, pure parsing). */
+export const DEFAULT_PR_SCOPE: { repo: string[]; user: string[] } = {
+  repo: ["*/*"],
+  user: ["*"],
+};
+
+function normalizePrRule(
+  raw: unknown,
+  prDefaults: { repo: string[]; user: string[] } = DEFAULT_PR_SCOPE,
+): PrRule {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
     throw new Error(`expected a mapping (got ${typeName(raw)})`);
   }
   const obj = raw as Record<string, unknown>;
-  const repo = requireStringOrList(obj.repo, "repo");
-  const user = asList(obj.user);
+  // `repo` and `user` default (to `prDefaults`, normally "any") when omitted: a
+  // filtered `pr:` rule that lists only e.g. `labels:` means "any repo, any
+  // author — the labels are the gate." These used to be required and threw when
+  // missing; because loadJobs SILENTLY SKIPS a routine that fails to parse, a
+  // forgotten `repo`/`user` made the whole routine vanish with no error (this is
+  // what kept pr-babysit from ever loading). The defaults are configurable via
+  // `settings.hooks.defaultPrRepo`/`defaultPrUser` — e.g. set the default user
+  // to `["*", "!*[bot]"]` to exclude bots fleet-wide on public repos.
+  const repo = obj.repo === undefined ? prDefaults.repo : requireStringOrList(obj.repo, "repo");
+  let user = asList(obj.user);
   if (user.length === 0) {
-    throw new Error(
-      '`user:` is required and must list at least one glob (use `["*", "!*[bot]"]` ' +
-        "for everyone except bots — but be careful on public repos)",
-    );
+    user = prDefaults.user;
   }
   const action = obj.action === undefined ? DEFAULT_PR_ACTIONS : asList(obj.action);
   const branch = obj.branch === undefined ? ["*"] : asList(obj.branch);
@@ -758,7 +833,8 @@ export function hookConfigToGitHubTriggers(cfg: HookConfig | null): {
     cfg.datadog === undefined &&
     cfg.linear === undefined &&
     cfg.checks === undefined &&
-    cfg.issues === undefined;
+    cfg.issues === undefined &&
+    cfg.reviews === undefined;
 
   // --- PR rules ---
   if (cfg.pr.length > 1) {
