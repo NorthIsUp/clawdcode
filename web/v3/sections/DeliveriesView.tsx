@@ -1,5 +1,5 @@
 import { MessageSquare, Pause, Play } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   type Delivery,
   type DeliverySource,
@@ -113,26 +113,43 @@ export function DeliveriesView(_props: MainPaneProps) {
  * carries no discriminator at all, we fall back to job-name match alone.
  * De-duped by threadId, newest-first.
  */
-function resolveThreads(d: Delivery, queue: QueueMessage[]): QueueMessage[] {
-  const matched = new Set(d.matched ?? []);
-  if (matched.size === 0) {
-    return [];
+/** Stable empty array so rows with no threads keep referential identity. */
+const NO_THREADS: QueueMessage[] = [];
+
+/** Index the queue by jobName once, so resolveThreads scans only the matched
+ *  jobs' messages instead of the whole queue per delivery (was O(rows×queue)). */
+function indexQueueByJob(queue: QueueMessage[]): Map<string, QueueMessage[]> {
+  const m = new Map<string, QueueMessage[]>();
+  for (const q of queue) {
+    const arr = m.get(q.jobName);
+    if (arr) {
+      arr.push(q);
+    } else {
+      m.set(q.jobName, [q]);
+    }
+  }
+  return m;
+}
+
+function resolveThreads(d: Delivery, queueByJob: Map<string, QueueMessage[]>): QueueMessage[] {
+  const matched = d.matched ?? [];
+  if (matched.length === 0) {
+    return NO_THREADS;
   }
   const wantKey = deliveryIdentityKey(d);
 
   const byThread = new Map<string, QueueMessage>();
-  for (const m of queue) {
-    if (!matched.has(m.jobName)) {
-      continue;
-    }
-    // Identity match: equal canonical keys. When the delivery has no
-    // discriminator (wantKey === null), fall back to job-name match alone.
-    if (wantKey != null && queueIdentityKey(m) !== wantKey) {
-      continue;
-    }
-    const prev = byThread.get(m.threadId);
-    if (!prev || m.enqueuedAt > prev.enqueuedAt) {
-      byThread.set(m.threadId, m);
+  for (const job of matched) {
+    for (const m of queueByJob.get(job) ?? NO_THREADS) {
+      // Identity match: equal canonical keys. When the delivery has no
+      // discriminator (wantKey === null), fall back to job-name match alone.
+      if (wantKey != null && queueIdentityKey(m) !== wantKey) {
+        continue;
+      }
+      const prev = byThread.get(m.threadId);
+      if (!prev || m.enqueuedAt > prev.enqueuedAt) {
+        byThread.set(m.threadId, m);
+      }
     }
   }
   return [...byThread.values()].sort((a, b) => b.enqueuedAt - a.enqueuedAt);
@@ -153,6 +170,17 @@ function DeliveryTable({
   onToggle: (id: string) => void;
   onJump: (threadId: string) => void;
 }) {
+  // Resolve every delivery → its thread(s) ONCE per (deliveries, queue) change,
+  // not per render per row. Index the queue by jobName so each delivery scans
+  // only its matched jobs' messages.
+  const resolved = useMemo(() => {
+    const queueByJob = indexQueueByJob(queue);
+    const r = new Map<string, QueueMessage[]>();
+    for (const d of deliveries) {
+      r.set(d.id, resolveThreads(d, queueByJob));
+    }
+    return r;
+  }, [deliveries, queue]);
   return (
     <div className="overflow-x-auto rounded-lg border border-base-300 bg-base-100">
       <table className="table table-sm">
@@ -174,7 +202,7 @@ function DeliveryTable({
             <DeliveryRow
               key={d.id}
               d={d}
-              threads={resolveThreads(d, queue)}
+              threads={resolved.get(d.id) ?? NO_THREADS}
               open={expanded === d.id}
               fresh={freshIds.has(d.id)}
               onToggle={() => onToggle(d.id)}
