@@ -27,7 +27,15 @@ import {
   sentryIssueId,
   tagListSkipReason,
 } from "../../shared/hookPayload";
-import type { ChecksRule, DatadogRule, IssuesRule, LinearRule, PrRule, SentryRule } from "./schema";
+import type {
+  ChecksRule,
+  DatadogRule,
+  IssuesRule,
+  LinearRule,
+  PrRule,
+  ReviewRule,
+  SentryRule,
+} from "./schema";
 
 // Back-compat re-exports: these pure payload readers + the glob engine moved to
 // shared/hookPayload.ts (so shared/ no longer reaches up into src/ and the
@@ -519,6 +527,65 @@ export const matchIssuesRule = ruleMatcher(evalIssuesRule);
 
 /** Human-readable reason an issues payload matched NO rule. */
 export const issuesRuleSkipReason = ruleSkipReason(evalIssuesRule, "no issues rule matched");
+
+// ---------------------------------------------------------------------------
+// Reviews (the `pull_request_review` event — the review SUBMISSION, with state)
+// ---------------------------------------------------------------------------
+
+export interface ReviewPayload {
+  /** Review state, lowercased (`approved`, `changes_requested`, `commented`,
+   *  `dismissed`). */
+  state: string;
+  /** "org/repo". */
+  repo: string;
+  /** Reviewed PR number, stringified. */
+  number: string;
+  /** Reviewer login. */
+  user: string;
+}
+
+/** Extract a normalized payload from a `pull_request_review` webhook body. */
+export function readReviewPayload(raw: unknown): ReviewPayload | null {
+  if (typeof raw !== "object" || raw === null) {
+    return null;
+  }
+  const root = raw as Record<string, unknown>;
+  const review = root.review;
+  if (typeof review !== "object" || review === null) {
+    return null;
+  }
+  const r = review as Record<string, unknown>;
+  const state = (readStringPath(r, ["state"]) ?? "").toLowerCase();
+  const repo = readStringPath(root, ["repository", "full_name"]) ?? "";
+  const prNode = root.pull_request;
+  const number =
+    typeof prNode === "object" && prNode !== null && typeof (prNode as Record<string, unknown>).number === "number"
+      ? String((prNode as Record<string, unknown>).number)
+      : readStringPath(root, ["pull_request", "number"]) ?? "";
+  const user = readStringPath(r, ["user", "login"]) ?? "";
+  return { state, repo, number, user };
+}
+
+/**
+ * Single source of truth for review-rule matching — `{ok, reason?}` like the
+ * other providers. State globs are matched case-insensitively (the payload
+ * state is already lowercased); the user dimension uses PR-style globs.
+ */
+export function evalReviewRule(rule: ReviewRule, p: ReviewPayload): { ok: boolean; reason?: string } {
+  if (rule.states.length > 0 && !(p.state && matchPatternList(rule.states, p.state))) {
+    return { ok: false, reason: `review state \`${p.state || "?"}\` not in the states filter` };
+  }
+  if (rule.user.length > 0 && !(p.user && matchPatternList(rule.user, p.user))) {
+    return { ok: false, reason: `reviewer \`${p.user || "?"}\` not in the user filter` };
+  }
+  return { ok: true };
+}
+
+/** True when a ReviewRule matches the payload. */
+export const matchReviewRule = ruleMatcher(evalReviewRule);
+
+/** Human-readable reason a review payload matched NO rule. */
+export const reviewRuleSkipReason = ruleSkipReason(evalReviewRule, "no review rule matched");
 
 /**
 /** The first PR number carried by a check_run / check_suite / workflow_run

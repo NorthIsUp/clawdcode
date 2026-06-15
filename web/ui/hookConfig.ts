@@ -26,6 +26,15 @@ interface CommentRule {
   user: string[];
 }
 
+/** Mirror of src/hooks/schema.ts ReviewRule (the `pull_request_review` event). */
+export interface ReviewRule {
+  /** Review-state globs (`approved`, `changes_requested`, `commented`,
+   *  `dismissed`), case-insensitive. Empty = any state. */
+  states: string[];
+  /** Reviewer-login globs (PrRule include/exclude semantics). */
+  user: string[];
+}
+
 /** Mirror of src/hooks/schema.ts SentryRule. */
 export interface SentryRule {
   resource: string[];
@@ -84,6 +93,10 @@ export interface HookConfig {
    *  - `{ user: ["*[bot]"] }`       → bots only
    */
   comments?: boolean | CommentRule;
+  /** Fire on the `pull_request_review` event — `true` (any review) or a filter
+   *  like `{ states: ["approved"] }`. Takes precedence over `comments` for
+   *  review events. */
+  reviews?: boolean | ReviewRule;
   /** Fire on Sentry webhooks — `true` (any) or a filtered rule. */
   sentry?: boolean | SentryRule;
   /** Fire on Datadog webhooks — `true` (any) or a filtered rule. */
@@ -584,7 +597,8 @@ export function hookConfigToGitHubTriggers(cfg: HookConfig | null): {
     cfg.datadog === undefined &&
     cfg.linear === undefined &&
     cfg.checks === undefined &&
-    cfg.issues === undefined;
+    cfg.issues === undefined &&
+    cfg.reviews === undefined;
 
   if (cfg.pr.length > 1) representable = false;
   const rule = cfg.pr[0];
