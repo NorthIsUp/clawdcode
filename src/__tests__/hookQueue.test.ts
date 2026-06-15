@@ -220,6 +220,118 @@ describe("crash recovery + housekeeping", () => {
   });
 });
 
+describe("listLatestPerThread (flood-proof sidebar snapshot)", () => {
+  test("returns exactly one row per thread, newest-first; flood cannot crowd out other threads", () => {
+    const queue = q();
+    const now = Date.now();
+
+    // Thread A: 50 rows (simulates the pr-accepted flood)
+    for (let i = 0; i < 50; i++) {
+      queue.enqueue({
+        ...base,
+        id: `a-${i}`,
+        threadId: "pr-accepted:hook:pr-1542-fix",
+        jobName: "pr-accepted",
+        enqueuedAt: now + i,
+      });
+    }
+    // Complete all A rows so updated_at is set distinctly; last one gets highest updated_at
+    for (let i = 0; i < 50; i++) {
+      queue.claimThread("pr-accepted:hook:pr-1542-fix", now + 1000 + i);
+      queue.complete([`a-${i}`], "done");
+    }
+
+    // Thread B: 1 row (a different PR's routine)
+    queue.enqueue({
+      ...base,
+      id: "b-1",
+      threadId: "pr-comments:hook:pr-9-other",
+      jobName: "pr-comments",
+      scope: "pr-9-other",
+      prNumber: 9,
+      enqueuedAt: now + 10,
+    });
+
+    // Thread C: 1 row (yet another PR)
+    queue.enqueue({
+      ...base,
+      id: "c-1",
+      threadId: "pr-review:hook:pr-77-feature",
+      jobName: "pr-review",
+      scope: "pr-77-feature",
+      prNumber: 77,
+      enqueuedAt: now + 20,
+    });
+
+    const result = queue.listLatestPerThread(500);
+
+    // Exactly 3 threads (A collapsed from 50 → 1)
+    expect(result.length).toBe(3);
+
+    // All three thread_ids present — B and C were NOT crowded out
+    const threadIds = result.map((m) => m.threadId);
+    expect(threadIds).toContain("pr-accepted:hook:pr-1542-fix");
+    expect(threadIds).toContain("pr-comments:hook:pr-9-other");
+    expect(threadIds).toContain("pr-review:hook:pr-77-feature");
+
+    // The representative row for thread A is the newest (done, id a-49)
+    const rowA = result.find((m) => m.threadId === "pr-accepted:hook:pr-1542-fix");
+    expect(rowA?.id).toBe("a-49");
+    expect(rowA?.status).toBe("done");
+  });
+
+  test("thread survives when its newest-updated row is NOT its highest-rowid row", () => {
+    // Regression: an older row (lower rowid) can hold the newest updated_at
+    // (claim/complete/defer bumps updated_at on existing rows). A per-column
+    // MAX() join would look for a single row matching BOTH MAX(updated_at) and
+    // MAX(rowid) — find none — and silently DROP the whole thread. The
+    // correlated subquery must still return the genuinely-newest row.
+    // enqueue() stamps updated_at from enqueuedAt, so we invert deterministically:
+    const queue = q();
+    queue.enqueue({ ...base, id: "r1", threadId: "T", enqueuedAt: 2000 }); // rowid 1, updated 2000
+    queue.enqueue({ ...base, id: "r2", threadId: "T", enqueuedAt: 1000 }); // rowid 2, updated 1000
+    // MAX(updated_at)=r1 but MAX(rowid)=r2 → the old join would drop thread T.
+    const result = queue.listLatestPerThread(500);
+    expect(result.length).toBe(1);
+    expect(result[0]?.threadId).toBe("T");
+    expect(result[0]?.id).toBe("r1"); // newest by updated_at, despite lower rowid
+  });
+
+  test("limit caps by THREADS not rows — 50 rows on one thread still counts as 1", () => {
+    const queue = q();
+    const now = Date.now();
+
+    // 50 rows on thread A
+    for (let i = 0; i < 50; i++) {
+      queue.enqueue({
+        ...base,
+        id: `flood-${i}`,
+        threadId: "pr-accepted:hook:pr-1-slug",
+        jobName: "pr-accepted",
+        enqueuedAt: now + i,
+      });
+    }
+    // 1 row on thread B
+    queue.enqueue({
+      ...base,
+      id: "other-1",
+      threadId: "pr-comments:hook:pr-2-slug",
+      jobName: "pr-comments",
+      scope: "pr-2-slug",
+      prNumber: 2,
+      enqueuedAt: now + 100,
+    });
+
+    // limit=1 → returns only 1 thread (the most-recently-updated one)
+    const limited = queue.listLatestPerThread(1);
+    expect(limited.length).toBe(1);
+
+    // limit=2 → both threads
+    const both = queue.listLatestPerThread(2);
+    expect(both.length).toBe(2);
+  });
+});
+
 describe("keys/fields + agent outcome on the message", () => {
   test("enqueue stores keys+fields; complete records the agent outcome", () => {
     const queue = q();

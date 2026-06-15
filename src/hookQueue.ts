@@ -334,6 +334,37 @@ export class HookQueue {
       .map((r) => r.thread_id);
   }
 
+  /**
+   * Newest row per thread_id, newest-first, capped at `limit` *threads*.
+   *
+   * A flood of many rows for one thread (e.g. a routine that produces hundreds
+   * of deliveries for a single PR) is collapsed to one row and cannot crowd
+   * other subjects out of the sidebar window — solving the blink bug.
+   *
+   * Picks each thread's representative via a correlated subquery that orders by
+   * (updated_at, rowid) DESC and takes the top row — a SINGLE real row. We can't
+   * join on per-column MAX()es (MAX(updated_at) and MAX(rowid) can come from
+   * DIFFERENT rows once an older row's updated_at is bumped by claim/complete/
+   * defer, and then no row matches all the maxes and the thread vanishes).
+   */
+  listLatestPerThread(limit = 500): QueuedMessage[] {
+    return this.db
+      .query<Row, [number]>(
+        `SELECT m.*
+         FROM messages m
+         WHERE m.rowid = (
+           SELECT m2.rowid FROM messages m2
+           WHERE m2.thread_id = m.thread_id
+           ORDER BY m2.updated_at DESC, m2.rowid DESC
+           LIMIT 1
+         )
+         ORDER BY m.updated_at DESC, m.rowid DESC
+         LIMIT ?`,
+      )
+      .all(limit)
+      .map(toMessage);
+  }
+
   /** List messages for inspection / the UI. Optionally filter by status or
    *  thread. Newest-first. */
   list(opts: { status?: QueueStatus; threadId?: string; limit?: number } = {}): QueuedMessage[] {
