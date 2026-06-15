@@ -68,37 +68,37 @@ describe("nextQueueAction (retry/defer policy)", () => {
   describe("rateLimitTransient — short backoff when API gives no reset", () => {
     const t = { rateLimitResetAt: 0, cap: 5, now: 1000, rateLimited: false, rateLimitTransient: true, priorAttempts: 0 };
 
-    test("first attempt → 5s (not +1h)", () => {
+    test("first attempt → 3s (not +1h — throttling clears in seconds)", () => {
       const a = nextQueueAction({ ...t, exitCode: 1, priorAttempts: 0 });
       expect(a.action).toBe("defer");
-      expect(a.notBefore).toBe(1000 + 5_000); // 5s
+      expect(a.notBefore).toBe(1000 + 3_000); // 3s
     });
 
-    test("second attempt → 15s (3x escalation)", () => {
+    test("second attempt → 6s (2x escalation)", () => {
       const a = nextQueueAction({ ...t, exitCode: 1, priorAttempts: 1 });
-      expect(a.notBefore).toBe(1000 + 15_000); // 15s
+      expect(a.notBefore).toBe(1000 + 6_000); // 6s
     });
 
-    test("third attempt → 45s", () => {
+    test("third attempt → 12s", () => {
       const a = nextQueueAction({ ...t, exitCode: 1, priorAttempts: 2 });
-      expect(a.notBefore).toBe(1000 + 45_000); // 45s
+      expect(a.notBefore).toBe(1000 + 12_000); // 12s
     });
 
-    test("caps at 2min for high attempt counts", () => {
-      // attempt 4 → 5*3^3 = 135s → capped at 120s
-      const a = nextQueueAction({ ...t, exitCode: 1, priorAttempts: 3 });
-      expect(a.notBefore).toBe(1000 + 2 * 60_000); // 2 min cap
-
-      // Also verify high attempt counts stay capped
+    test("caps at 30s for high attempt counts (stays in the seconds range)", () => {
+      // attempt 4 → 3*2^3 = 24s (under cap)
+      expect(nextQueueAction({ ...t, exitCode: 1, priorAttempts: 3 }).notBefore).toBe(1000 + 24_000);
+      // attempt 5 → 3*2^4 = 48s → capped at 30s
+      const a = nextQueueAction({ ...t, exitCode: 1, priorAttempts: 4 });
+      expect(a.notBefore).toBe(1000 + 30_000); // 30s cap
       const b = nextQueueAction({ ...t, exitCode: 1, priorAttempts: 10 });
-      expect(b.notBefore).toBe(1000 + 2 * 60_000);
+      expect(b.notBefore).toBe(1000 + 30_000);
     });
 
     test("does NOT burn the retry cap (no fail terminal)", () => {
       // Even past the normal cap, transient rate-limit never transitions to fail.
       const a = nextQueueAction({ ...t, exitCode: 1, priorAttempts: 20 });
       expect(a.action).toBe("defer");
-      expect(a.notBefore).toBe(1000 + 2 * 60_000);
+      expect(a.notBefore).toBe(1000 + 30_000);
     });
 
     test("explicit reset + rateLimitTransient: explicit reset wins (rateLimited=true takes precedence)", () => {

@@ -462,9 +462,10 @@ export function nextQueueAction(opts: {
   now: number;
   /**
    * True when a rate-limit message was detected this run but the API gave NO
-   * explicit reset time. Use short fast-follow backoff (5s → 15s → 45s → 2min)
-   * instead of the normal 60s-based failure schedule. Does NOT burn the retry
-   * cap — unlike a plain failure — so transient blips don't exhaust retries.
+   * explicit reset time. API throttling almost always clears within a few
+   * seconds, so use a tight fast-follow backoff (3s → 6s → 12s → 24s, capped at
+   * 30s) instead of the normal 60s-based failure schedule. Does NOT burn the
+   * retry cap — unlike a plain failure — so transient blips don't exhaust retries.
    */
   rateLimitTransient?: boolean;
 }): QueueOutcome {
@@ -476,10 +477,11 @@ export function nextQueueAction(opts: {
     return { action: "defer", notBefore: opts.rateLimitResetAt, error: "rate limited" };
   }
   if (opts.rateLimitTransient) {
-    // Rate limit detected but no explicit reset from the API. Back off quickly:
-    // 5s → 15s → 45s → 135s (capped at 2min). Does not burn the retry cap.
+    // Rate limit detected but no explicit reset from the API — i.e. throttling,
+    // which usually clears within a few seconds. Retry fast, escalate gently:
+    // 3s → 6s → 12s → 24s, capped at 30s. Does not burn the retry cap.
     const backoffAttempt = opts.priorAttempts + 1;
-    const backoffMs = Math.min(5_000 * 3 ** (backoffAttempt - 1), 2 * 60_000);
+    const backoffMs = Math.min(3_000 * 2 ** (backoffAttempt - 1), 30_000);
     return {
       action: "defer",
       notBefore: opts.now + backoffMs,
