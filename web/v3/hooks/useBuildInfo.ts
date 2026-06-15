@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiJSON } from "../../api/client";
 
 /**
@@ -59,6 +59,29 @@ export function useBuildInfo(): BuildInfo {
   }, []);
 
   return info;
+}
+
+/**
+ * Detects when the daemon ships a build newer than the one THIS tab loaded.
+ * Captures the first non-empty version seen as the tab's baseline; if a later
+ * poll reports a different version, a redeploy happened and the loaded JS bundle
+ * is stale — surface `{ stale: true, version }` so the UI can offer a refresh.
+ */
+export function useStaleBundle(): { stale: boolean; version: string } {
+  const { version } = useBuildInfo();
+  const loaded = useRef<string>("");
+  const [stale, setStale] = useState(false);
+
+  useEffect(() => {
+    if (!version) return;
+    if (!loaded.current) {
+      loaded.current = version; // baseline = the version this tab booted on
+      return;
+    }
+    if (version !== loaded.current) setStale(true);
+  }, [version]);
+
+  return { stale, version };
 }
 
 /** Compact "Ns / Nm / Nh / Nd" since an epoch-ms timestamp (for "deployed … ago"). */

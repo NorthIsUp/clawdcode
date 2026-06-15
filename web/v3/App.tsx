@@ -10,6 +10,7 @@ import {
 import { ChatPane } from "./components/ChatPane";
 import { RateLimitBanner } from "./components/RateLimitBanner";
 import { Sidebar } from "./components/Sidebar";
+import { UpdateBanner } from "./components/UpdateBanner";
 import { cn } from "./components/ui/utils";
 import type { V3View } from "./router";
 import { selectedThreadId, useRoute } from "./router";
@@ -200,6 +201,7 @@ export default function App() {
           the "N message(s) queued, resuming HH:MM UTC" notice is visible no
           matter which view is open (it renders nothing when not limited). */}
       <main className="v3-main flex-1 min-w-0 flex flex-col overflow-hidden">
+        <UpdateBanner />
         <RateLimitBanner />
         <MainView threadId={threadId} />
       </main>
