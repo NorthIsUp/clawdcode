@@ -437,9 +437,10 @@ export interface QueueOutcome {
 
 /** Decide what to do with a just-run batch from the run result + limiter state.
  *  Pure so the retry/backoff/cap policy is unit-testable:
- *   - exit 0          → done
- *   - rate-limited    → defer to the reset time (doesn't burn a retry)
- *   - else            → exponential backoff up to `cap` attempts, then fail
+ *   - exit 0               → done
+ *   - rate-limited (reset) → defer to the explicit reset time (doesn't burn a retry)
+ *   - rate-limited (none)  → short exponential backoff: 5s → 15s → 45s → 2min cap
+ *   - else                 → exponential backoff up to `cap` attempts, then fail
  *
  *  A coalesced batch mixes messages with different attempt counts. We must NOT
  *  apply the OLDEST message's cap to brand-new work: a fresh delivery coalesced
@@ -459,12 +460,31 @@ export function nextQueueAction(opts: {
   capAttempts?: number;
   cap: number;
   now: number;
+  /**
+   * True when a rate-limit message was detected this run but the API gave NO
+   * explicit reset time. Use short fast-follow backoff (5s → 15s → 45s → 2min)
+   * instead of the normal 60s-based failure schedule. Does NOT burn the retry
+   * cap — unlike a plain failure — so transient blips don't exhaust retries.
+   */
+  rateLimitTransient?: boolean;
 }): QueueOutcome {
   if (opts.exitCode === 0) {
     return { action: "done" };
   }
   if (opts.rateLimited) {
+    // Explicit API reset time: defer exactly until then.
     return { action: "defer", notBefore: opts.rateLimitResetAt, error: "rate limited" };
+  }
+  if (opts.rateLimitTransient) {
+    // Rate limit detected but no explicit reset from the API. Back off quickly:
+    // 5s → 15s → 45s → 135s (capped at 2min). Does not burn the retry cap.
+    const backoffAttempt = opts.priorAttempts + 1;
+    const backoffMs = Math.min(5_000 * 3 ** (backoffAttempt - 1), 2 * 60_000);
+    return {
+      action: "defer",
+      notBefore: opts.now + backoffMs,
+      error: "rate limited (no reset)",
+    };
   }
   // Cap check on the FRESHEST message (min attempts): the batch only fails once
   // every message in it has exhausted its own retries.

@@ -62,6 +62,63 @@ describe("nextQueueAction (retry/defer policy)", () => {
     const a = nextQueueAction({ ...d, exitCode: 1, rateLimited: false, priorAttempts: 5 });
     expect(a.action).toBe("fail");
   });
+
+  // Bug 2 fix: transient rate limit (API hit rate limit but gave NO explicit
+  // reset time) uses short fast-follow backoff, not +1h.
+  describe("rateLimitTransient — short backoff when API gives no reset", () => {
+    const t = { rateLimitResetAt: 0, cap: 5, now: 1000, rateLimited: false, rateLimitTransient: true, priorAttempts: 0 };
+
+    test("first attempt → 5s (not +1h)", () => {
+      const a = nextQueueAction({ ...t, exitCode: 1, priorAttempts: 0 });
+      expect(a.action).toBe("defer");
+      expect(a.notBefore).toBe(1000 + 5_000); // 5s
+    });
+
+    test("second attempt → 15s (3x escalation)", () => {
+      const a = nextQueueAction({ ...t, exitCode: 1, priorAttempts: 1 });
+      expect(a.notBefore).toBe(1000 + 15_000); // 15s
+    });
+
+    test("third attempt → 45s", () => {
+      const a = nextQueueAction({ ...t, exitCode: 1, priorAttempts: 2 });
+      expect(a.notBefore).toBe(1000 + 45_000); // 45s
+    });
+
+    test("caps at 2min for high attempt counts", () => {
+      // attempt 4 → 5*3^3 = 135s → capped at 120s
+      const a = nextQueueAction({ ...t, exitCode: 1, priorAttempts: 3 });
+      expect(a.notBefore).toBe(1000 + 2 * 60_000); // 2 min cap
+
+      // Also verify high attempt counts stay capped
+      const b = nextQueueAction({ ...t, exitCode: 1, priorAttempts: 10 });
+      expect(b.notBefore).toBe(1000 + 2 * 60_000);
+    });
+
+    test("does NOT burn the retry cap (no fail terminal)", () => {
+      // Even past the normal cap, transient rate-limit never transitions to fail.
+      const a = nextQueueAction({ ...t, exitCode: 1, priorAttempts: 20 });
+      expect(a.action).toBe("defer");
+      expect(a.notBefore).toBe(1000 + 2 * 60_000);
+    });
+
+    test("explicit reset + rateLimitTransient: explicit reset wins (rateLimited=true takes precedence)", () => {
+      // When both rateLimited=true and rateLimitTransient=true, the explicit-
+      // reset path runs first and returns the specific reset time.
+      const a = nextQueueAction({
+        ...t,
+        exitCode: 1,
+        rateLimited: true,
+        rateLimitResetAt: 99_000,
+        rateLimitTransient: true,
+      });
+      expect(a).toEqual({ action: "defer", notBefore: 99_000, error: "rate limited" });
+    });
+
+    test("rateLimitTransient=false with no other flags → normal 60s backoff", () => {
+      const a = nextQueueAction({ ...t, exitCode: 1, priorAttempts: 0, rateLimitTransient: false });
+      expect(a.notBefore).toBe(1000 + 60_000); // normal first step
+    });
+  });
 });
 
 function q(): HookQueue {
