@@ -44,6 +44,20 @@ export const hooksEvents: RouteHandler = ({ req, sseResponse }) =>
 export const queueList: RouteHandler = () =>
   json({ messages: getHookQueue().list({ limit: 300 }).map(queueMessageForWire) });
 
+// Re-arm finished hook-queue messages so the periodic drain (~3s) replays
+// them. Body `{ ids: [...] }` retriggers those specific deliveries (failed OR
+// done); an empty/absent body retriggers ALL failed messages ("retry every
+// failure"). No agent runs inline here — requeue just flips status to pending.
+/** POST /api/hooks/queue/retrigger — replay failed (or specified) deliveries. */
+export const queueRetrigger: RouteHandler = async ({ req }) => {
+  const body = (await req.json().catch(() => ({}))) as { ids?: unknown };
+  const ids = Array.isArray(body.ids)
+    ? body.ids.filter((x): x is string => typeof x === "string")
+    : undefined;
+  const requeued = getHookQueue().requeue(ids);
+  return json({ ok: true, requeued, ids: ids ?? "all-failed" });
+};
+
 // Live queue stream — pushes the full message list on every queue
 // mutation (enqueue/claim/complete/defer), debounced 200ms.
 /** GET /api/hooks/queue/events — live queue SSE stream. */

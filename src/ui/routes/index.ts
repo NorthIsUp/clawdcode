@@ -92,6 +92,7 @@ export const ROUTES: readonly Route[] = [
   },
   { method: "GET", path: "/api/hooks/events", handler: hooks.hooksEvents },
   { method: "GET", path: "/api/hooks/queue", handler: hooks.queueList },
+  { method: "POST", path: "/api/hooks/queue/retrigger", handler: hooks.queueRetrigger },
   { method: "GET", path: "/api/hooks/queue/events", handler: hooks.queueEvents },
   {
     match: "self",
