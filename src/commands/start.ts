@@ -39,6 +39,7 @@ import { checkExistingDaemon, cleanupPidFile, writePidFile } from "../pid";
 import { PluginManager, setPluginManager } from "../plugins";
 import {
   bootstrap,
+  clearRateLimitDetected,
   ensureProjectClaudeMd,
   getRateLimitResetAt,
   isRateLimited,
@@ -47,6 +48,7 @@ import {
   run,
   runUserMessage,
   streamUserMessage,
+  wasRateLimitDetected,
   wasRateLimitNotified,
 } from "../runner";
 import { pruneJobSessions } from "../sessionManager";
@@ -1614,8 +1616,15 @@ export async function start(args: string[] = []) {
       systemContext = (await buildPrLifecyclePrompt(trig.repo, trig.pr.number)) ?? undefined;
     }
     try {
+      // Clear the per-run detection flag so wasRateLimitDetected() reflects
+      // only THIS run, not a previous one.
+      clearRateLimitDetected();
       const r = await runJob(augmented, { hookScope: scope, systemContext });
       const attempts = msgs.map((m) => m.attempts);
+      // "Transient rate limit": the run hit a rate-limit message but the API
+      // gave no explicit reset time → use short exponential backoff instead of
+      // the normal 60s schedule (see nextQueueAction for the 5s→15s→45s policy).
+      const rateLimitTransient = wasRateLimitDetected() && !isRateLimited();
       const action = nextQueueAction({
         exitCode: r?.exitCode ?? null,
         rateLimited: isRateLimited(),
@@ -1627,6 +1636,7 @@ export async function start(args: string[] = []) {
         capAttempts: Math.min(...attempts),
         cap: HOOK_RETRY_CAP,
         now: Date.now(),
+        rateLimitTransient,
       });
       if (action.action === "done") {
         // Record the AGENT outcome (ok / pass / error), not just "done", so the

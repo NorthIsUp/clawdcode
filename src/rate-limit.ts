@@ -13,12 +13,30 @@
 // queue-until-funded instead of failing after the retry cap.
 export const RATE_LIMIT_PATTERN =
   /you(?:'|')ve hit your (?:usage |session )?limit|out of extra usage|usage limit (?:reached|exceeded)|credit balance is too low|insufficient credits|out of credits|billing.{0,20}(?:hard limit|quota) reached/i;
-export const RATE_LIMIT_RESET_PATTERN = /resets?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\s*\(?\s*UTC\s*\)?/i;
+
+// Match a wall-clock reset time embedded in a rate-limit message.
+// Examples: "resets 1:50am", "resets 3pm", "resets 12:30 AM"
+// The timezone indicator (UTC, PDT, etc.) is optional and intentionally ignored —
+// Anthropic rate-limit messages report times in America/Los_Angeles (Pacific), and
+// parseRateLimitResetTime converts using the real DST-aware Pacific offset.
+export const RATE_LIMIT_RESET_PATTERN = /resets?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i;
 
 // --- Rate limit state ---
 let rateLimitResetAt: number = 0; // epoch ms; 0 = not rate-limited
 let rateLimitNotified: boolean = false;
+/** Set to true inside recordRateLimit(); cleared by clearRateLimitDetected().
+ *  Lets callers know whether the most-recent run hit a rate-limit message. */
+let rateLimitDetectedLastRun: boolean = false;
 
+/**
+ * Parse a wall-clock reset time out of a rate-limit message and return the
+ * corresponding UTC epoch in ms, treating the time as America/Los_Angeles
+ * (Pacific, DST-aware). Returns null when no time is found.
+ *
+ * DST correctness: uses Intl.DateTimeFormat to determine the real Pacific
+ * UTC-offset for the current moment (PDT = UTC-7 in summer, PST = UTC-8 in
+ * winter) rather than hardcoding either value.
+ */
 export function parseRateLimitResetTime(text: string): number | null {
   const match = text.match(RATE_LIMIT_RESET_PATTERN);
   if (!match) return null;
@@ -31,12 +49,45 @@ export function parseRateLimitResetTime(text: string): number | null {
   if (ampm === "am" && hours === 12) hours = 0;
 
   const now = new Date();
-  const reset = new Date(now);
-  reset.setUTCHours(hours, minutes, 0, 0);
-  if (reset.getTime() <= now.getTime()) {
-    reset.setUTCDate(reset.getUTCDate() + 1);
+
+  // Get the current date/time as seen in America/Los_Angeles so we know:
+  //   (a) which calendar day to use for the reset, and
+  //   (b) the real DST-aware Pacific offset (PDT = UTC-7, PST = UTC-8).
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Los_Angeles",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(now);
+  const get = (type: string): number =>
+    Number(fmt.find((p) => p.type === type)?.value ?? "0");
+
+  const pacYear = get("year");
+  const pacMonth = get("month") - 1; // 0-based
+  const pacDay = get("day");
+  const pacHour = get("hour") % 24; // Intl can emit "24" for midnight
+  const pacMin = get("minute");
+
+  // Compute the Pacific UTC-offset in ms by comparing "fake UTC now" (treating
+  // the Pacific wall-clock time as if it were UTC) against the real UTC epoch:
+  //   PDT (UTC-7):  fakeUtcNow - realUtcNow = -7 * 3_600_000
+  //   PST (UTC-8):  fakeUtcNow - realUtcNow = -8 * 3_600_000
+  const fakeUtcNow = Date.UTC(pacYear, pacMonth, pacDay, pacHour, pacMin, 0, 0);
+  const pacificOffsetMs = fakeUtcNow - now.getTime();
+
+  // Build the reset instant: start from the same Pacific calendar day, apply
+  // the parsed hour/minute, then subtract the offset to get real UTC.
+  const fakeUtcReset = Date.UTC(pacYear, pacMonth, pacDay, hours, minutes, 0, 0);
+  let resetMs = fakeUtcReset - pacificOffsetMs;
+
+  // If that time has already passed today, advance to the same time tomorrow.
+  if (resetMs <= now.getTime()) {
+    resetMs += 24 * 60 * 60_000;
   }
-  return reset.getTime();
+  return resetMs;
 }
 
 export function isRateLimited(): boolean {
@@ -62,16 +113,40 @@ export function markRateLimitNotified(): void {
 }
 
 /**
- * Record a freshly-detected rate limit: parse the reset time out of the message
- * (falling back to "one hour from now" when unparseable) and clear the
- * notified flag so the next surface gets a fresh notification.
- * Returns the resolved reset epoch ms.
+ * Record a freshly-detected rate limit: parse the reset time out of the
+ * message and set rateLimitResetAt when the API gave an explicit time.
+ * When no reset time is parseable, rateLimitResetAt is left at 0 (not
+ * rate-limited at the module level) so the queue falls through to its own
+ * short exponential backoff instead of blocking for an hour.
+ *
+ * Returns the parsed reset epoch ms, or null when no reset time was found.
+ * Marks rateLimitDetectedLastRun so callers can distinguish "transient rate
+ * limit, no explicit reset" from "ordinary failure".
  */
-export function recordRateLimit(message: string): number {
+export function recordRateLimit(message: string): number | null {
   const resetTime = parseRateLimitResetTime(message);
-  rateLimitResetAt = resetTime ?? (Date.now() + 60 * 60_000);
+  rateLimitResetAt = resetTime ?? 0;
+  rateLimitDetectedLastRun = true;
   rateLimitNotified = false;
-  return rateLimitResetAt;
+  return resetTime;
+}
+
+/**
+ * Reset the per-run detection flag. Call this at the START of each queued-
+ * batch run so wasRateLimitDetected() accurately reflects only the current run.
+ */
+export function clearRateLimitDetected(): void {
+  rateLimitDetectedLastRun = false;
+}
+
+/**
+ * True when recordRateLimit() was called since the last clearRateLimitDetected().
+ * Combined with !isRateLimited(), this identifies a "transient rate limit":
+ * a rate-limit message was emitted but the API gave no explicit reset time,
+ * so the queue should use short exponential backoff (not a 1-hour defer).
+ */
+export function wasRateLimitDetected(): boolean {
+  return rateLimitDetectedLastRun;
 }
 
 export function extractRateLimitMessage(stdout: string, stderr: string): string | null {

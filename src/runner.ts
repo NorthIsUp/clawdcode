@@ -72,6 +72,8 @@ import {
   markRateLimitNotified,
   recordRateLimit,
   extractRateLimitMessage,
+  wasRateLimitDetected,
+  clearRateLimitDetected,
 } from "./rate-limit";
 
 const LOGS_DIR = join(process.cwd(), ".claude/clawdcode/logs");
@@ -94,6 +96,8 @@ export {
   getRateLimitResetAt,
   wasRateLimitNotified,
   markRateLimitNotified,
+  wasRateLimitDetected,
+  clearRateLimitDetected,
 };
 
 /**
@@ -710,8 +714,9 @@ async function execClaude(
   if (rateLimitMessage) {
     stdout = rateLimitMessage;
     const resetAt = recordRateLimit(rateLimitMessage);
+    const resetStr = resetAt != null ? new Date(resetAt).toISOString() : "unknown (no reset time in message)";
     console.warn(
-      `[${new Date().toLocaleTimeString()}] Rate limit detected. Reset at: ${new Date(resetAt).toISOString()}`
+      `[${new Date().toLocaleTimeString()}] Rate limit detected. Reset at: ${resetStr}`
     );
   }
 
