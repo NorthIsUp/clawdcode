@@ -159,6 +159,39 @@ describe("crash recovery + housekeeping", () => {
     expect(queue.readyThreadIds()).toEqual([base.threadId]);
   });
 
+  test("requeue() re-arms all failed messages (retry-every-failure)", () => {
+    const queue = q();
+    queue.enqueue({ ...base, id: "f1" });
+    queue.enqueue({ ...base, id: "f2" });
+    queue.enqueue({ ...base, id: "ok" });
+    queue.claimThread(base.threadId);
+    queue.complete(["f1", "f2"], "failed", "boom", "error");
+    queue.complete(["ok"], "done");
+    // bulk requeue: only the two failed flip back to pending
+    expect(queue.requeue()).toBe(2);
+    const byId = Object.fromEntries(queue.list().map((m) => [m.id, m]));
+    expect(byId.f1).toMatchObject({ status: "pending", attempts: 0, notBefore: 0, error: null });
+    expect(byId.f2.status).toBe("pending");
+    expect(byId.ok.status).toBe("done"); // done untouched by bulk requeue
+    expect(queue.readyThreadIds()).toEqual([base.threadId]);
+  });
+
+  test("requeue(ids) replays specific messages incl. done; ignores pending/running", () => {
+    const queue = q();
+    queue.enqueue({ ...base, id: "d1" });
+    queue.enqueue({ ...base, id: "d2" });
+    queue.enqueue({ ...base, id: "live" });
+    queue.claimThread(base.threadId);
+    queue.complete(["d1"], "failed", "boom", "error");
+    queue.complete(["d2"], "done");
+    // 'live' is still running (not completed) → not eligible
+    expect(queue.requeue(["d1", "d2", "live", "nonexistent"])).toBe(2);
+    const byId = Object.fromEntries(queue.list().map((m) => [m.id, m]));
+    expect(byId.d1.status).toBe("pending");
+    expect(byId.d2.status).toBe("pending"); // a done message CAN be replayed by id
+    expect(byId.live.status).toBe("running"); // untouched
+  });
+
   test("readyThreadIds is distinct across threads; pendingDepthByThread counts", () => {
     const queue = q();
     queue.enqueue({ ...base, id: "a1" });

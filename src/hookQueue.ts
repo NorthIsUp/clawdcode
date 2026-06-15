@@ -278,6 +278,37 @@ export class HookQueue {
     this.emit();
   }
 
+  /**
+   * Re-arm finished messages for another run: reset rows back to `pending` with
+   * attempts/backoff/outcome/error cleared, so the next drain (every ~3s)
+   * replays them — the per-thread coalescing then resumes the routine's session
+   * as usual.
+   *
+   * With explicit `ids`, replays those messages whether they're `failed` or
+   * `done` (so a specific delivery can be re-run on demand). With no ids, bulk
+   * re-arms every `failed` message — the "retry all the failures" path. Never
+   * touches `pending`/`running` rows. Returns the number re-armed.
+   */
+  requeue(ids?: string[]): number {
+    const now = Date.now();
+    const set =
+      "SET status = 'pending', attempts = 0, not_before = 0, outcome = NULL, error = NULL, updated_at = ?";
+    let res: { changes: number };
+    if (ids && ids.length > 0) {
+      const placeholders = ids.map(() => "?").join(",");
+      res = this.db.run(
+        `UPDATE messages ${set} WHERE id IN (${placeholders}) AND status IN ('failed', 'done')`,
+        [now, ...ids],
+      );
+    } else {
+      res = this.db.run(`UPDATE messages ${set} WHERE status = 'failed'`, [now]);
+    }
+    if (res.changes > 0) {
+      this.emit();
+    }
+    return res.changes;
+  }
+
   /** Recover from a crash/restart: any message left `running` (its worker died
    *  mid-run) is reset to `pending` so it replays. Call once on boot. */
   requeueStuckRunning(): number {
