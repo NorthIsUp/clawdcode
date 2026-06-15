@@ -20,9 +20,12 @@ import { getApiToken } from "../../api/client";
 import { type Delivery, listQueue, type QueueMessage } from "../../api/hooks";
 import { useForegroundTick } from "./useForegroundTick";
 
-// Keep the live feed growing instead of dropping rows; cap matches the server
-// ring (MAX_DELIVERIES = 10 000) so the full retained set is visible in the UI.
-const MAX_ROWS = 10000;
+// In-BROWSER cap on rendered/retained deliveries. The server ring keeps 10k for
+// debugging via the API, but the tab only needs the recent feed: rendering
+// thousands of rows unvirtualized was OOM-crashing long-open Safari tabs
+// (~30 DOM nodes/row × thousands = hundreds of MB). A few hundred is plenty
+// for the live view; older deliveries are still in the DB/API.
+const MAX_ROWS = 500;
 
 export type DeliveryStream = {
   /** null until the first snapshot lands; then newest-first, capped. */
@@ -104,8 +107,13 @@ export function useDeliveryStream(): DeliveryStream {
         return;
       }
       const isNew = !seen.current.has(d.id);
-      seen.current.add(d.id);
-      setDeliveries((prev) => upsert(prev ?? [], d));
+      setDeliveries((prev) => {
+        const next = upsert(prev ?? [], d);
+        // Bound `seen` to the retained window — otherwise it accumulates every
+        // delivery id for the life of the tab (the only truly unbounded leak).
+        seen.current = new Set(next.map((x) => x.id));
+        return next;
+      });
       if (isNew) {
         markFresh([d.id]);
       }
@@ -128,11 +136,9 @@ export function useDeliveryStream(): DeliveryStream {
       for (const d of buffered) {
         next = upsert(next, d);
       }
+      seen.current = new Set(next.map((x) => x.id));
       return next;
     });
-    for (const d of buffered) {
-      seen.current.add(d.id);
-    }
     markFresh(newIds);
   }, [markFresh]);
 
@@ -160,10 +166,12 @@ export function useDeliveryStream(): DeliveryStream {
           const list = ev.deliveries as Delivery[];
           if (firstSnapshot.current) {
             firstSnapshot.current = false;
-            for (const d of list) {
-              seen.current.add(d.id);
-            }
-            setDeliveries(list);
+            // Cap the initial snapshot too — the server sends the whole ring
+            // (up to 10k), and setting it raw would mount thousands of rows on
+            // first paint. Keep only the most-recent MAX_ROWS.
+            const capped = list.slice(0, MAX_ROWS);
+            seen.current = new Set(capped.map((d) => d.id));
+            setDeliveries(capped);
           } else {
             for (const d of list) {
               handleDelta(d);
