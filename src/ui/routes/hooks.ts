@@ -42,7 +42,7 @@ export const hooksEvents: RouteHandler = ({ req, sseResponse }) =>
 // the UI. Payload is omitted (heavy); the deliveries store has it.
 /** GET /api/hooks/queue — durable queue snapshot. */
 export const queueList: RouteHandler = () =>
-  json({ messages: getHookQueue().list({ limit: 300 }).map(queueMessageForWire) });
+  json({ messages: getHookQueue().listLatestPerThread(500).map(queueMessageForWire) });
 
 // Re-arm finished hook-queue messages so the periodic drain (~3s) replays
 // them. Body `{ ids: [...] }` retriggers those specific deliveries (failed OR
@@ -66,7 +66,7 @@ export const queueEvents: RouteHandler = ({ req, sseResponse }) =>
     const snapshot = () =>
       send({
         type: "snapshot",
-        messages: getHookQueue().list({ limit: 300 }).map(queueMessageForWire),
+        messages: getHookQueue().listLatestPerThread(500).map(queueMessageForWire),
       });
     let timer: ReturnType<typeof setTimeout> | null = null;
     const debounced = () => {
