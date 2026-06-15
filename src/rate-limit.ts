@@ -15,11 +15,13 @@ export const RATE_LIMIT_PATTERN =
   /you(?:'|')ve hit your (?:usage |session )?limit|out of extra usage|usage limit (?:reached|exceeded)|credit balance is too low|insufficient credits|out of credits|billing.{0,20}(?:hard limit|quota) reached/i;
 
 // Match a wall-clock reset time embedded in a rate-limit message.
-// Examples: "resets 1:50am", "resets 3pm", "resets 12:30 AM"
-// The timezone indicator (UTC, PDT, etc.) is optional and intentionally ignored —
-// Anthropic rate-limit messages report times in America/Los_Angeles (Pacific), and
-// parseRateLimitResetTime converts using the real DST-aware Pacific offset.
-export const RATE_LIMIT_RESET_PATTERN = /resets?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i;
+// Captures the reset clock time AND its stated timezone. The real Claude
+// message is e.g. "You've hit your session limit · resets 10:10pm (UTC)" — the
+// time is reported in UTC. Group 4 is the optional zone token; we HONOR it
+// (default UTC; convert from Pacific only when the message explicitly says PT).
+// Examples: "resets 10:10pm (UTC)", "resets 1:50am", "resets 3pm (PDT)".
+export const RATE_LIMIT_RESET_PATTERN =
+  /resets?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\s*\(?\s*(UTC|GMT|Z|PST|PDT|PT)?\s*\)?/i;
 
 // --- Rate limit state ---
 let rateLimitResetAt: number = 0; // epoch ms; 0 = not rate-limited
@@ -30,12 +32,16 @@ let rateLimitDetectedLastRun: boolean = false;
 
 /**
  * Parse a wall-clock reset time out of a rate-limit message and return the
- * corresponding UTC epoch in ms, treating the time as America/Los_Angeles
- * (Pacific, DST-aware). Returns null when no time is found.
+ * corresponding UTC epoch in ms. Returns null when no time is found.
  *
- * DST correctness: uses Intl.DateTimeFormat to determine the real Pacific
- * UTC-offset for the current moment (PDT = UTC-7 in summer, PST = UTC-8 in
- * winter) rather than hardcoding either value.
+ * Honors the timezone the MESSAGE states. Claude's session-limit messages
+ * report the reset in UTC ("resets 10:10pm (UTC)"), so the default is UTC —
+ * parse the clock time as UTC for today (or tomorrow if it's already past).
+ * Only when the message explicitly says Pacific (PT/PST/PDT) do we convert from
+ * Pacific using the real DST-aware offset (PDT = UTC-7, PST = UTC-8).
+ *
+ * (An earlier version assumed Pacific unconditionally and added ~7h to the
+ * already-UTC time — a 7-hour over-defer. Don't do that.)
  */
 export function parseRateLimitResetTime(text: string): number | null {
   const match = text.match(RATE_LIMIT_RESET_PATTERN);
@@ -44,15 +50,34 @@ export function parseRateLimitResetTime(text: string): number | null {
   let hours = Number(match[1]);
   const minutes = match[2] ? Number(match[2]) : 0;
   const ampm = match[3]?.toLowerCase();
+  const tz = (match[4] ?? "").toUpperCase();
 
   if (ampm === "pm" && hours < 12) hours += 12;
   if (ampm === "am" && hours === 12) hours = 0;
+  if (hours > 23 || minutes > 59) return null;
 
   const now = new Date();
+  const statedPacific = tz === "PT" || tz === "PST" || tz === "PDT";
 
-  // Get the current date/time as seen in America/Los_Angeles so we know:
-  //   (a) which calendar day to use for the reset, and
-  //   (b) the real DST-aware Pacific offset (PDT = UTC-7, PST = UTC-8).
+  if (!statedPacific) {
+    // UTC (the default + the format Claude actually sends). Interpret the clock
+    // time as UTC today, rolling to tomorrow if it's already passed.
+    let resetMs = Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate(),
+      hours,
+      minutes,
+      0,
+      0,
+    );
+    if (resetMs <= now.getTime()) resetMs += 24 * 60 * 60_000;
+    return resetMs;
+  }
+
+  // Message explicitly stated Pacific → DST-aware conversion. Use
+  // Intl.DateTimeFormat to get the current Pacific calendar day + real offset
+  // (PDT = UTC-7 in summer, PST = UTC-8 in winter) rather than hardcoding.
   const fmt = new Intl.DateTimeFormat("en-US", {
     timeZone: "America/Los_Angeles",
     year: "numeric",
@@ -62,31 +87,15 @@ export function parseRateLimitResetTime(text: string): number | null {
     minute: "2-digit",
     hour12: false,
   }).formatToParts(now);
-  const get = (type: string): number =>
-    Number(fmt.find((p) => p.type === type)?.value ?? "0");
-
+  const get = (type: string): number => Number(fmt.find((p) => p.type === type)?.value ?? "0");
   const pacYear = get("year");
   const pacMonth = get("month") - 1; // 0-based
   const pacDay = get("day");
   const pacHour = get("hour") % 24; // Intl can emit "24" for midnight
   const pacMin = get("minute");
-
-  // Compute the Pacific UTC-offset in ms by comparing "fake UTC now" (treating
-  // the Pacific wall-clock time as if it were UTC) against the real UTC epoch:
-  //   PDT (UTC-7):  fakeUtcNow - realUtcNow = -7 * 3_600_000
-  //   PST (UTC-8):  fakeUtcNow - realUtcNow = -8 * 3_600_000
-  const fakeUtcNow = Date.UTC(pacYear, pacMonth, pacDay, pacHour, pacMin, 0, 0);
-  const pacificOffsetMs = fakeUtcNow - now.getTime();
-
-  // Build the reset instant: start from the same Pacific calendar day, apply
-  // the parsed hour/minute, then subtract the offset to get real UTC.
-  const fakeUtcReset = Date.UTC(pacYear, pacMonth, pacDay, hours, minutes, 0, 0);
-  let resetMs = fakeUtcReset - pacificOffsetMs;
-
-  // If that time has already passed today, advance to the same time tomorrow.
-  if (resetMs <= now.getTime()) {
-    resetMs += 24 * 60 * 60_000;
-  }
+  const pacificOffsetMs = Date.UTC(pacYear, pacMonth, pacDay, pacHour, pacMin, 0, 0) - now.getTime();
+  let resetMs = Date.UTC(pacYear, pacMonth, pacDay, hours, minutes, 0, 0) - pacificOffsetMs;
+  if (resetMs <= now.getTime()) resetMs += 24 * 60 * 60_000;
   return resetMs;
 }
 
