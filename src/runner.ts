@@ -587,11 +587,21 @@ async function execClaude(
 
   if (rotationSummary) appendParts.push(`Context from the previous session:\n\n${rotationSummary}`);
 
-  try {
-    const claudeMd = await Bun.file(PROJECT_CLAUDE_MD).text();
-    if (claudeMd.trim()) appendParts.push(claudeMd.trim());
-  } catch (e) {
-    console.error(`[${new Date().toLocaleTimeString()}] Failed to read project CLAUDE.md:`, e);
+  // The daemon's own persona CLAUDE.md (IDENTITY/USER/SOUL ≈ several KB) is for
+  // INTERACTIVE contexts (chat/heartbeat) where personality matters. Automated
+  // routines don't need it — they have their own prompts, and Claude auto-loads
+  // the TARGET repo's CLAUDE.md from cwd. Since --append-system-prompt doesn't
+  // survive --resume it's re-sent EVERY turn, so on a long routine run it's pure
+  // per-turn overhead (× ~100 turns = millions of cache-read tokens). Inject it
+  // only for interactive runs; override with CLAWDCODE_PERSONA_IN_JOBS=1.
+  const isInteractiveRun = !name || name === "chat" || name === "heartbeat" || name === "trigger";
+  if (isInteractiveRun || process.env.CLAWDCODE_PERSONA_IN_JOBS === "1") {
+    try {
+      const claudeMd = await Bun.file(PROJECT_CLAUDE_MD).text();
+      if (claudeMd.trim()) appendParts.push(claudeMd.trim());
+    } catch (e) {
+      console.error(`[${new Date().toLocaleTimeString()}] Failed to read project CLAUDE.md:`, e);
+    }
   }
 
   // Plugins: before_prompt_build — lets plugins inject system context
