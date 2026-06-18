@@ -309,6 +309,27 @@ describe("parseJobFile — reuse_session", () => {
   });
 });
 
+describe("parseJobFile — guard", () => {
+  beforeEach(resetSandbox);
+
+  test("guard: <command> → job.guard set", async () => {
+    await writeFile(
+      join(LEGACY_JOBS_DIR, "g1.md"),
+      jobMd("0 1 * * *", "test prompt", 'guard: gh pr list --json number --jq "length>0"'),
+    );
+    const jobs = await loadJobsInSandbox();
+    const job = jobs.find((j) => j.name === "g1");
+    expect(job?.guard).toBe('gh pr list --json number --jq "length>0"');
+  });
+
+  test("guard absent → job.guard undefined", async () => {
+    await writeFile(join(LEGACY_JOBS_DIR, "g2.md"), jobMd("0 1 * * *", "test prompt"));
+    const jobs = await loadJobsInSandbox();
+    const job = jobs.find((j) => j.name === "g2");
+    expect(job?.guard).toBeUndefined();
+  });
+});
+
 // ─── Unit: buildJobThreadId ───────────────────────────────────────────────
 
 describe("buildJobThreadId", () => {

@@ -1837,6 +1837,39 @@ export async function start(args: string[] = []) {
   // fires an hour in, and a long-running daemon may already need housekeeping).
   void runMaintenance().catch((err) => console.error(`[${ts()}] maintenance failed:`, err));
 
+  // Mechanical pre-check for a scheduled job's `guard:` command. Returns true
+  // (run the agent) when the guard exits 0 OR errors/times out (fail OPEN — a
+  // broken guard must never silently disable a routine); false (skip, no agent)
+  // only on a clean non-zero exit = "no work". Inherits the daemon env so `gh`
+  // is authenticated, just like an agent run.
+  async function runGuard(job: Job): Promise<boolean> {
+    if (!job.guard) return true;
+    const GUARD_TIMEOUT_MS = 30_000;
+    try {
+      const proc = Bun.spawn(["bash", "-lc", job.guard], {
+        cwd: process.cwd(),
+        env: { ...process.env } as Record<string, string>,
+        stdout: "ignore",
+        stderr: "ignore",
+      });
+      let timedOut = false;
+      const timer = setTimeout(() => {
+        timedOut = true;
+        try { proc.kill(); } catch {}
+      }, GUARD_TIMEOUT_MS);
+      const exit = await proc.exited;
+      clearTimeout(timer);
+      if (timedOut) {
+        console.warn(`[${ts()}] ${job.name}: guard timed out — failing open (running)`);
+        return true;
+      }
+      return exit === 0;
+    } catch (e) {
+      console.error(`[${ts()}] ${job.name}: guard error — failing open (running):`, e);
+      return true;
+    }
+  }
+
   intervals.push(
     setInterval(() => {
       const now = new Date();
@@ -1873,7 +1906,26 @@ export async function start(args: string[] = []) {
             continue;
           }
           if (anyCronMatches(job.schedules, now, currentSettings.timezoneOffsetMinutes)) {
-            runJob(job);
+            // Mechanical guard: skip the agent run entirely when a cheap shell
+            // pre-check says there's no work — don't spawn Claude just to
+            // discover "nothing to do". No guard → always run (unchanged).
+            if (job.guard) {
+              const guarded = job;
+              void runGuard(guarded).then((hasWork) => {
+                if (hasWork) {
+                  runJob(guarded);
+                } else {
+                  setThreadResult(`cron:${guarded.name}`, guarded.name, {
+                    result: "skipped",
+                    ranAt: Date.now(),
+                  });
+                  emitJobStatus();
+                  console.log(`[${ts()}] ${guarded.name}: guard found no work — skipped (no agent run)`);
+                }
+              });
+            } else {
+              runJob(job);
+            }
           }
         }
       }
