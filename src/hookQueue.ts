@@ -185,6 +185,25 @@ export class HookQueue {
     this.db.run(
       "CREATE INDEX IF NOT EXISTS idx_messages_thread_status ON messages(thread_id, status, not_before)",
     );
+    // The single thread-first index above only serves thread-scoped claims. The
+    // dashboard + drain hot paths filter status-first or order by a timestamp,
+    // which otherwise fall back to full table scans + temp b-tree sorts (verified
+    // via EXPLAIN QUERY PLAN). Add covering indexes for each:
+    //  - listLatestPerThread (the sidebar query, every page load + SSE): the
+    //    per-thread "latest" correlated subquery orders by (thread_id, updated_at).
+    this.db.run(
+      "CREATE INDEX IF NOT EXISTS idx_messages_thread_updated ON messages(thread_id, updated_at DESC)",
+    );
+    //  - readyThreadIds + pendingDepthByThread (drain loop, every 3s): filter on
+    //    (status, not_before).
+    this.db.run(
+      "CREATE INDEX IF NOT EXISTS idx_messages_status_notbefore ON messages(status, not_before)",
+    );
+    //  - list({status}) ORDER BY enqueued_at DESC (Runs view): filter status,
+    //    order by enqueued_at — without this it sorts the whole table each call.
+    this.db.run(
+      "CREATE INDEX IF NOT EXISTS idx_messages_status_enqueued ON messages(status, enqueued_at DESC)",
+    );
   }
 
   /** Enqueue a delivery. Returns true if newly inserted, false if a message
