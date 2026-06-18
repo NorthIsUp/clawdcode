@@ -46,6 +46,13 @@ export interface Job {
   reuseSession: boolean;
   /** Event-driven triggers parsed from the `on:` block (see hooks/schema.ts). */
   hookConfig?: HookConfig;
+  /** Optional shell pre-check for SCHEDULED runs: a cheap mechanical command run
+   *  before the agent. Exit 0 → there's work, spawn the agent; non-zero → no
+   *  work, skip the run WITHOUT burning an agent (the whole point — don't spawn
+   *  Claude just to discover "nothing to do"). A guard error fails OPEN (runs the
+   *  agent) so a broken guard never silently disables a routine. Only gates cron
+   *  fires; event-hook fires already imply work. From the `guard:` frontmatter. */
+  guard?: string;
 }
 
 /** Thread ID for a job run. reuseSession → stable base (one resumed session);
@@ -142,6 +149,7 @@ function parseJobFile(name: string, content: string): Job | null {
   const retry = asPositiveInt(fm.retry);
   const retryDelay = asPositiveInt(fm.retry_delay);
   const reuseSession = asBoolean(fm.reuse_session, false);
+  const guard = asString(fm.guard).trim() || undefined;
 
   // Triggers live in the `on:` list: `- schedule:` entries become cron
   // schedules, the rest (pr/comments/sentry/datadog) become the hookConfig.
@@ -179,6 +187,7 @@ function parseJobFile(name: string, content: string): Job | null {
     retryDelay,
     reuseSession,
     hookConfig,
+    guard,
   };
 }
 
