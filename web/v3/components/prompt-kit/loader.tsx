@@ -70,7 +70,7 @@ export function ClassicLoader({
   return (
     <div className={cn("relative", sizeClasses[size], className)}>
       <div className="absolute h-full w-full">
-        {[...Array(12)].map((_, i) => (
+        {Array.from({ length: 12 }).map((_, i) => (
           <div
             key={i}
             className="bg-primary absolute animate-[spinner-fade_1.2s_linear_infinite] rounded-full"
@@ -168,7 +168,7 @@ export function DotsLoader({
         className
       )}
     >
-      {[...Array(3)].map((_, i) => (
+      {Array.from({ length: 3 }).map((_, i) => (
         <div
           key={i}
           className={cn(
@@ -212,7 +212,7 @@ export function TypingLoader({
         className
       )}
     >
-      {[...Array(3)].map((_, i) => (
+      {Array.from({ length: 3 }).map((_, i) => (
         <div
           key={i}
           className={cn(
@@ -262,7 +262,7 @@ export function WaveLoader({
         className
       )}
     >
-      {[...Array(5)].map((_, i) => (
+      {Array.from({ length: 5 }).map((_, i) => (
         <div
           key={i}
           className={cn(
@@ -301,7 +301,7 @@ export function BarsLoader({
 
   return (
     <div className={cn("flex", containerSizes[size], className)}>
-      {[...Array(3)].map((_, i) => (
+      {Array.from({ length: 3 }).map((_, i) => (
         <div
           key={i}
           className={cn(

@@ -60,8 +60,8 @@ export function RunsSection() {
     const es = new EventSource(url);
     es.onmessage = (e) => {
       try {
-        const ev = JSON.parse(e.data);
-        if (ev?.type === "status" && Array.isArray(ev.active)) {
+        const ev = JSON.parse(String(e.data)) as { type?: string; active?: string[] };
+        if (ev.type === "status" && Array.isArray(ev.active)) {
           setActiveJobs((prev) => {
             const next = new Set<string>(ev.active);
             // When a job leaves the active set, its session just

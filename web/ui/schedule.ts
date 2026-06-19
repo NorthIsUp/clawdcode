@@ -220,7 +220,7 @@ function parseFrontmatterObject(content: string): Record<string, unknown> {
   const m = FRONTMATTER_RE.exec(content);
   if (!m) return {};
   try {
-    const parsed = parseYaml(m[1] ?? "");
+    const parsed: unknown = parseYaml(m[1] ?? "");
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
       return parsed as Record<string, unknown>;
     }
