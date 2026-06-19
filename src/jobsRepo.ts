@@ -69,17 +69,18 @@ function shouldKeepInheritedCredentialHelper(): boolean {
 
 export async function runGit(cwd: string, args: string[]): Promise<GitResult> {
   try {
-    // The configured identity when settings are loaded (always so in the running
-    // daemon); otherwise fall back to the defaults below rather than throwing —
-    // a git op shouldn't hard-fail just because settings init hasn't run (e.g. a
-    // unit test exercising runGit directly).
-    let git: { name?: string; email?: string } = {};
+    // The configured identity when present; otherwise fall back to the defaults
+    // below rather than throwing — a git op shouldn't hard-fail just because
+    // settings init hasn't run (getSettings() throws) OR the loaded settings
+    // carry no `git` block (getSettings().git is undefined). Optional-chain both.
+    let git: { name?: string; email?: string } | undefined;
     try {
       git = getSettings().git;
     } catch {
       /* settings not loaded — use defaults */
     }
-    const { name, email } = git;
+    const name = git?.name;
+    const email = git?.email;
     const config = [
       "-c", `user.name=${name || "ClawdCode"}`,
       "-c", `user.email=${email || "clawdcode@localhost"}`,

@@ -59,7 +59,8 @@ test("clone + clean status round-trips", async () => {
   const clone = await tmp();
   await rm(clone, { recursive: true, force: true });
   const c = await runGit(process.cwd(), ["clone", "--branch", "main", remote, clone]);
-  expect(c.ok || c.stderr).toBe(true);
+  ok("clone", c);
+  expect(c.ok).toBe(true);
   const st = await runGit(clone, ["status", "--porcelain"]);
   expect(parseStatus(st.stdout).dirty).toBe(false);
 
