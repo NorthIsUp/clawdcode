@@ -69,10 +69,25 @@ function shouldKeepInheritedCredentialHelper(): boolean {
 
 export async function runGit(cwd: string, args: string[]): Promise<GitResult> {
   try {
-    const { name, email } = getSettings().git;
+    // The configured identity when present; otherwise fall back to the defaults
+    // below rather than throwing — a git op shouldn't hard-fail just because
+    // settings init hasn't run (getSettings() throws) OR the loaded settings
+    // carry no `git` block (getSettings().git is undefined). Optional-chain both.
+    let git: { name?: string; email?: string } | undefined;
+    try {
+      git = getSettings().git;
+    } catch {
+      /* settings not loaded — use defaults */
+    }
+    const name = git?.name;
+    const email = git?.email;
     const config = [
       "-c", `user.name=${name || "ClawdCode"}`,
       "-c", `user.email=${email || "clawdcode@localhost"}`,
+      // Headless daemon: never attempt to sign jobs-repo commits. A host with
+      // commit.gpgsign on but no available signer (k8s pod, or a laptop whose
+      // signing agent declines) would otherwise hang/fail the whole sync.
+      "-c", "commit.gpgsign=false",
     ];
     if (!shouldKeepInheritedCredentialHelper()) {
       config.push("-c", "credential.helper=");

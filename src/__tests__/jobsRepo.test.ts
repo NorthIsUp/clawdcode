@@ -6,6 +6,16 @@ import { runGit, parseStatus, buildCommitMessage, isNonFastForward } from "../jo
 
 async function tmp(): Promise<string> { return mkdtemp(join(tmpdir(), "ccjr-")); }
 
+/** Assert a setup git command succeeded, surfacing stderr on failure — so a
+ *  broken precondition fails loudly with the real reason instead of silently
+ *  cascading into a confusing later assertion. */
+function ok(label: string, r: { ok: boolean; stderr: string; code: number }): { ok: boolean; stderr: string; code: number } {
+  if (!r.ok) {
+    throw new Error(`git ${label} failed (code ${r.code}): ${r.stderr.trim()}`);
+  }
+  return r;
+}
+
 test("isNonFastForward detects a rejected push (remote moved ahead)", () => {
   // The exact stderr GitHub returns for the case syncRepo now recovers from.
   const rejected = `To https://github.com/teamclara/claudeclaw-jobs.git
@@ -34,21 +44,22 @@ test("parseStatus detects clean vs dirty", () => {
 
 test("clone + clean status round-trips", async () => {
   const remote = await tmp();
-  await runGit(remote, ["init", "--bare"]);
+  ok("init --bare", await runGit(remote, ["init", "--bare"]));
   const work = await tmp();
-  await runGit(work, ["init"]);
+  ok("init", await runGit(work, ["init"]));
   await runGit(work, ["config", "user.email", "t@t"]);
   await runGit(work, ["config", "user.name", "t"]);
   await writeFile(join(work, "a.md"), "---\nschedule: \"0 9 * * *\"\n---\nhi\n");
-  await runGit(work, ["add", "-A"]);
-  await runGit(work, ["commit", "-m", "init"]);
-  await runGit(work, ["branch", "-M", "main"]);
-  await runGit(work, ["remote", "add", "origin", remote]);
-  await runGit(work, ["push", "-u", "origin", "main"]);
+  ok("add", await runGit(work, ["add", "-A"]));
+  ok("commit", await runGit(work, ["commit", "-m", "init"]));
+  ok("branch -M main", await runGit(work, ["branch", "-M", "main"]));
+  ok("remote add", await runGit(work, ["remote", "add", "origin", remote]));
+  ok("push", await runGit(work, ["push", "-u", "origin", "main"]));
 
   const clone = await tmp();
   await rm(clone, { recursive: true, force: true });
   const c = await runGit(process.cwd(), ["clone", "--branch", "main", remote, clone]);
+  ok("clone", c);
   expect(c.ok).toBe(true);
   const st = await runGit(clone, ["status", "--porcelain"]);
   expect(parseStatus(st.stdout).dirty).toBe(false);
@@ -66,15 +77,15 @@ test("dirty working tree is detected so pull is skipped", async () => {
   const remote = await tmp();
   await runGit(remote, ["init", "--bare"]);
   const work = await tmp();
-  await runGit(work, ["init"]);
+  ok("init", await runGit(work, ["init"]));
   await runGit(work, ["config", "user.email", "t@t"]);
   await runGit(work, ["config", "user.name", "t"]);
   await writeFile(join(work, "a.md"), "original\n");
-  await runGit(work, ["add", "-A"]);
-  await runGit(work, ["commit", "-m", "init"]);
-  await runGit(work, ["branch", "-M", "main"]);
-  await runGit(work, ["remote", "add", "origin", remote]);
-  await runGit(work, ["push", "-u", "origin", "main"]);
+  ok("add", await runGit(work, ["add", "-A"]));
+  ok("commit", await runGit(work, ["commit", "-m", "init"]));
+  ok("branch -M main", await runGit(work, ["branch", "-M", "main"]));
+  ok("remote add", await runGit(work, ["remote", "add", "origin", remote]));
+  ok("push", await runGit(work, ["push", "-u", "origin", "main"]));
 
   // Make a local uncommitted edit -> tree is dirty.
   await writeFile(join(work, "a.md"), "local edit\n");
