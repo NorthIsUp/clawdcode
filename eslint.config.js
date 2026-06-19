@@ -70,6 +70,11 @@ export default tseslint.config(
       // input + div > text), which is a valid associated control — just past the
       // rule's default depth of 2.
       "jsx-a11y/label-has-associated-control": ["error", { depth: 3 }],
+      // Biome already owns `noArrayIndexKey` (and the codebase annotates its
+      // justified positional-list exceptions with biome-ignore). This config's
+      // job is React rules biome LACKS — so don't double-enforce it here and
+      // force every exception to carry two ignore directives.
+      "@eslint-react/no-array-index-key": "off",
       // React-Compiler-era rule. We don't run the Compiler, and our flagged uses
       // are all legitimate effect→state syncs (theme application, async data
       // loaders, SSE subscriptions, controlled/uncontrolled auto-open) — not the
