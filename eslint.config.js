@@ -1,10 +1,9 @@
 // ESLint flat config (v10).
-// Biome handles general JS/TS lint + formatting; ESLint covers React-specific
-// rules that Biome doesn't (hooks deps, JSX a11y, modern React patterns).
+// Biome handles general JS/TS lint + formatting; ESLint adds the things biome
+// CAN'T: type-aware rules (it has no type information) across the whole repo,
+// plus the React-specific rules for the frontend.
 //
 // React plugin: @eslint-react/eslint-plugin (the modern rewrite by rel1cx).
-// It supersedes the legacy eslint-plugin-react@7.x which never adopted flat
-// config cleanly and is incompatible with ESLint 10.
 import js from "@eslint/js";
 import eslintReact from "@eslint-react/eslint-plugin";
 import jsxA11yPlugin from "eslint-plugin-jsx-a11y";
@@ -15,25 +14,26 @@ export default tseslint.config(
   {
     // prompt-kit/** and ui/** are vendored shadcn/prompt-kit components tracked
     // from upstream (and already excluded from biome). We re-sync them, so our
-    // house rules — and the React-19 idiom migrations (forwardRef → ref prop,
-    // useContext → use, Context.Provider → Context) — shouldn't fight upstream's
-    // conventions. Lint our own code, not the vendored copies.
+    // house rules shouldn't fight upstream's conventions.
     ignores: [
       "dist/**",
       "node_modules/**",
-      "src/**",
       ".claude/**",
       "web/v3/components/prompt-kit/**",
       "web/v3/components/ui/**",
     ],
   },
   {
-    files: ["web/**/*.{ts,tsx}"],
+    // Base: type-aware TypeScript + general correctness for the WHOLE codebase —
+    // the daemon backend (src/) and the frontend (web/). The type-checked rules
+    // (no-floating-promises, no-misused-promises, no-unsafe-*, await-thenable, …)
+    // are exactly what biome can't provide, and the async-heavy backend is where
+    // they earn their keep most.
+    files: ["src/**/*.ts", "web/**/*.{ts,tsx}"],
     extends: [
       js.configs.recommended,
       tseslint.configs.recommendedTypeChecked,
       tseslint.configs.stylisticTypeChecked,
-      eslintReact.configs["recommended-typescript"],
     ],
     languageOptions: {
       parser: tseslint.parser,
@@ -43,6 +43,24 @@ export default tseslint.config(
         ecmaFeatures: { jsx: true },
       },
     },
+    rules: {
+      // A leading underscore marks a deliberately-unused binding.
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrorsIgnorePattern: "^_" },
+      ],
+      // `??` for objects/numbers (where `||` eats 0 / a valid empty result);
+      // `||` stays allowed for string/boolean operands (empty-skip is idiomatic).
+      "@typescript-eslint/prefer-nullish-coalescing": [
+        "error",
+        { ignorePrimitives: { string: true, boolean: true } },
+      ],
+    },
+  },
+  {
+    // React-specific rules — web/ only (the backend has no JSX).
+    files: ["web/**/*.{ts,tsx}"],
+    extends: [eslintReact.configs["recommended-typescript"]],
     plugins: {
       "react-hooks": reactHooksPlugin,
       "jsx-a11y": jsxA11yPlugin,
@@ -52,35 +70,12 @@ export default tseslint.config(
       ...jsxA11yPlugin.flatConfigs.strict.rules,
       "react-hooks/rules-of-hooks": "error",
       "react-hooks/exhaustive-deps": "error",
-      // A leading underscore marks a deliberately-unused binding (placeholder
-      // props, destructure-and-drop, caught errors we don't inspect).
-      "@typescript-eslint/no-unused-vars": [
-        "error",
-        { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrorsIgnorePattern: "^_" },
-      ],
-      // `??` is required for objects/numbers (where `|| ` silently eats 0 / a
-      // valid empty result), but `||` stays allowed for string/boolean operands:
-      // empty-string-skip (`split(":")[0] || label`, `?.value || undefined`,
-      // fallback chains) is a deliberate idiom here, not a latent bug.
-      "@typescript-eslint/prefer-nullish-coalescing": [
-        "error",
-        { ignorePrimitives: { string: true, boolean: true } },
-      ],
-      // Our toggle rows nest the label text one level below the <input> (label >
-      // input + div > text), which is a valid associated control — just past the
-      // rule's default depth of 2.
+      // Our toggle rows nest the label text one level below the <input>.
       "jsx-a11y/label-has-associated-control": ["error", { depth: 3 }],
-      // Biome already owns `noArrayIndexKey` (and the codebase annotates its
-      // justified positional-list exceptions with biome-ignore). This config's
-      // job is React rules biome LACKS — so don't double-enforce it here and
-      // force every exception to carry two ignore directives.
+      // Biome already owns noArrayIndexKey; don't double-enforce here.
       "@eslint-react/no-array-index-key": "off",
-      // React-Compiler-era rule (both plugins' variants). We don't run the
-      // Compiler, and every flagged use here is a legitimate effect→state sync —
-      // matchMedia subscriptions, theme application, the async data loader, SSE
-      // subscriptions/streams — NOT the "derive-state-that-could-be-computed-in-
-      // render" anti-pattern it targets. With warnings now treated as errors it
-      // would only block on false positives, so it's off.
+      // React-Compiler-era rule; we don't run the Compiler and every flagged use
+      // is a legitimate effect→state sync, not the derive-in-render anti-pattern.
       "react-hooks/set-state-in-effect": "off",
       "@eslint-react/set-state-in-effect": "off",
     },
