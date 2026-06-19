@@ -75,12 +75,14 @@ export default tseslint.config(
       // job is React rules biome LACKS — so don't double-enforce it here and
       // force every exception to carry two ignore directives.
       "@eslint-react/no-array-index-key": "off",
-      // React-Compiler-era rule. We don't run the Compiler, and our flagged uses
-      // are all legitimate effect→state syncs (theme application, async data
-      // loaders, SSE subscriptions, controlled/uncontrolled auto-open) — not the
-      // "derive-state-that-could-be-computed-in-render" anti-pattern it targets.
-      // Kept as a visible warning rather than a blocking error.
-      "react-hooks/set-state-in-effect": "warn",
+      // React-Compiler-era rule (both plugins' variants). We don't run the
+      // Compiler, and every flagged use here is a legitimate effect→state sync —
+      // matchMedia subscriptions, theme application, the async data loader, SSE
+      // subscriptions/streams — NOT the "derive-state-that-could-be-computed-in-
+      // render" anti-pattern it targets. With warnings now treated as errors it
+      // would only block on false positives, so it's off.
+      "react-hooks/set-state-in-effect": "off",
+      "@eslint-react/set-state-in-effect": "off",
     },
   },
 );

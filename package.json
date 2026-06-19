@@ -11,7 +11,7 @@
     "bump:plugin-version": "bun run scripts/bump-plugin-version.ts",
     "bump:marketplace-version": "bun run scripts/bump-marketplace-version.ts",
     "lint": "mise exec -- biome check . && bun run lint:eslint",
-    "lint:eslint": "eslint web/",
+    "lint:eslint": "eslint web/ --max-warnings 0",
     "lint:fix": "mise exec -- biome check --write . && eslint web/ --fix",
     "format": "mise exec -- biome format --write .",
     "typecheck": "tsc --noEmit -p web/tsconfig.json",
