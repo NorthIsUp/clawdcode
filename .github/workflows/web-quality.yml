@@ -1,0 +1,58 @@
+name: Web Quality
+
+# Enforces the web frontend's quality gate: the opinionated ESLint React/TS set
+# (eslint.config.js), the TypeScript typecheck, and a clean production build.
+#
+# ESLint errors block; warnings (e.g. the React-Compiler-era set-state-in-effect
+# advisories) surface in the log without failing. Biome's repo-wide lint is NOT
+# run here yet — it has a large pre-existing backlog (backend src/** included)
+# and is tracked separately.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - "web/**"
+      - "eslint.config.js"
+      - "package.json"
+      - "bun.lock"
+      - "tsconfig*.json"
+      - "web/tsconfig.json"
+      - ".github/workflows/web-quality.yml"
+  push:
+    branches: [master]
+    paths:
+      - "web/**"
+      - "eslint.config.js"
+      - "package.json"
+      - "bun.lock"
+      - "tsconfig*.json"
+      - "web/tsconfig.json"
+      - ".github/workflows/web-quality.yml"
+
+jobs:
+  web-quality:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: ESLint (opinionated React/TS gate)
+        run: bun run lint:eslint
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Build web bundle
+        run: bun run build:web

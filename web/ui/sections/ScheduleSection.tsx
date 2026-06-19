@@ -55,8 +55,12 @@ export function ScheduleSection() {
     const es = new EventSource(url);
     es.onmessage = (e) => {
       try {
-        const ev = JSON.parse(e.data);
-        if (ev?.type === "status") {
+        const ev = JSON.parse(String(e.data)) as {
+          type?: string;
+          active?: string[];
+          results?: LiveStatus["results"];
+        };
+        if (ev.type === "status") {
           setLive({
             active: new Set<string>(Array.isArray(ev.active) ? ev.active : []),
             results: typeof ev.results === "object" && ev.results ? ev.results : {},
@@ -73,7 +77,13 @@ export function ScheduleSection() {
   }, []);
 
   const rows = useMemo(
-    () => buildRows(state.data?.jobs ?? [], sessions.data ?? [], fileMap.data ?? new Map(), live),
+    () =>
+      buildRows(
+        state.data?.jobs ?? [],
+        sessions.data ?? [],
+        fileMap.data ?? new Map<string, { slug: string; path: string }>(),
+        live,
+      ),
     [state.data?.jobs, sessions.data, fileMap.data, live],
   );
 
