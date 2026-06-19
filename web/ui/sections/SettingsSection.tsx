@@ -552,9 +552,9 @@ function InstalledPluginsCard({ runtimeVersion }: { runtimeVersion: string | nul
       {!plugins.loading && rows.length === 0 && <Empty>No plugins installed.</Empty>}
       {rows.length > 0 && (
         <ul className="text-sm space-y-1">
-          {rows.map((p, idx) => (
+          {rows.map((p) => (
             <InstalledPluginRow
-              key={`${p.id}-${p.scope}-${idx}`}
+              key={`${p.id}-${p.scope}`}
               plugin={p}
               onChanged={() => plugins.reload()}
             />
