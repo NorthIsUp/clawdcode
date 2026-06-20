@@ -242,7 +242,7 @@ async function downloadModel(): Promise<void> {
   console.log("whisper: model ready");
 }
 
-async function prepareWhisperAssets(printOutput: boolean): Promise<void> {
+async function prepareWhisperAssets(_printOutput: boolean): Promise<void> {
   const startedAt = Date.now();
   console.log(`whisper warmup: start root=${WHISPER_ROOT} model=${getWhisperModel()}`);
   await mkdir(WHISPER_ROOT, { recursive: true });

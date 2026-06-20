@@ -47,7 +47,6 @@ import {
   loadHeartbeatPromptTemplate,
   markRateLimitNotified,
   run,
-  type RunResult,
   runUserMessage,
   streamUserMessage,
   wasRateLimitDetected,

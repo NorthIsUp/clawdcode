@@ -368,7 +368,6 @@ async function postMessage(
 }
 
 // Streaming: send initial message then update it as chunks arrive
-const STREAM_UPDATE_INTERVAL_MS = 1200; // throttle updates to ~1/sec
 
 // --- Reaction directive extraction ---
 

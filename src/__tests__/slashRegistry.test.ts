@@ -1,4 +1,4 @@
-import { test, expect, beforeEach, afterEach, mock } from "bun:test";
+import { test, expect, beforeEach, afterEach } from "bun:test";
 import { mkdtemp, rm, mkdir, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
