@@ -50,6 +50,17 @@ export default tseslint.config(
       "no-empty": "off",
       "@typescript-eslint/no-empty-function": "off",
       "@typescript-eslint/no-explicit-any": "off",
+      // require-await ≈ biome's `useAwait` (which the codebase already
+      // biome-ignores for intentionally-async-by-contract fns). Biome's domain.
+      "@typescript-eslint/require-await": "off",
+      // Passing an async fn to a void-arg slot (setInterval/setTimeout/process.on)
+      // is the standard fire-and-forget timer/handler pattern; wrapping every one
+      // in `void (async()=>{})()` is noise. Still enforced for promise-returning
+      // values, properties, and JSX attribute handlers (the web onClick case).
+      "@typescript-eslint/no-misused-promises": [
+        "error",
+        { checksVoidReturn: { arguments: false } },
+      ],
       // A leading underscore marks a deliberately-unused binding.
       "@typescript-eslint/no-unused-vars": [
         "error",
@@ -84,6 +95,17 @@ export default tseslint.config(
       // is a legitimate effect→state sync, not the derive-in-render anti-pattern.
       "react-hooks/set-state-in-effect": "off",
       "@eslint-react/set-state-in-effect": "off",
+    },
+  },
+  {
+    // Test files: bun:test's matcher types under-declare Promise returns —
+    // `await expect(p).rejects.toThrow()` is a genuine awaitable typed as a
+    // non-thenable, so await-thenable misfires (removing the await would silently
+    // break the assertion). Async test bodies without await are also conventional.
+    files: ["**/*.test.{ts,tsx}", "**/__tests__/**/*.{ts,tsx}"],
+    rules: {
+      "@typescript-eslint/await-thenable": "off",
+      "@typescript-eslint/require-await": "off",
     },
   },
 );

@@ -67,7 +67,7 @@ test("discoverJobsRepoPlugins — single root plugin returns one entry", async (
     await initFakeGitRepo(repoDir);
     await makePlugin(repoDir, { name: "my-tools", skills: ["system-check"], commands: ["deploy"] });
 
-    mock.module("../config", () => ({
+    void mock.module("../config", () => ({
       getSettings: () => ({ jobsRepo: { url: "https://example.com/repo.git", branch: "main" } }),
       getJobsRepoDir: () => repoDir,
     }));
@@ -96,7 +96,7 @@ test("discoverJobsRepoPlugins — plugins under plugins/ subdirectory", async ()
     await makePlugin(join(pluginsDir, "alpha"), { name: "alpha-plugin", skills: ["skill-a"] });
     await makePlugin(join(pluginsDir, "beta"), { name: "beta-plugin", skills: ["skill-b"], commands: ["cmd-b"] });
 
-    mock.module("../config", () => ({
+    void mock.module("../config", () => ({
       getSettings: () => ({ jobsRepo: { url: "https://example.com/repo.git", branch: "main" } }),
       getJobsRepoDir: () => repoDir,
     }));
@@ -130,7 +130,7 @@ test("discoverJobsRepoPlugins — falls back to basename when plugin.json has no
     await mkdir(join(repoDir, ".claude-plugin"), { recursive: true });
     await writeFile(join(repoDir, ".claude-plugin", "plugin.json"), "{}");
 
-    mock.module("../config", () => ({
+    void mock.module("../config", () => ({
       getSettings: () => ({ jobsRepo: { url: "https://example.com/repo.git", branch: "main" } }),
       getJobsRepoDir: () => repoDir,
     }));
@@ -152,7 +152,7 @@ test("getJobsRepoSpawnArgs — plugins found → --plugin-dir per plugin", async
     await initFakeGitRepo(repoDir);
     await makePlugin(repoDir, { name: "my-tools", skills: ["check"] });
 
-    mock.module("../config", () => ({
+    void mock.module("../config", () => ({
       getSettings: () => ({ jobsRepo: { url: "https://example.com/repo.git", branch: "main" } }),
       getJobsRepoDir: () => repoDir,
     }));
@@ -176,7 +176,7 @@ test("getJobsRepoSpawnArgs — skills-only no manifest → --add-dir", async () 
     await mkdir(join(repoDir, ".claude", "skills", "my-skill"), { recursive: true });
     await writeFile(join(repoDir, ".claude", "skills", "my-skill", "SKILL.md"), "# my-skill\n");
 
-    mock.module("../config", () => ({
+    void mock.module("../config", () => ({
       getSettings: () => ({ jobsRepo: { url: "https://example.com/repo.git", branch: "main" } }),
       getJobsRepoDir: () => repoDir,
     }));
@@ -196,7 +196,7 @@ test("getJobsRepoSpawnArgs — neither plugins nor .claude/skills → []", async
     await initFakeGitRepo(repoDir);
     // Nothing special in the repo
 
-    mock.module("../config", () => ({
+    void mock.module("../config", () => ({
       getSettings: () => ({ jobsRepo: { url: "https://example.com/repo.git", branch: "main" } }),
       getJobsRepoDir: () => repoDir,
     }));
@@ -211,7 +211,7 @@ test("getJobsRepoSpawnArgs — neither plugins nor .claude/skills → []", async
 });
 
 test("getJobsRepoSpawnArgs — unconfigured jobs repo → []", async () => {
-  mock.module("../config", () => ({
+  void mock.module("../config", () => ({
     getSettings: () => ({ jobsRepo: { url: "", branch: "main" } }),
     getJobsRepoDir: () => "/nonexistent/path",
   }));
@@ -232,7 +232,7 @@ test("getJobsRepoSpawnArgs — two plugins → two --plugin-dir entries in sorte
     await makePlugin(join(pluginsDir, "aaa"), { name: "aaa" });
     await makePlugin(join(pluginsDir, "zzz"), { name: "zzz" });
 
-    mock.module("../config", () => ({
+    void mock.module("../config", () => ({
       getSettings: () => ({ jobsRepo: { url: "https://example.com/repo.git", branch: "main" } }),
       getJobsRepoDir: () => repoDir,
     }));

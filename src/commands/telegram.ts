@@ -468,9 +468,9 @@ function makeStreamCallback(
     const now = Date.now();
     if (now - lastSentAt >= intervalMs) {
       if (timer) { clearTimeout(timer); timer = null; }
-      flush();
+      void flush();
     } else if (!timer) {
-      timer = setTimeout(() => { timer = null; flush(); }, intervalMs - (now - lastSentAt));
+      timer = setTimeout(() => { timer = null; void flush(); }, intervalMs - (now - lastSentAt));
     }
   };
 
@@ -481,9 +481,9 @@ function makeStreamCallback(
     const now = Date.now();
     if (now - lastSentAt >= intervalMs) {
       if (timer) { clearTimeout(timer); timer = null; }
-      flush();
+      void flush();
     } else if (!timer) {
-      timer = setTimeout(() => { timer = null; flush(); }, intervalMs - (now - lastSentAt));
+      timer = setTimeout(() => { timer = null; void flush(); }, intervalMs - (now - lastSentAt));
     }
   };
 
