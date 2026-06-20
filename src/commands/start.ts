@@ -1231,7 +1231,7 @@ export async function start(args: string[] = []) {
         );
         return;
       }
-      Promise.all([resolvePrompt(currentSettings.heartbeat.prompt), loadHeartbeatPromptTemplate()])
+      void Promise.all([resolvePrompt(currentSettings.heartbeat.prompt), loadHeartbeatPromptTemplate()])
         .then(([prompt, template]) => {
           const userPromptSection = prompt.trim()
             ? `User custom heartbeat prompt:\n${prompt.trim()}`
@@ -1415,7 +1415,7 @@ export async function start(args: string[] = []) {
         port: currentSettings.web.port,
       },
     };
-    writeState(state);
+    void writeState(state);
   }
 
   // In-memory retry state: resets on daemon restart (no stale debt across restarts).
@@ -2005,7 +2005,7 @@ export async function start(args: string[] = []) {
             // Push retryAt to sentinel so subsequent cron ticks don't re-fire while in flight.
             // runJob's .then() handler overwrites this with the real next-retry time (or deletes it).
             retryState.retryAt = Number.MAX_SAFE_INTEGER;
-            runJob(job);
+            void runJob(job);
             continue;
           }
           if (anyCronMatches(job.schedules, now, currentSettings.timezoneOffsetMinutes)) {
@@ -2016,7 +2016,7 @@ export async function start(args: string[] = []) {
               const guarded = job;
               void runGuard(guarded).then((hasWork) => {
                 if (hasWork) {
-                  runJob(guarded);
+                  void runJob(guarded);
                 } else {
                   setThreadResult(`cron:${guarded.name}`, guarded.name, {
                     result: "skipped",
@@ -2027,7 +2027,7 @@ export async function start(args: string[] = []) {
                 }
               });
             } else {
-              runJob(job);
+              void runJob(job);
             }
           }
         }

@@ -12,7 +12,7 @@ export interface JobsRepoPlugin {
 }
 
 /** Check if a directory contains a .claude-plugin/plugin.json file. */
-async function isPluginDir(dir: string): Promise<boolean> {
+function isPluginDir(dir: string): boolean {
   return existsSync(join(dir, ".claude-plugin", "plugin.json"));
 }
 
@@ -102,7 +102,7 @@ export async function discoverPluginsForDir(
   async function tryAdd(dir: string): Promise<void> {
     if (seen.has(dir)) return;
     seen.add(dir);
-    if (await isPluginDir(dir)) {
+    if (isPluginDir(dir)) {
       plugins.push(await readPlugin(dir));
     }
   }

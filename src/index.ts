@@ -10,24 +10,26 @@ import { send } from "./commands/send";
 const args = process.argv.slice(2);
 const command = args[0];
 
+// CLI dispatch — each command owns its own lifecycle; fire-and-forget at the
+// entry point (`void` marks the intentional non-await for no-floating-promises).
 if (command === "--stop-all") {
-  stopAll();
+  void stopAll();
 } else if (command === "--stop") {
-  stop();
+  void stop();
 } else if (command === "--clear") {
-  clear();
+  void clear();
 } else if (command === "start") {
-  start(args.slice(1));
+  void start(args.slice(1));
 } else if (command === "status") {
-  status(args.slice(1));
+  void status(args.slice(1));
 } else if (command === "telegram") {
-  telegram();
+  void telegram();
 } else if (command === "discord") {
-  discord();
+  void discord();
 } else if (command === "slack") {
-  slack();
+  void slack();
 } else if (command === "send") {
-  send(args.slice(1));
+  void send(args.slice(1));
 } else {
-  start();
+  void start();
 }

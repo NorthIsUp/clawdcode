@@ -282,11 +282,11 @@ export async function snapshotJobFrontmatter(jobName: string): Promise<() => Pro
   try {
     originalContent = await Bun.file(path).text();
   } catch {
-    return async () => false;
+    return () => Promise.resolve(false);
   }
 
   const originalMatch = FRONTMATTER_RE.exec(originalContent);
-  if (!originalMatch) return async () => false;
+  if (!originalMatch) return () => Promise.resolve(false);
 
   const originalFrontmatter = originalMatch[1] ?? "";
 

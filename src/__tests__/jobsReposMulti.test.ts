@@ -60,7 +60,7 @@ test("slugForRepo produces different slugs for different URLs", () => {
 
 // getJobsDirs depends on cached settings. We test by calling through mock.module.
 test("getJobsDirs returns DEFAULT_JOBS_DIR when no repos configured", async () => {
-  mock.module("../config", () => {
+  void mock.module("../config", () => {
     const { join } = require("path");
     const HEARTBEAT_DIR = join(process.cwd(), ".claude", "clawdcode");
     const DEFAULT_JOBS_DIR = join(HEARTBEAT_DIR, "jobs");
@@ -154,7 +154,7 @@ test("two repos each with one plugin → spawn args contain four flags", async (
     await makePlugin(repo1, { name: "plugin-alpha", skills: ["alpha-skill"] });
     await makePlugin(repo2, { name: "plugin-beta", skills: ["beta-skill"] });
 
-    mock.module("../config", () => ({
+    void mock.module("../config", () => ({
       getSettings: () => ({
         jobsRepos: [
           { url: "https://example.com/repo1.git", branch: "main", intervalSeconds: 300 },
