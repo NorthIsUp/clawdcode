@@ -387,30 +387,37 @@ const VALID_LEVELS = new Set<SecurityLevel>([
   "unrestricted",
 ]);
 
-function parseAgenticMode(raw: any): AgenticMode | null {
+/** Narrow an unknown to a string-keyed record for safe optional reads. */
+function asRecord(v: unknown): Record<string, unknown> {
+  return v !== null && typeof v === "object" ? (v as Record<string, unknown>) : {};
+}
+
+function parseAgenticMode(raw: unknown): AgenticMode | null {
   if (!raw || typeof raw !== "object") return null;
-  const name = typeof raw.name === "string" ? raw.name.trim() : "";
-  const model = typeof raw.model === "string" ? raw.model.trim() : "";
+  const r = asRecord(raw);
+  const name = typeof r.name === "string" ? r.name.trim() : "";
+  const model = typeof r.model === "string" ? r.model.trim() : "";
   if (!name || !model) return null;
-  const keywords = Array.isArray(raw.keywords)
-    ? raw.keywords.filter((k: unknown) => typeof k === "string").map((k: string) => k.toLowerCase().trim())
+  const keywords = Array.isArray(r.keywords)
+    ? r.keywords.filter((k): k is string => typeof k === "string").map((k) => k.toLowerCase().trim())
     : [];
-  const phrases = Array.isArray(raw.phrases)
-    ? raw.phrases.filter((p: unknown) => typeof p === "string").map((p: string) => p.toLowerCase().trim())
+  const phrases = Array.isArray(r.phrases)
+    ? r.phrases.filter((p): p is string => typeof p === "string").map((p) => p.toLowerCase().trim())
     : undefined;
   return { name, model, keywords, ...(phrases && phrases.length > 0 ? { phrases } : {}) };
 }
 
-function parseAgenticConfig(raw: any): AgenticConfig {
+function parseAgenticConfig(raw: unknown): AgenticConfig {
   const defaults = DEFAULT_SETTINGS.agentic;
   if (!raw || typeof raw !== "object") return defaults;
+  const r = asRecord(raw);
 
-  const enabled = raw.enabled ?? false;
+  const enabled = r.enabled === true;
 
   // Backward compat: old planningModel/implementationModel format
-  if (!Array.isArray(raw.modes) && ("planningModel" in raw || "implementationModel" in raw)) {
-    const planningModel = typeof raw.planningModel === "string" ? raw.planningModel.trim() : "opus";
-    const implModel = typeof raw.implementationModel === "string" ? raw.implementationModel.trim() : "sonnet";
+  if (!Array.isArray(r.modes) && ("planningModel" in r || "implementationModel" in r)) {
+    const planningModel = typeof r.planningModel === "string" ? r.planningModel.trim() : "opus";
+    const implModel = typeof r.implementationModel === "string" ? r.implementationModel.trim() : "sonnet";
     return {
       enabled,
       defaultMode: "implementation",
@@ -423,8 +430,8 @@ function parseAgenticConfig(raw: any): AgenticConfig {
 
   // New modes format
   const modes: AgenticMode[] = [];
-  if (Array.isArray(raw.modes)) {
-    for (const m of raw.modes) {
+  if (Array.isArray(r.modes)) {
+    for (const m of r.modes) {
       const parsed = parseAgenticMode(m);
       if (parsed) modes.push(parsed);
     }
@@ -432,18 +439,19 @@ function parseAgenticConfig(raw: any): AgenticConfig {
 
   return {
     enabled,
-    defaultMode: typeof raw.defaultMode === "string" ? raw.defaultMode.trim() : "implementation",
+    defaultMode: typeof r.defaultMode === "string" ? r.defaultMode.trim() : "implementation",
     modes: modes.length > 0 ? modes : defaults.modes,
   };
 }
 
-function parseJobsRepoConfig(raw: any): JobsRepoConfig {
+function parseJobsRepoConfig(raw: unknown): JobsRepoConfig {
+  const r = asRecord(raw);
   return {
-    kind: raw?.kind === "plugin" ? "plugin" : "git",
-    url: typeof raw?.url === "string" ? raw.url.trim() : "",
-    branch: typeof raw?.branch === "string" && raw.branch.trim() ? raw.branch.trim() : "main",
-    intervalSeconds: Number.isFinite(raw?.intervalSeconds) && Number(raw.intervalSeconds) >= 0
-      ? Number(raw.intervalSeconds) : 300,
+    kind: r.kind === "plugin" ? "plugin" : "git",
+    url: typeof r.url === "string" ? r.url.trim() : "",
+    branch: typeof r.branch === "string" && r.branch.trim() ? r.branch.trim() : "main",
+    intervalSeconds: Number.isFinite(r.intervalSeconds) && Number(r.intervalSeconds) >= 0
+      ? Number(r.intervalSeconds) : 300,
   };
 }
 
@@ -457,16 +465,21 @@ function parseJobsRepoConfig(raw: any): JobsRepoConfig {
  * the list, so every downstream consumer (clone dir, status, lookup) reads a
  * single stable identifier instead of recomputing it with an empty set.
  */
-function parseJobsRepos(raw: Record<string, any>): JobsRepoConfig[] {
+function parseJobsRepos(raw: Record<string, unknown>): JobsRepoConfig[] {
   let repos: JobsRepoConfig[];
   // New array form wins if present and non-empty
   if (Array.isArray(raw.jobsRepos) && raw.jobsRepos.length > 0) {
     repos = raw.jobsRepos
-      .filter((r: any) => typeof r?.url === "string" && r.url.trim())
+      .filter((r) => {
+        if (!r || typeof r !== "object") return false;
+        const url = asRecord(r).url;
+        return typeof url === "string" && url.trim() !== "";
+      })
       .map(parseJobsRepoConfig);
   } else {
     // Legacy single-repo form: lift into array
-    const legacyUrl = typeof raw.jobsRepo?.url === "string" ? raw.jobsRepo.url.trim() : "";
+    const jobsRepo = asRecord(raw.jobsRepo);
+    const legacyUrl = typeof jobsRepo.url === "string" ? jobsRepo.url.trim() : "";
     repos = legacyUrl ? [parseJobsRepoConfig(raw.jobsRepo)] : [];
   }
   return assignSlugs(repos);
@@ -484,10 +497,23 @@ function assignSlugs(repos: JobsRepoConfig[]): JobsRepoConfig[] {
 }
 
 function parseSettings(
-  raw: Record<string, any>,
+  raw: Record<string, unknown>,
   discordUserIds?: string[],
 ): Settings {
-  const rawLevel = raw.security?.level;
+  const security = asRecord(raw.security);
+  const fallback = asRecord(raw.fallback);
+  const hooks = asRecord(raw.hooks);
+  const heartbeat = asRecord(raw.heartbeat);
+  const telegram = asRecord(raw.telegram);
+  const discord = asRecord(raw.discord);
+  const slack = asRecord(raw.slack);
+  const web = asRecord(raw.web);
+  const stt = asRecord(raw.stt);
+  const timeouts = asRecord(raw.timeouts);
+  const session = asRecord(raw.session);
+  const git = asRecord(raw.git);
+
+  const rawLevel = security.level;
   const level: SecurityLevel =
     typeof rawLevel === "string" && VALID_LEVELS.has(rawLevel as SecurityLevel)
       ? (rawLevel as SecurityLevel)
@@ -499,119 +525,121 @@ function parseSettings(
     model: typeof raw.model === "string" ? raw.model.trim() : "",
     api: typeof raw.api === "string" ? raw.api.trim() : "",
     fallback: {
-      model: typeof raw.fallback?.model === "string" ? raw.fallback.model.trim() : "",
-      api: typeof raw.fallback?.api === "string" ? raw.fallback.api.trim() : "",
+      model: typeof fallback.model === "string" ? fallback.model.trim() : "",
+      api: typeof fallback.api === "string" ? fallback.api.trim() : "",
     },
     agentic: parseAgenticConfig(raw.agentic),
     // `hooks` was previously omitted from the parsed result, so a configured
     // `settings.hooks.defaultPrRepo`/`defaultPrUser` was silently ignored (the
     // consumer fell back to the built-in default). Strict mode surfaced it.
     hooks: {
-      defaultPrRepo: Array.isArray(raw.hooks?.defaultPrRepo)
-        ? raw.hooks.defaultPrRepo.filter((x: unknown) => typeof x === "string")
+      defaultPrRepo: Array.isArray(hooks.defaultPrRepo)
+        ? hooks.defaultPrRepo.filter((x): x is string => typeof x === "string")
         : ["*/*"],
-      defaultPrUser: Array.isArray(raw.hooks?.defaultPrUser)
-        ? raw.hooks.defaultPrUser.filter((x: unknown) => typeof x === "string")
+      defaultPrUser: Array.isArray(hooks.defaultPrUser)
+        ? hooks.defaultPrUser.filter((x): x is string => typeof x === "string")
         : ["*"],
     },
     timezone: parsedTimezone,
     timezoneOffsetMinutes: parseTimezoneOffsetMinutes(raw.timezoneOffsetMinutes, parsedTimezone),
     heartbeat: {
-      enabled: raw.heartbeat?.enabled ?? false,
-      interval: raw.heartbeat?.interval ?? 15,
-      prompt: raw.heartbeat?.prompt ?? "",
-      excludeWindows: parseExcludeWindows(raw.heartbeat?.excludeWindows),
-      forwardToTelegram: raw.heartbeat?.forwardToTelegram ?? false,
+      enabled: heartbeat.enabled === true,
+      interval: typeof heartbeat.interval === "number" ? heartbeat.interval : 15,
+      prompt: typeof heartbeat.prompt === "string" ? heartbeat.prompt : "",
+      excludeWindows: parseExcludeWindows(heartbeat.excludeWindows),
+      forwardToTelegram: heartbeat.forwardToTelegram === true,
     },
     telegram: {
-      token: typeof raw.telegram?.token === "string" ? raw.telegram.token.trim() : "",
-      allowedUserIds: raw.telegram?.allowedUserIds ?? [],
-      listenChats: Array.isArray(raw.telegram?.listenChats) ? raw.telegram.listenChats.map(Number) : [],
-      receiveEnabled: raw.telegram?.receiveEnabled !== false,
-      dmIsolation: raw.telegram?.dmIsolation === "perUser" ? "perUser" : "shared",
-      ...(typeof raw.telegram?.whisperModel === "string" && raw.telegram.whisperModel.trim()
-        ? { whisperModel: raw.telegram.whisperModel.trim() }
+      token: typeof telegram.token === "string" ? telegram.token.trim() : "",
+      allowedUserIds: Array.isArray(telegram.allowedUserIds)
+        ? telegram.allowedUserIds.filter((x): x is number => typeof x === "number")
+        : [],
+      listenChats: Array.isArray(telegram.listenChats) ? telegram.listenChats.map((x) => Number(x)) : [],
+      receiveEnabled: telegram.receiveEnabled !== false,
+      dmIsolation: telegram.dmIsolation === "perUser" ? "perUser" : "shared",
+      ...(typeof telegram.whisperModel === "string" && telegram.whisperModel.trim()
+        ? { whisperModel: telegram.whisperModel.trim() }
         : {}),
     },
     discord: {
-      token: typeof raw.discord?.token === "string" ? raw.discord.token.trim() : "",
+      token: typeof discord.token === "string" ? discord.token.trim() : "",
       allowedUserIds: Array.isArray(discordUserIds) && discordUserIds.length > 0
         ? discordUserIds
-        : Array.isArray(raw.discord?.allowedUserIds)
-          ? raw.discord.allowedUserIds.map(String)
+        : Array.isArray(discord.allowedUserIds)
+          ? discord.allowedUserIds.map((x) => String(x))
           : [],
-      listenChannels: Array.isArray(raw.discord?.listenChannels)
-        ? raw.discord.listenChannels.map(String)
+      listenChannels: Array.isArray(discord.listenChannels)
+        ? discord.listenChannels.map((x) => String(x))
         : [],
-      listenGuilds: Array.isArray(raw.discord?.listenGuilds)
-        ? raw.discord.listenGuilds.map(String)
+      listenGuilds: Array.isArray(discord.listenGuilds)
+        ? discord.listenGuilds.map((x) => String(x))
         : [],
-      allowedGuilds: Array.isArray(raw.discord?.allowedGuilds)
-        ? raw.discord.allowedGuilds.map(String)
+      allowedGuilds: Array.isArray(discord.allowedGuilds)
+        ? discord.allowedGuilds.map((x) => String(x))
         : [],
-      channelNames: raw.discord?.channelNames && typeof raw.discord.channelNames === "object"
+      channelNames: discord.channelNames && typeof discord.channelNames === "object"
         ? Object.fromEntries(
-            Object.entries(raw.discord.channelNames as Record<string, unknown>).map(([k, v]) => [String(k), String(v)]),
+            Object.entries(discord.channelNames as Record<string, unknown>).map(([k, v]) => [String(k), String(v)]),
           )
         : undefined,
-      imageOutputRoots: Array.isArray(raw.discord?.imageOutputRoots)
-        ? raw.discord.imageOutputRoots.filter((r: unknown) => typeof r === "string" && isAbsolute(r))
+      imageOutputRoots: Array.isArray(discord.imageOutputRoots)
+        ? discord.imageOutputRoots.filter((r): r is string => typeof r === "string" && isAbsolute(r))
         : [],
-      streaming: raw.discord?.streaming === true,
+      streaming: discord.streaming === true,
     },
     slack: {
-      botToken: typeof raw.slack?.botToken === "string" ? raw.slack.botToken.trim() : "",
-      appToken: typeof raw.slack?.appToken === "string" ? raw.slack.appToken.trim() : "",
-      allowedUserIds: Array.isArray(raw.slack?.allowedUserIds) ? raw.slack.allowedUserIds.map(String) : [],
-      listenChannels: Array.isArray(raw.slack?.listenChannels) ? raw.slack.listenChannels.map(String) : [],
-      allowBots: Array.isArray(raw.slack?.allowBots) ? raw.slack.allowBots.map(String) : [],
-      allowBotIds: Array.isArray(raw.slack?.allowBotIds) ? raw.slack.allowBotIds.map(String) : [],
+      botToken: typeof slack.botToken === "string" ? slack.botToken.trim() : "",
+      appToken: typeof slack.appToken === "string" ? slack.appToken.trim() : "",
+      allowedUserIds: Array.isArray(slack.allowedUserIds) ? slack.allowedUserIds.map((x) => String(x)) : [],
+      listenChannels: Array.isArray(slack.listenChannels) ? slack.listenChannels.map((x) => String(x)) : [],
+      allowBots: Array.isArray(slack.allowBots) ? slack.allowBots.map((x) => String(x)) : [],
+      allowBotIds: Array.isArray(slack.allowBotIds) ? slack.allowBotIds.map((x) => String(x)) : [],
     },
     security: {
       level,
-      allowedTools: Array.isArray(raw.security?.allowedTools)
-        ? raw.security.allowedTools
+      allowedTools: Array.isArray(security.allowedTools)
+        ? security.allowedTools.filter((x): x is string => typeof x === "string")
         : [],
-      disallowedTools: Array.isArray(raw.security?.disallowedTools)
-        ? raw.security.disallowedTools
+      disallowedTools: Array.isArray(security.disallowedTools)
+        ? security.disallowedTools.filter((x): x is string => typeof x === "string")
         : [],
     },
     web: {
-      enabled: raw.web?.enabled ?? false,
-      host: raw.web?.host ?? "127.0.0.1",
-      port: Number.isFinite(raw.web?.port) ? Number(raw.web.port) : 4632,
+      enabled: web.enabled === true,
+      host: typeof web.host === "string" ? web.host : "127.0.0.1",
+      port: typeof web.port === "number" && Number.isFinite(web.port) ? web.port : 4632,
     },
     stt: {
-      baseUrl: typeof raw.stt?.baseUrl === "string" ? raw.stt.baseUrl.trim() : "",
-      model: typeof raw.stt?.model === "string" ? raw.stt.model.trim() : "",
-      ...(typeof raw.stt?.delegateTool === "string" && raw.stt.delegateTool.trim()
-        ? { delegateTool: raw.stt.delegateTool.trim() }
+      baseUrl: typeof stt.baseUrl === "string" ? stt.baseUrl.trim() : "",
+      model: typeof stt.model === "string" ? stt.model.trim() : "",
+      ...(typeof stt.delegateTool === "string" && stt.delegateTool.trim()
+        ? { delegateTool: stt.delegateTool.trim() }
         : {}),
     },
     sessionTimeoutMs: typeof raw.sessionTimeoutMs === "number" && raw.sessionTimeoutMs > 0
       ? raw.sessionTimeoutMs
       : DEFAULT_SESSION_TIMEOUT_MS,
     timeouts: {
-      telegram: Number.isFinite(raw.timeouts?.telegram) && Number(raw.timeouts.telegram) > 0 ? Number(raw.timeouts.telegram) : 5,
-      heartbeat: Number.isFinite(raw.timeouts?.heartbeat) && Number(raw.timeouts.heartbeat) > 0 ? Number(raw.timeouts.heartbeat) : 15,
-      job: Number.isFinite(raw.timeouts?.job) && Number(raw.timeouts.job) > 0 ? Number(raw.timeouts.job) : 30,
-      default: Number.isFinite(raw.timeouts?.default) && Number(raw.timeouts.default) > 0 ? Number(raw.timeouts.default) : 5,
+      telegram: Number.isFinite(timeouts.telegram) && Number(timeouts.telegram) > 0 ? Number(timeouts.telegram) : 5,
+      heartbeat: Number.isFinite(timeouts.heartbeat) && Number(timeouts.heartbeat) > 0 ? Number(timeouts.heartbeat) : 15,
+      job: Number.isFinite(timeouts.job) && Number(timeouts.job) > 0 ? Number(timeouts.job) : 30,
+      default: Number.isFinite(timeouts.default) && Number(timeouts.default) > 0 ? Number(timeouts.default) : 5,
     },
     watchdog: parseWatchdogConfig(raw.watchdog),
     plugins: parsePlugins(raw.plugins),
     session: {
-      autoRotate: raw.session?.autoRotate ?? false,
-      maxMessages: Number.isFinite(raw.session?.maxMessages) ? Number(raw.session.maxMessages) : 50,
-      maxAgeHours: Number.isFinite(raw.session?.maxAgeHours) ? Number(raw.session.maxAgeHours) : 24,
-      summaryPath: typeof raw.session?.summaryPath === "string" ? raw.session.summaryPath.trim() : "",
+      autoRotate: session.autoRotate === true,
+      maxMessages: Number.isFinite(session.maxMessages) ? Number(session.maxMessages) : 50,
+      maxAgeHours: Number.isFinite(session.maxAgeHours) ? Number(session.maxAgeHours) : 24,
+      summaryPath: typeof session.summaryPath === "string" ? session.summaryPath.trim() : "",
     },
     apiToken: typeof raw.apiToken === "string" && raw.apiToken.trim() ? raw.apiToken.trim() : undefined,
     ...(typeof raw.jobsDir === "string" && raw.jobsDir.trim() ? { jobsDir: raw.jobsDir.trim() } : {}),
     jobsRepo: parseJobsRepoConfig(raw.jobsRepo),
     jobsRepos: parseJobsRepos(raw),
     git: {
-      name: typeof raw.git?.name === "string" ? raw.git.name.trim() : "",
-      email: typeof raw.git?.email === "string" ? raw.git.email.trim() : "",
+      name: typeof git.name === "string" ? git.name.trim() : "",
+      email: typeof git.email === "string" ? git.email.trim() : "",
     },
   };
 }
@@ -628,15 +656,16 @@ function parseExcludeWindows(value: unknown): HeartbeatExcludeWindow[] {
   const out: HeartbeatExcludeWindow[] = [];
   for (const entry of value) {
     if (!entry || typeof entry !== "object") continue;
-    const start = typeof (entry).start === "string" ? (entry).start.trim() : "";
-    const end = typeof (entry).end === "string" ? (entry).end.trim() : "";
+    const e = asRecord(entry);
+    const start = typeof e.start === "string" ? e.start.trim() : "";
+    const end = typeof e.end === "string" ? e.end.trim() : "";
     if (!TIME_RE.test(start) || !TIME_RE.test(end)) continue;
 
-    const rawDays = Array.isArray((entry).days) ? (entry).days : [];
+    const rawDays = Array.isArray(e.days) ? e.days : [];
     const parsedDays = rawDays
-      .map((d: unknown) => Number(d))
-      .filter((d: number) => Number.isInteger(d) && d >= 0 && d <= 6);
-    const uniqueDays = Array.from(new Set<number>(parsedDays)).sort((a: number, b: number) => a - b);
+      .map((d) => Number(d))
+      .filter((d) => Number.isInteger(d) && d >= 0 && d <= 6);
+    const uniqueDays = Array.from(new Set<number>(parsedDays)).sort((a, b) => a - b);
 
     out.push({
       start,
@@ -682,7 +711,7 @@ function validateSecurityLevel(settings: Settings): Settings {
 export async function loadSettings(): Promise<Settings> {
   if (cached) return cached;
   const rawText = await Bun.file(SETTINGS_FILE).text();
-  const raw = JSON.parse(rawText);
+  const raw = JSON.parse(rawText) as Record<string, unknown>;
   cached = validateSecurityLevel(applyEnvOverrides(parseSettings(raw, extractDiscordUserIds(rawText))));
   return cached;
 }
@@ -690,7 +719,7 @@ export async function loadSettings(): Promise<Settings> {
 /** Re-read settings from disk, bypassing cache. */
 export async function reloadSettings(): Promise<Settings> {
   const rawText = await Bun.file(SETTINGS_FILE).text();
-  const raw = JSON.parse(rawText);
+  const raw = JSON.parse(rawText) as Record<string, unknown>;
   cached = validateSecurityLevel(applyEnvOverrides(parseSettings(raw, extractDiscordUserIds(rawText))));
   return cached;
 }
