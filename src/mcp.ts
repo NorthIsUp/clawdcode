@@ -19,7 +19,6 @@
 import { join } from "path";
 import { execSync } from "child_process";
 import { existsSync } from "fs";
-import { homedir } from "os";
 
 // ---------------------------------------------------------------------------
 // Resolve the claude executable (mirrors haiku.ts)

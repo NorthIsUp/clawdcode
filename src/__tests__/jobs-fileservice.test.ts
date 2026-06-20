@@ -1,6 +1,6 @@
 import { test, expect, beforeEach, afterEach } from "bun:test";
 import { mkdtemp, mkdir, writeFile, symlink, rm, readFile } from "fs/promises";
-import { join, sep } from "path";
+import { join } from "path";
 import { tmpdir } from "os";
 import { isSafeJobPath, listJobFiles, readJobFile, writeJobFile, createJobFile, deleteJobFile } from "../ui/services/jobs";
 

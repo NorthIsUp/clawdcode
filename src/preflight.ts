@@ -12,7 +12,6 @@ import {
   copyFileSync,
   rmSync,
   renameSync,
-  type Dirent,
 } from "fs";
 import { join, dirname } from "path";
 import { homedir, tmpdir } from "os";

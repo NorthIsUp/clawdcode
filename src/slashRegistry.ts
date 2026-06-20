@@ -1,6 +1,6 @@
 import { existsSync } from "fs";
 import { readdir, readFile } from "fs/promises";
-import { join, basename } from "path";
+import { join } from "path";
 import { homedir } from "os";
 import { discoverPlugins } from "./jobsRepoPlugins";
 
