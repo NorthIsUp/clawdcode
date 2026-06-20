@@ -44,6 +44,12 @@ export default tseslint.config(
       },
     },
     rules: {
+      // Biome already enforces these general (non-type-aware) rules — it has
+      // `noEmptyBlockStatements: error` and `noExplicitAny: error`. eslint's job
+      // here is the TYPE-AWARE rules biome can't do, so don't double-enforce.
+      "no-empty": "off",
+      "@typescript-eslint/no-empty-function": "off",
+      "@typescript-eslint/no-explicit-any": "off",
       // A leading underscore marks a deliberately-unused binding.
       "@typescript-eslint/no-unused-vars": [
         "error",
