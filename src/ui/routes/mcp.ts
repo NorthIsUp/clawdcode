@@ -1,13 +1,14 @@
-import { addMcpServer, listMcpServers, removeMcpServer } from "../../mcp";
+import { getRuntime } from "../../runtime/select";
 import { json } from "../http";
 import type { RouteHandler } from "./types";
 
 /** GET /api/mcp — user + project MCP servers. */
 export const mcpList: RouteHandler = async () => {
   try {
+    const mcp = getRuntime().mcp;
     const [userServers, projectServers] = await Promise.all([
-      listMcpServers("user"),
-      listMcpServers("project"),
+      mcp.list("user"),
+      mcp.list("project"),
     ]);
     return json({ user: userServers, project: projectServers });
   } catch (err) {
@@ -34,7 +35,7 @@ export const mcpAdd: RouteHandler = async ({ req }) => {
       return json({ error: "target is required" }, 400);
     }
 
-    await addMcpServer({ name, scope, transport, target, headers: rawHeaders });
+    await getRuntime().mcp.add({ name, scope, transport, target, headers: rawHeaders });
     return json({ ok: true });
   } catch (err) {
     return json({ error: String(err instanceof Error ? err.message : err) }, 400);
@@ -49,7 +50,7 @@ export const mcpDelete: RouteHandler = async ({ url }) => {
     if (!name) {
       return json({ error: "name is required" }, 400);
     }
-    await removeMcpServer(name, scope);
+    await getRuntime().mcp.remove(name, scope);
     return json({ ok: true });
   } catch (err) {
     return json({ error: String(err instanceof Error ? err.message : err) }, 400);

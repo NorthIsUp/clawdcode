@@ -110,6 +110,7 @@ export function getAgentsDir(): string {
 }
 
 const DEFAULT_SETTINGS: Settings = {
+  runtime: "claude",
   model: "",
   api: "",
   fallback: {
@@ -250,6 +251,9 @@ export interface TimeoutsConfig {
 }
 
 export interface Settings {
+  /** Which coding-agent CLI the daemon shells out to. Default "claude".
+   *  Override via settings.json or ERRANDD_RUNTIME. */
+  runtime: "claude" | "pi";
   model: string;
   api: string;
   fallback: ModelConfig;
@@ -522,6 +526,7 @@ function parseSettings(
   const parsedTimezone = parseTimezone(raw.timezone);
 
   return {
+    runtime: raw.runtime === "pi" ? "pi" : "claude",
     model: typeof raw.model === "string" ? raw.model.trim() : "",
     api: typeof raw.api === "string" ? raw.api.trim() : "",
     fallback: {

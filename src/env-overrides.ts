@@ -11,6 +11,7 @@ interface EnvOverride {
 }
 
 export const ENV_OVERRIDES: EnvOverride[] = [
+  { env: "ERRANDD_RUNTIME", path: ["runtime"], kind: "string" },
   { env: "ERRANDD_MODEL", path: ["model"], kind: "string" },
   { env: "ERRANDD_API", path: ["api"], kind: "string" },
   { env: "ERRANDD_FALLBACK_MODEL", path: ["fallback", "model"], kind: "string" },

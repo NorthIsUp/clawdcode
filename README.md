@@ -67,6 +67,27 @@ See `.env.example` for the full variable list with defaults and descriptions.
 
 **Jobs repo:** set `jobsRepo.url` (or `ERRANDD_JOBSREPO_URL`) to a git URL and Errandd will clone it on start and pull it on the configured interval (`jobsRepo.intervalSeconds` / `ERRANDD_JOBSREPO_INTERVAL`, default 300 s). That repo becomes the jobs directory — a clean way to manage your task queue in version control.
 
+## Pluggable runtimes
+
+Errandd no longer hard-wires itself to a single coding-agent CLI. The exec runtime — the process that actually runs your prompts — sits behind one interface and is chosen once at startup:
+
+- **Claude Code** (`claude`) — the default, and byte-identical to how Errandd has always run. Full session resume, context-token reporting (which drives size-based auto-compaction), jobs-repo plugins/skills, and MCP server management all work as before.
+- **Pi** (`pi`) — an alternate coding-agent CLI, **experimental**. Pi runs prompts statelessly (no `--resume`), so per-run session recovery, auto-compaction, plugin/skill loading, and MCP registration are turned **off** for that runtime; the daemon degrades gracefully instead of emitting flags Pi doesn't understand.
+
+> **Pi support is provisional.** Its argv flags and stream format are modeled from Pi's documented message model, not yet validated against a released `pi` binary — the stream parser has its own unit check, but the CLI surface may need adjusting once the real executable is available. Point `PI_EXECUTABLE` at your binary to try it. Claude Code is unaffected either way.
+
+Select the runtime with either the `runtime` field in `.claude/errandd/settings.json` or the `ERRANDD_RUNTIME` env var (env wins, like every other setting). Valid values are `claude` (default) and `pi`; an unknown value logs a warning and falls back to Claude Code.
+
+```json
+{ "runtime": "claude" }
+```
+
+```bash
+ERRANDD_RUNTIME=pi   # opt into the Pi runtime
+```
+
+Each runtime advertises what it can do through capability flags — `supportsResume`, `reportsContextTokens`, `supportsPlugins`, `supportsMcpCli` — and the runner consults those instead of assuming Claude semantics, so a feature a runtime can't back simply switches off rather than breaks. Claude Code reports all four as `true`; Pi reports all four as `false`. The Pi binary is resolved as `pi` on your `PATH`, overridable via the `PI_EXECUTABLE` env var.
+
 ## Run with Docker
 
 ```bash
@@ -217,10 +238,15 @@ The web dashboard is a React + TypeScript app (`web/`) built with Bun's built-in
 ## Screenshots
 
 ### Claude Code Folder-Based Status Bar
-![Claude Code folder-based status bar](images/bar.png)
+<!-- SCREENSHOT: statusbar -->
+_Caption: The folder-scoped Errandd status bar inside a Claude Code session._
 
 ### Cool UI to Manage and Check Your Errandd
-![Cool UI to manage and check your Errandd](images/dashboard.png)
+<!-- SCREENSHOT: dashboard home -->
+_Caption: The Errandd web dashboard — jobs, runs, and live logs at a glance._
+
+<!-- SCREENSHOT: dashboard job detail -->
+_Caption: A single run's detail view — streamed output, tool calls, and session info._
 
 ## Contributors
 

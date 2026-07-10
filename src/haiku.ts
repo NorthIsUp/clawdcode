@@ -7,62 +7,11 @@
  * Intentionally isolated from runner.ts's session/threadId machinery — these
  * are stateless one-shots, not persistent daemon sessions.
  */
-import { join } from "path";
-import { execSync } from "child_process";
-import { existsSync } from "fs";
-
-// ---------------------------------------------------------------------------
-// Reuse the same claude executable resolution logic as runner.ts
-// ---------------------------------------------------------------------------
-
-function resolveClaudeExecutable(): string {
-  if (process.platform !== "win32") return "claude";
-  try {
-    const out = execSync("where claude", { encoding: "utf8" });
-    const cmdPath = out
-      .split(/\r?\n/)
-      .map((s) => s.trim())
-      .find((s) => s.toLowerCase().endsWith(".cmd"));
-    if (!cmdPath) return "claude";
-    const exePath = join(
-      import.meta.dir,
-      "..",
-      "node_modules",
-      "@anthropic-ai",
-      "claude-code",
-      "bin",
-      "claude.exe"
-    );
-    return existsSync(exePath) ? exePath : "claude";
-  } catch {
-    return "claude";
-  }
-}
-
-const CLAUDE_EXECUTABLE = resolveClaudeExecutable();
+import { getRuntime } from "./runtime/select";
 
 /**
- * Build a sanitized env for spawning a one-shot `claude -p` subprocess.
- * Mirrors cleanSpawnEnv() from runner.ts — strips parent-session env vars
- * that break detached child auth.
- */
-function cleanSpawnEnv(): Record<string, string> {
-  const stripped = new Set([
-    "CLAUDECODE",
-    "CLAUDE_CODE_OAUTH_TOKEN",
-    "CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST",
-  ]);
-  const out: Record<string, string> = {};
-  for (const [key, value] of Object.entries(process.env)) {
-    if (stripped.has(key)) continue;
-    if (typeof value === "string") out[key] = value;
-  }
-  return out;
-}
-
-/**
- * Spawn a one-shot headless `claude -p` with the haiku model and return
- * its stdout text (trimmed).
+ * Run a one-shot headless completion with the haiku model and return its
+ * stdout text (trimmed).
  *
  * @throws if the process exits non-zero or the timeout fires.
  */
@@ -74,7 +23,7 @@ export async function runHaikuOneShot(
 }
 
 /**
- * Spawn a one-shot headless `claude -p` with an arbitrary model and return its
+ * Run a one-shot headless completion with an arbitrary model and return its
  * stdout text (trimmed). No tools, no session — a pure text completion. Used by
  * the routine `filter_prompt` pre-check (default model `sonnet`).
  *
@@ -85,30 +34,16 @@ export async function runModelOneShot(
   model: string,
   timeoutMs = 30_000
 ): Promise<string> {
-  const proc = Bun.spawn(
-    [CLAUDE_EXECUTABLE, "-p", prompt, "--model", model, "--output-format", "text"],
-    {
-      env: cleanSpawnEnv(),
-      stdout: "pipe",
-      stderr: "pipe",
-    }
-  );
+  const { stdout, exitCode, timedOut } = await getRuntime().runOneShot({
+    prompt,
+    model,
+    outputMode: "text",
+    timeoutMs,
+  });
 
-  const timer = new Promise<never>((_, reject) =>
-    setTimeout(() => {
-      try { proc.kill(); } catch {}
-      reject(new Error(`runHaikuOneShot timed out after ${timeoutMs}ms`));
-    }, timeoutMs)
-  );
-
-  const [stdout, exitCode] = await Promise.race([
-    Promise.all([
-      new Response(proc.stdout).text(),
-      proc.exited,
-    ]),
-    timer,
-  ]);
-
+  if (timedOut) {
+    throw new Error(`runHaikuOneShot timed out after ${timeoutMs}ms`);
+  }
   if (exitCode !== 0) {
     throw new Error(`claude -p exited with code ${exitCode}`);
   }
