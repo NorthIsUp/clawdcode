@@ -111,7 +111,16 @@ Start the heartbeat daemon for this project. Follow these steps exactly:
 
    Update `.claude/errandd/settings.json` with their answers.
 
-6. **Launch/start action**:
+6. **Install the daemon's dependencies** (one-time; safe to re-run — the daemon
+   and its `node_modules` live under `${CLAUDE_PLUGIN_ROOT}/errandd/`, not the
+   plugin root):
+   ```bash
+   cd "${CLAUDE_PLUGIN_ROOT}/errandd" && bun install --frozen-lockfile
+   ```
+   Use the description "Installing Errandd dependencies". Wait for it to finish
+   before launching.
+
+7. **Launch/start action**:
    ```bash
    mkdir -p .claude/errandd/logs && nohup bun run ${CLAUDE_PLUGIN_ROOT}/errandd/app/index.ts start --web > .claude/errandd/logs/daemon.log 2>&1 & echo $!
    ```
@@ -123,9 +132,9 @@ Start the heartbeat daemon for this project. Follow these steps exactly:
      - macOS: `open http://<HOST>:<PORT>`
      - If open command fails, print the URL clearly so user can open it manually.
 
-7. **Capture session ID**: Read `.claude/errandd/session.json` and extract the `sessionId` field. This is the shared Claude session used by the daemon for heartbeat, jobs, Telegram, and Discord.
+8. **Capture session ID**: Read `.claude/errandd/session.json` and extract the `sessionId` field. This is the shared Claude session used by the daemon for heartbeat, jobs, Telegram, and Discord.
 
-8. **Report**: Print the ASCII art below then show the PID, session, status info, Telegram bot next step, and the Web UI URL.
+9. **Report**: Print the ASCII art below then show the PID, session, status info, Telegram bot next step, and the Web UI URL.
 
 CRITICAL: Output the ASCII art block below EXACTLY as-is inside a markdown code block. Do NOT re-indent, re-align, or adjust ANY whitespace. Copy every character verbatim. Only replace `<PID>` and `<WORKING_DIR>` with actual values.
 
