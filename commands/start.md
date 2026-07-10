@@ -113,7 +113,7 @@ Start the heartbeat daemon for this project. Follow these steps exactly:
 
 6. **Launch/start action**:
    ```bash
-   mkdir -p .claude/errandd/logs && nohup bun run ${CLAUDE_PLUGIN_ROOT}/src/index.ts start --web > .claude/errandd/logs/daemon.log 2>&1 & echo $!
+   mkdir -p .claude/errandd/logs && nohup bun run ${CLAUDE_PLUGIN_ROOT}/errandd/app/index.ts start --web > .claude/errandd/logs/daemon.log 2>&1 & echo $!
    ```
    Use the description "Starting Errandd server" for this command.
    Wait 1 second, then check `cat .claude/errandd/logs/daemon.log`. If it contains "Aborted: daemon already running", tell the user and exit.

@@ -11,5 +11,5 @@
     "esModuleInterop": true,
     "skipLibCheck": true
   },
-  "include": ["src/**/*.ts", "shared/**/*.ts", "scripts/**/*.ts", "tests/**/*.ts"]
+  "include": ["app/**/*.ts", "shared/**/*.ts", "scripts/**/*.ts", "tests/**/*.ts"]
 }

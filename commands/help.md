@@ -18,16 +18,16 @@ Display this help information to the user:
 - `/heartbeat:help` — Show this help message
 
 **Start command options (CLI):**
-- `bun run src/index.ts start` — normal daemon mode
-- `bun run src/index.ts start --prompt "text"` — one-shot prompt, no daemon loop
-- `bun run src/index.ts start --trigger` — start daemon and run startup trigger once
-- `bun run src/index.ts start --prompt "text" --trigger` — start daemon and run startup trigger with custom prompt
+- `bun run errandd/app/index.ts start` — normal daemon mode
+- `bun run errandd/app/index.ts start --prompt "text"` — one-shot prompt, no daemon loop
+- `bun run errandd/app/index.ts start --trigger` — start daemon and run startup trigger once
+- `bun run errandd/app/index.ts start --prompt "text" --trigger` — start daemon and run startup trigger with custom prompt
 - Add `--telegram` with `--trigger` to forward startup trigger output to configured Telegram users
 - Add `--web` (optional `--web-port 4632`) to start a local dashboard with the daemon
 
 **Send command options (CLI):**
-- `bun run src/index.ts send "text"` — send to active daemon session
-- `bun run src/index.ts send "text" --telegram` — send and forward output to Telegram
+- `bun run errandd/app/index.ts send "text"` — send to active daemon session
+- `bun run errandd/app/index.ts send "text" --telegram` — send and forward output to Telegram
 - If daemon is already running, use `send`; `start` will abort.
 
 **How it works:**

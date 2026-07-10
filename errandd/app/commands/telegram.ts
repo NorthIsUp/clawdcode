@@ -1745,7 +1745,7 @@ export function stopPolling(): void {
   isPolling = false;
 }
 
-/** Standalone entry point (bun run src/index.ts telegram) */
+/** Standalone entry point (bun run app/index.ts telegram) */
 export async function telegram() {
   await loadSettings();
   await ensureProjectClaudeMd();

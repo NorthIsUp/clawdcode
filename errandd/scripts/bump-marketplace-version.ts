@@ -1,6 +1,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 
-const PLUGIN_JSON = ".claude-plugin/plugin.json";
+const MARKETPLACE_JSON = "../.claude-plugin/marketplace.json";
 const VALID_BUMP_TYPES = new Set(["patch", "minor", "major"]);
 
 type BumpType = "patch" | "minor" | "major";
@@ -8,7 +8,7 @@ type BumpType = "patch" | "minor" | "major";
 function bumpVersion(version: string, bumpType: BumpType): string {
   const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(version.trim());
   if (!match) {
-    throw new Error(`Unsupported plugin version format: ${version}`);
+    throw new Error(`Unsupported marketplace version format: ${version}`);
   }
 
   const [, major, minor, patch] = match;
@@ -41,18 +41,23 @@ async function main(): Promise<void> {
   }
 
   const bumpType = rawBumpType as BumpType;
-  const raw = await readFile(PLUGIN_JSON, "utf8");
-  const plugin = JSON.parse(raw) as { version?: string };
+  const raw = await readFile(MARKETPLACE_JSON, "utf8");
+  const marketplace = JSON.parse(raw) as { plugins?: { name?: string; version?: string }[] };
 
-  if (typeof plugin.version !== "string" || plugin.version.trim() === "") {
-    throw new Error(`${PLUGIN_JSON} is missing a valid version string.`);
+  if (!Array.isArray(marketplace.plugins) || marketplace.plugins.length === 0) {
+    throw new Error(`${MARKETPLACE_JSON} does not contain any plugins.`);
+  }
+
+  const plugin = marketplace.plugins.find((entry) => entry.name === "errandd") ?? marketplace.plugins[0];
+  if (!plugin || typeof plugin.version !== "string" || plugin.version.trim() === "") {
+    throw new Error(`${MARKETPLACE_JSON} is missing a valid plugin version string.`);
   }
 
   const nextVersion = bumpVersion(plugin.version, bumpType);
   plugin.version = nextVersion;
 
-  await writeFile(PLUGIN_JSON, `${JSON.stringify(plugin, null, 2)}\n`, "utf8");
-  console.log(`${PLUGIN_JSON}: ${nextVersion}`);
+  await writeFile(MARKETPLACE_JSON, `${JSON.stringify(marketplace, null, 2)}\n`, "utf8");
+  console.log(`${MARKETPLACE_JSON}: ${nextVersion}`);
 }
 
 main().catch((error) => {

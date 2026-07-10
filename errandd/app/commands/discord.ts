@@ -1811,7 +1811,7 @@ export function startGateway(debug = false): void {
   });
 }
 
-/** Standalone entry point (bun run src/index.ts discord) */
+/** Standalone entry point (bun run app/index.ts discord) */
 export async function discord() {
   await loadSettings();
   await ensureProjectClaudeMd();

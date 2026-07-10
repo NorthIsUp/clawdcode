@@ -33,7 +33,7 @@ export default tseslint.config(
     // (no-floating-promises, no-misused-promises, no-unsafe-*, await-thenable, …)
     // are exactly what biome can't provide, and the async-heavy backend is where
     // they earn their keep most.
-    files: ["src/**/*.ts", "shared/**/*.ts", "scripts/**/*.ts", "tests/**/*.ts", "web/**/*.{ts,tsx}"],
+    files: ["app/**/*.ts", "shared/**/*.ts", "scripts/**/*.ts", "tests/**/*.ts", "web/**/*.{ts,tsx}"],
     extends: [
       js.configs.recommended,
       tseslint.configs.recommendedTypeChecked,

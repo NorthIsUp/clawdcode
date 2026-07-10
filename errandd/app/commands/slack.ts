@@ -1748,7 +1748,7 @@ export function startSlack(debug = false): void {
 process.on("SIGTERM", () => stopSlack());
 process.on("SIGINT", () => stopSlack());
 
-/** Standalone entry point (bun run src/index.ts slack) */
+/** Standalone entry point (bun run app/index.ts slack) */
 export async function slack(): Promise<void> {
   slackDebug = true; // Enable debug for standalone mode
   await loadSettings();

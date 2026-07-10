@@ -102,7 +102,7 @@ VOLUME ["/app/.claude"]
 HEALTHCHECK --start-period=90s --interval=10s --timeout=5s --retries=3 \
   CMD bun -e "fetch('http://127.0.0.1:4632/readyz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
-ENTRYPOINT ["bun", "run", "src/index.ts"]
+ENTRYPOINT ["bun", "run", "app/index.ts"]
 # `--web-host 0.0.0.0` is required so port forwarding works from outside the
 # container — the daemon's default bind is loopback.
 CMD ["start", "--web", "--web-host", "0.0.0.0"]

@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { isAllowed } from "../src/allowlist";
+import { isAllowed } from "../app/allowlist";
 
 test("empty allowlist denies everything", () => {
   expect(isAllowed(123, [])).toBe(false);

@@ -8,7 +8,7 @@
   "files": {
     "includes": [
       "web/**/*.{ts,tsx,js,jsx,css,json}",
-      "src/**/*.ts",
+      "app/**/*.ts",
       "!web/v3/components/prompt-kit/**",
       "!web/v3/components/ui/**"
     ]

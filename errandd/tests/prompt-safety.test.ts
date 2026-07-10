@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { wrapUntrusted } from "../src/prompt-safety";
+import { wrapUntrusted } from "../app/prompt-safety";
 
 test("wraps content in tagged block", () => {
   const out = wrapUntrusted("user-message", "hello");

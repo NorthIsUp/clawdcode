@@ -23,6 +23,11 @@ jobs:
     permissions:
       contents: read
 
+    # All implementation + config lives in errandd/ (root is plugin-dist only).
+    defaults:
+      run:
+        working-directory: errandd
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

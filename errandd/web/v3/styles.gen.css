@@ -312,61 +312,6 @@
       }
     }
   }
-  .modal {
-    @layer daisyui.l1.l2.l3 {
-      pointer-events: none;
-      visibility: hidden;
-      position: fixed;
-      inset: calc(0.25rem * 0);
-      margin: calc(0.25rem * 0);
-      display: grid;
-      height: 100%;
-      max-height: none;
-      width: 100%;
-      max-width: none;
-      align-items: center;
-      justify-items: center;
-      background-color: transparent;
-      padding: calc(0.25rem * 0);
-      color: inherit;
-      transition: visibility 0.3s allow-discrete, background-color 0.3s ease-out, opacity 0.1s ease-out;
-      overflow: clip;
-      overscroll-behavior: contain;
-      z-index: 999;
-      scrollbar-gutter: auto;
-      &::backdrop {
-        display: none;
-      }
-    }
-    @layer daisyui.l1.l2 {
-      &.modal-open, &[open], &:target, .modal-toggle:checked + & {
-        pointer-events: auto;
-        visibility: visible;
-        opacity: 100%;
-        transition: visibility 0s allow-discrete, background-color 0.3s ease-out, opacity 0.1s ease-out;
-        background-color: oklch(0% 0 0/ 0.4);
-        .modal-box {
-          translate: 0 0;
-          scale: 1;
-          opacity: 1;
-        }
-        :root:has(&) {
-          --page-has-backdrop: 1;
-          --page-overflow: hidden;
-          --page-scroll-bg: var(--page-scroll-bg-on);
-          --page-scroll-gutter: stable;
-          --page-scroll-transition: var(--page-scroll-transition-on);
-          animation: set-page-has-scroll forwards;
-          animation-timeline: scroll();
-        }
-      }
-      @starting-style {
-        &.modal-open, &[open], &:target, .modal-toggle:checked + & {
-          opacity: 0%;
-        }
-      }
-    }
-  }
   .tooltip {
     @layer daisyui.l1.l2.l3 {
       position: relative;
@@ -2860,6 +2805,9 @@
       }
     }
   }
+  .isolate {
+    isolation: isolate;
+  }
   .stack {
     @layer daisyui.l1.l2.l3 {
       display: inline-grid;
@@ -2986,19 +2934,6 @@
   }
   .z-50 {
     z-index: 50;
-  }
-  .hero {
-    @layer daisyui.l1.l2.l3 {
-      display: grid;
-      width: 100%;
-      place-items: center;
-      background-size: cover;
-      background-position: center;
-      & > * {
-        grid-column-start: 1;
-        grid-row-start: 1;
-      }
-    }
   }
   .stat-value {
     @layer daisyui.l1.l2.l3 {
@@ -3507,16 +3442,6 @@
       }
     }
   }
-  .fieldset {
-    @layer daisyui.l1.l2.l3 {
-      display: grid;
-      gap: calc(0.25rem * 1.5);
-      padding-block: calc(0.25rem * 1);
-      font-size: 0.75rem;
-      grid-template-columns: 1fr;
-      grid-auto-rows: max-content;
-    }
-  }
   .chat {
     @layer daisyui.l1.l2.l3 {
       display: grid;
@@ -3620,9 +3545,6 @@
   }
   .inline-flex {
     display: inline-flex;
-  }
-  .list-item {
-    display: list-item;
   }
   .table {
     display: table;
@@ -4528,14 +4450,6 @@
       }
     }
   }
-  .glass {
-    border: none;
-    backdrop-filter: blur(var(--glass-blur, 40px));
-    background-color: #0000;
-    background-image: linear-gradient( 135deg, oklch(100% 0 0 / var(--glass-opacity, 30%)) 0%, oklch(0% 0 0 / 0%) 100% ), linear-gradient( var(--glass-reflect-degree, 100deg), oklch(100% 0 0 / var(--glass-reflect-opacity, 5%)) 25%, oklch(0% 0 0 / 0%) 25% );
-    box-shadow: 0 0 0 1px oklch(100% 0 0 / var(--glass-border-opacity, 20%)) inset, 0 0 0 2px oklch(0% 0 0 / 5%);
-    text-shadow: 0 1px oklch(0% 0 0 / var(--glass-text-shadow-opacity, 5%));
-  }
   .chat-bubble-primary {
     @layer daisyui.l1.l2 {
       background-color: var(--color-primary);
@@ -5321,6 +5235,10 @@
   .italic {
     font-style: italic;
   }
+  .ordinal {
+    --tw-ordinal: ordinal;
+    font-variant-numeric: var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,);
+  }
   .tabular-nums {
     --tw-numeric-spacing: tabular-nums;
     font-variant-numeric: var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,);
@@ -5520,10 +5438,6 @@
     --tw-duration: 150ms;
     transition-duration: 150ms;
   }
-  .ease-in-out {
-    --tw-ease: var(--ease-in-out);
-    transition-timing-function: var(--ease-in-out);
-  }
   .ease-out {
     --tw-ease: var(--ease-out);
     transition-timing-function: var(--ease-out);
@@ -5654,12 +5568,6 @@
   }
   .\[react\:thumbsup\] {
     react: thumbsup;
-  }
-  .\[react\:🔥\] {
-    react: 🔥;
-  }
-  .\[skip\:\*\] {
-    skip: *;
   }
   .\[skip\:fyi\] {
     skip: fyi;

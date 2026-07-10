@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { checkToken } from "../src/ui/auth";
+import { checkToken } from "../app/ui/auth";
 
 function makeReq(headers: Record<string, string>, urlSuffix = "") {
   return new Request("http://127.0.0.1:4632/api/state" + urlSuffix, { headers });
