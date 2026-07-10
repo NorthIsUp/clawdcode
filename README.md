@@ -1,38 +1,33 @@
-<p align="center">
-  <img src="images/clawdcode-banner.svg" alt="ClawdCode Banner" />
-</p>
-<p align="center">
-  <img src="images/clawdcode-wordmark.png" alt="ClawdCode Wordmark" />
-</p>
+<h1 align="center">errandd</h1>
 
 <p align="center">
   <img src="https://awesome.re/badge.svg" alt="Awesome" />
-  <a href="https://github.com/moazbuilds/ClawdCode/stargazers">
-    <img src="https://img.shields.io/github/stars/moazbuilds/ClawdCode?style=flat-square&color=f59e0b" alt="GitHub Stars" />
+  <a href="https://github.com/moazbuilds/Errandd/stargazers">
+    <img src="https://img.shields.io/github/stars/moazbuilds/Errandd?style=flat-square&color=f59e0b" alt="GitHub Stars" />
   </a>
-  <a href="https://github.com/moazbuilds/ClawdCode">
+  <a href="https://github.com/moazbuilds/Errandd">
     <img src="https://img.shields.io/static/v1?label=downloads&message=~15k%20every%2014%20days&color=2da44e&style=flat-square" alt="Downloads ~15k every 14 days" />
   </a>
-  <a href="https://github.com/moazbuilds/ClawdCode/commits/master">
-    <img src="https://img.shields.io/github/last-commit/moazbuilds/ClawdCode?style=flat-square&color=0ea5e9" alt="Last Commit" />
+  <a href="https://github.com/moazbuilds/Errandd/commits/master">
+    <img src="https://img.shields.io/github/last-commit/moazbuilds/Errandd?style=flat-square&color=0ea5e9" alt="Last Commit" />
   </a>
-  <a href="https://github.com/moazbuilds/ClawdCode/graphs/contributors">
-    <img src="https://img.shields.io/github/contributors/moazbuilds/ClawdCode?style=flat-square&color=a855f7" alt="Contributors" />
+  <a href="https://github.com/moazbuilds/Errandd/graphs/contributors">
+    <img src="https://img.shields.io/github/contributors/moazbuilds/Errandd?style=flat-square&color=a855f7" alt="Contributors" />
   </a>
   <a href="https://x.com/moazbuilds">
     <img src="https://img.shields.io/badge/X-%40moazbuilds-000000?style=flat-square&logo=x" alt="X @moazbuilds" />
   </a>
 </p>
 
-<p align="center"><b>A lightweight, open-source OpenClaw version built into your Claude Code.</b></p>
+<p align="center"><b>A lightweight, self-hosted daemon that turns your coding-agent CLI into a personal assistant that never sleeps.</b></p>
 
-ClawdCode turns your Claude Code into a personal assistant that never sleeps. It runs as a background daemon, executing tasks on a schedule, responding to messages on Telegram, Discord, and Slack, transcribing voice commands, and integrating with any service you need.
+Errandd runs a coding-agent CLI — **Claude Code** by default, or [**Pi**](https://pi.dev) — as a background daemon: it executes tasks on a schedule, relays chat on Telegram, Discord, and Slack, transcribes voice messages, and ships a real-time web dashboard. It's the open-source alternative to OpenClaw that's built into the coding-agent subscription you already pay for. _(Formerly known as clawdcode.)_
 
-> Note: Please don't use ClawdCode for hacking any bank system or doing any illegal activities. Thank you.
+> Note: Please don't use Errandd for hacking any bank system or doing any illegal activities. Thank you.
 
-## Why ClawdCode?
+## Why Errandd?
 
-| Category | ClawdCode | OpenClaw |
+| Category | Errandd | OpenClaw |
 | --- | --- | --- |
 | Anthropic Will Come After You | No | Yes |
 | API Overhead | Directly uses your Claude Code subscription | Nightmare |
@@ -48,98 +43,52 @@ ClawdCode turns your Claude Code into a personal assistant that never sleeps. It
 ## Getting Started in 5 Minutes
 
 ```bash
-claude plugin marketplace add moazbuilds/clawdcode
-claude plugin install clawdcode
+claude plugin marketplace add moazbuilds/errandd
+claude plugin install errandd
 ```
+
 Then open a Claude Code session and run:
+
 ```
-/clawdcode:start
+/errandd:start
 ```
+
 The setup wizard walks you through model, heartbeat, Telegram, Discord, Slack, and security, then your daemon is live with a web dashboard.
 
-## Configuration & environment overrides
+## Pluggable runtimes
 
-`.claude/clawdcode/settings.json` is the source of truth for all ClawdCode config. Every field can be overridden by a `CLAWDCODE_*` environment variable — env always wins over the file. The bare token names `TELEGRAM_TOKEN`, `DISCORD_TOKEN`, `SLACK_BOT_TOKEN`, and `SLACK_APP_TOKEN` still work as aliases for their `CLAWDCODE_*` counterparts.
+Errandd doesn't hard-wire itself to a single coding-agent CLI. The exec runtime — the process that actually runs your prompts — sits behind one interface and is chosen once at startup:
 
-Nested arrays and objects (heartbeat exclude windows, agentic modes, allowed user IDs, plugins) are file-only; there are no env vars for those.
+- **Claude Code** (`claude`) — the default, byte-identical to how Errandd has always run. Session resume, context-token reporting (which drives size-based auto-compaction), jobs-repo plugins/skills, and MCP server management all work as before.
+- **Pi** ([`pi`](https://pi.dev), experimental) — an alternate coding-agent CLI. Errandd drives it with `--mode json -p`, resumes via `--session <id>`, and reads token usage from each message, so auto-compaction works the same as it does for Claude. Pi documents *"No MCP"* by design, so MCP registration is inert, and jobs-repo plugin flags (which are Claude-shaped) aren't forwarded — features a runtime can't back switch off gracefully instead of breaking.
 
-See `.env.example` for the full variable list with defaults and descriptions.
-
-**Jobs repo:** set `jobsRepo.url` (or `CLAWDCODE_JOBSREPO_URL`) to a git URL and ClawdCode will clone it on start and pull it on the configured interval (`jobsRepo.intervalSeconds` / `CLAWDCODE_JOBSREPO_INTERVAL`, default 300 s). That repo becomes the jobs directory — a clean way to manage your task queue in version control.
-
-## Run with Docker
-
-```bash
-docker build -t clawdcode .
-docker run -p 4632:4632 -v $PWD/.claude:/app/.claude --env-file .env clawdcode
-```
-
-Config is supplied via `CLAWDCODE_*` env vars — copy `.env.example` to `.env` and fill in your values, then pass it with `--env-file .env`.
-
-State (jobs, logs, generated tokens) persists in the mounted `.claude` volume. Claude authentication comes from one of:
-- the mounted `.claude` volume if it already contains credentials from a local `claude` login, or
-- a `CLAUDE_CODE_OAUTH_TOKEN` env var obtained by running `claude setup-token` and pasting the result.
-
-### Contributor Note: Plugin Version Metadata
-
-If you change shipped plugin files under `src/`, `commands/`, `prompts/`, or `.claude-plugin/`, the plugin metadata version may also need to be bumped so Claude Code and marketplace consumers detect the update correctly.
-
-Helpers:
-
-```bash
-bun run bump:plugin-version
-bun run bump:marketplace-version
-```
-
-Docs-only and other non-shipped changes do not require these bumps.
-
-## Upgrading
-
-### v1.0.26 — Allowlist behavior change (Telegram & Discord)
-
-Prior to this release, an empty `allowedUserIds` list meant **allow everyone**. That was a potential security vulnerability; any Telegram or Discord user could drive the daemon.
-
-**New behavior:** an empty list means **block everyone**. The daemon will refuse to start if a bot token is configured without at least one allowed user ID.
-
-**Migration:** add your user ID(s) to `settings.json` before upgrading:
+Select the runtime with the `runtime` field in `.claude/errandd/settings.json` or the `ERRANDD_RUNTIME` env var (env wins over the file, like every other setting). Valid values are `claude` (default) and `pi`; an unknown value logs a warning and falls back to Claude Code.
 
 ```json
-"telegram": { "allowedUserIds": [123456789] },
-"discord":  { "allowedUserIds": ["987654321012345678"] }
+{ "runtime": "pi" }
 ```
 
-Run `clawdcode config` for guided setup if you're unsure of your user ID.
-
-### v1.1.0 — Web UI bearer token gate
-
-All `/api/*` routes (except `/api/health`) now require an `Authorization: Bearer <token>` header. The token is auto-generated on first start and written to `.claude/clawdcode/web.token`. The daemon also prints the full URL with the token embedded when the web UI starts.
-
-**Migration:** update any scripts that call `/api/state` or other API routes to pass the token:
-
-```
-Authorization: Bearer <contents of .claude/clawdcode/web.token>
+```bash
+ERRANDD_RUNTIME=pi
 ```
 
-Existing `/api/inject` users who configured `settings.apiToken` are unaffected; that fallback still works.
+Both binaries ship in the Docker image, so **switching runtime is a redeploy/restart, not a rebuild**:
 
-### v1.1.0 — Discord text-attachment truncation limit reduced
+```bash
+ERRANDD_RUNTIME=pi docker run ... errandd            # Docker
+helm upgrade errandd errandd/charts/errandd --set runtime=pi  # Helm
+```
 
-Text attachments sent to the Discord bot are now truncated at **2,048 bytes** (previously 51,200). Payloads over that limit have `…[truncated]` appended silently; there is no config knob to restore the old limit.
+Locally, `mise install` provides a pinned `pi` alongside the rest of the tooling.
 
-**Migration:** if you rely on passing large text files through Discord attachments, switch to gists or another file-sharing mechanism and paste the URL instead.
+> Pi's version is **pinned to 0.80.6** (in both `mise.toml` and the `Dockerfile`) because it's a wire-format dependency: the stream parser is written against the JSON event schema pi 0.80.6 emits. Bump it deliberately and re-run the e2e suite, which fails if the wire moved.
 
----
+The runtime adapters are covered two ways: a conformance matrix that asserts both runtimes normalize to *identical* events, and an opt-in suite that drives the real binaries:
 
-## What Would Be Built Next?
-
-> **Mega Post:** Help shape the next ClawdCode features.
-> Vote, suggest ideas, and discuss priorities in **[this post](https://github.com/moazbuilds/clawdcode/issues/14)**.
-
-<p align="center">
-  <a href="https://github.com/moazbuilds/clawdcode/issues/14">
-    <img src="https://img.shields.io/badge/Roadmap-Mega%20Post-blue?style=for-the-badge&logo=github" alt="Roadmap Mega Post" />
-  </a>
-</p>
+```bash
+cd errandd   # all implementation + tooling lives here
+ERRANDD_E2E=1 bun test app/__tests__/runtime-e2e.test.ts
+```
 
 ## Features
 
@@ -154,13 +103,13 @@ Text attachments sent to the Discord bot are now truncated at **2,048 bytes** (p
 - **Time Awareness:** Message time prefixes help the agent understand delays and daily patterns.
 
 ### Multi-Session Threads (Discord)
-- **Independent Thread Sessions:** Each Discord thread gets its own Claude CLI session, fully isolated from the main channel.
+- **Independent Thread Sessions:** Each Discord thread gets its own agent session, fully isolated from the main channel.
 - **Parallel Processing:** Thread conversations run concurrently — messages in different threads don't block each other.
 - **Auto-Create:** First message in a new thread automatically bootstraps a fresh session. No setup needed.
 - **Session Cleanup:** Thread sessions are automatically cleaned up when threads are deleted or archived.
 - **Backward Compatible:** DMs and main channel messages continue using the global session.
 
-See [docs/MULTI_SESSION.md](docs/MULTI_SESSION.md) for technical details.
+See [errandd/docs/MULTI_SESSION.md](errandd/docs/MULTI_SESSION.md) for technical details.
 
 ### Reliability and Control
 - **GLM Fallback:** Automatically continue with GLM models if your primary limit is reached.
@@ -168,25 +117,96 @@ See [docs/MULTI_SESSION.md](docs/MULTI_SESSION.md) for technical details.
 - **Security Levels:** Four access levels from read-only to full system access.
 - **Model Selection:** Switch models based on your workload.
 
+## AG-UI endpoint
+
+`POST /api/agui` runs the selected runtime and streams the turn as [AG-UI](https://ag-ui.com) events over SSE: `RUN_STARTED` → `TEXT_MESSAGE_*` / `TOOL_CALL_*` → `RUN_FINISHED` (or `RUN_ERROR` on failure). It's runtime-agnostic — the same endpoint works whether `ERRANDD_RUNTIME` is `claude` or `pi`.
+
+The body is either an AG-UI `RunAgentInput` (`{ "messages": [...] }`, last user turn is the prompt) or a plain `{ "prompt": "..." }`. Like the rest of the API, it requires the web auth token (`Authorization: Bearer <token>` or `?token=`):
+
+```bash
+curl -N -X POST http://localhost:4632/api/agui \
+  -H "Authorization: Bearer $(cat .claude/errandd/web.token)" \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "summarize the failed runs from today"}'
+```
+
+## Configuration & environment overrides
+
+`.claude/errandd/settings.json` is the source of truth for all Errandd config. Every field can be overridden by an `ERRANDD_*` environment variable — env always wins over the file. See `.env.example` for the full list with defaults and descriptions.
+
+| Variable | Overrides |
+| --- | --- |
+| `ERRANDD_RUNTIME` | Exec runtime: `claude` (default) or `pi` |
+| `ERRANDD_MODEL` / `ERRANDD_API` | Primary model and API |
+| `ERRANDD_FALLBACK_MODEL` / `ERRANDD_FALLBACK_API` | Fallback model and API |
+| `ERRANDD_TIMEZONE` | Timezone (also re-derives the cron offset) |
+| `ERRANDD_API_TOKEN` | Static API token for `/api/inject` |
+| `ERRANDD_WEB_ENABLED` / `ERRANDD_WEB_HOST` / `ERRANDD_WEB_PORT` | Web dashboard |
+| `ERRANDD_HEARTBEAT_ENABLED` / `ERRANDD_HEARTBEAT_INTERVAL` | Heartbeat |
+| `ERRANDD_SECURITY_LEVEL` | Security level |
+| `ERRANDD_TELEGRAM_TOKEN` | Telegram bot token (alias: `TELEGRAM_TOKEN`) |
+| `ERRANDD_DISCORD_TOKEN` | Discord bot token (alias: `DISCORD_TOKEN`) |
+| `ERRANDD_SLACK_BOT_TOKEN` / `ERRANDD_SLACK_APP_TOKEN` | Slack tokens (aliases: `SLACK_BOT_TOKEN`, `SLACK_APP_TOKEN`) |
+| `ERRANDD_STT_BASE_URL` / `ERRANDD_STT_MODEL` | Voice transcription backend |
+| `ERRANDD_JOBSREPO_URL` / `ERRANDD_JOBSREPO_BRANCH` / `ERRANDD_JOBSREPO_INTERVAL` | Jobs repo (see below) |
+| `ERRANDD_JOBSREPOS` | Comma-separated git URLs replacing the whole jobs-repo list |
+
+Nested arrays and objects (heartbeat exclude windows, agentic modes, allowed user IDs, plugins) are file-only; there are no env vars for those.
+
+**Jobs repo:** set `jobsRepo.url` (or `ERRANDD_JOBSREPO_URL`) to a git URL and Errandd will clone it on start and pull it on the configured interval (`jobsRepo.intervalSeconds` / `ERRANDD_JOBSREPO_INTERVAL`, default 300 s). That repo becomes the jobs directory — a clean way to manage your task queue in version control.
+
+## Deployment
+
+### Docker
+
+```bash
+docker build -t errandd .
+docker run -p 4632:4632 -v $PWD/.claude:/app/.claude --env-file .env errandd
+```
+
+- **Both runtimes are baked in** — `claude` and `pi@0.80.6` — with `ENV ERRANDD_RUNTIME=claude` as the default. Switch with `-e ERRANDD_RUNTIME=pi`; no rebuild needed.
+- **State persists in the `/app/.claude` volume** (jobs, logs, generated tokens). The image symlinks `~/.claude` → `/app/.claude` and `~/.pi` → `/app/.claude/pi`, so both runtimes' session transcripts survive restarts and `--resume`/`--session` keep working. Mount a *persistent* (named/host) volume — an anonymous volume resets per container.
+- **Health:** a `HEALTHCHECK` polls `/readyz` (503 until startup finishes, 200 when ready). Orchestrators that don't read Docker healthchecks should point their own readiness probe at `/readyz`; liveness goes to `/healthz`.
+
+Config is supplied via `ERRANDD_*` env vars — copy `.env.example` to `.env` and fill in your values. Claude authentication comes from one of:
+- the mounted `.claude` volume, if it already contains credentials from a local `claude` login, or
+- a `CLAUDE_CODE_OAUTH_TOKEN` env var obtained by running `claude setup-token` and pasting the result.
+
+### Helm
+
+A chart ships at [`errandd/charts/errandd`](errandd/charts/errandd):
+
+```bash
+helm install errandd errandd/charts/errandd
+helm upgrade errandd errandd/charts/errandd --set runtime=pi   # switch runtime, same image
+```
+
+Key values (`errandd/charts/errandd/values.yaml`): `runtime` (`claude`/`pi`), `persistence.*` for the `/app/.claude` PVC, `secrets.anthropicApiKey` / `secrets.webToken`, `ingress.*`, and an `env:` map for arbitrary `ERRANDD_*` overrides. The daemon is single-instance and stateful — the chart keeps `replicaCount: 1` with a `Recreate` strategy.
+
+### Local development
+
+```bash
+cd errandd       # the whole project lives here; root is plugin-dist only
+mise install     # bun, node, biome, hk — and the pinned pi runtime
+mise run setup   # bun install + install the hk git hooks
+bun run start    # run the daemon
+```
+
 ## Web UI
 
-The web dashboard is a React + TypeScript app (`web/`) built with Bun's built-in bundler and served by the daemon from `dist/web/`.
+The web dashboard is a React + TypeScript app (`errandd/web/`) built with Bun's built-in bundler and served by the daemon from `dist/web/`.
 
-**Build:** `bun run build:web` → outputs `dist/web/{index.html,app.js,app.css}`.
+**Build:** `bun run build:web` — **Dev (watch mode):** `bun run dev:web`.
 
-**Dev (watch mode):** `bun run dev:web` → rebuilds on file changes for fast iteration.
-
-**Served at:** `/` — the daemon serves `index.html` there; `/app.js` and `/app.css` are served directly. All `/api/*` routes are unchanged and token-gated as before.
-
-**Stack:** React 18, CSS Modules + tokens.css, Radix UI primitives (Dialog/Popover/Tooltip/Toast), hash routing, plain fetch + typed wrappers. Biome (strict) + ESLint (strict React rules) enforced via hk pre-commit hooks.
+All `/api/*` routes (except health) are gated by the web auth token, auto-generated on first start and written to `.claude/errandd/web.token`. The daemon prints the full URL with the token embedded when the web UI starts.
 
 ## FAQ
 
 <details open>
-  <summary><strong>Can ClawdCode do &lt;something&gt;?</strong></summary>
+  <summary><strong>Can Errandd do &lt;something&gt;?</strong></summary>
   <p>
-    If Claude Code can do it, ClawdCode can do it too. ClawdCode adds cron jobs,
-    heartbeats, and Telegram/Discord/Slack bridges on top. You can also give your ClawdCode new
+    If your coding-agent CLI can do it, Errandd can do it too. Errandd adds cron jobs,
+    heartbeats, and Telegram/Discord/Slack bridges on top. You can also give your Errandd new
     skills and teach it custom workflows.
   </p>
 </details>
@@ -194,38 +214,53 @@ The web dashboard is a React + TypeScript app (`web/`) built with Bun's built-in
 <details open>
   <summary><strong>Is this project breaking Anthropic ToS?</strong></summary>
   <p>
-    No. ClawdCode is local usage inside the Claude Code ecosystem. It wraps Claude Code
+    No. Errandd is local usage inside the Claude Code ecosystem. It wraps Claude Code
     directly and does not require third-party OAuth outside that flow.
     If you build your own scripts to do the same thing, it would be the same.
   </p>
 </details>
 
 <details open>
-  <summary><strong>Will Anthropic sue you for building ClawdCode?</strong></summary>
+  <summary><strong>Will Anthropic sue you for building Errandd?</strong></summary>
   <p>
     I hope not.
-  </p>
-</details>
-
-<details open>
-  <summary><strong>Are you ready to change this project name?</strong></summary>
-  <p>
-    If it bothers Anthropic, I might rename it to OpenClawd. Not sure yet.
   </p>
 </details>
 
 ## Screenshots
 
 ### Claude Code Folder-Based Status Bar
-![Claude Code folder-based status bar](images/bar.png)
+<!-- SCREENSHOT: statusbar -->
+_Caption: The folder-scoped Errandd status bar inside a Claude Code session._
 
-### Cool UI to Manage and Check Your ClawdCode
-![Cool UI to manage and check your ClawdCode](images/dashboard.png)
+### Cool UI to Manage and Check Your Errandd
+<!-- SCREENSHOT: dashboard home -->
+_Caption: The Errandd web dashboard — jobs, runs, and live logs at a glance._
 
-## Contributors
+<!-- SCREENSHOT: dashboard job detail -->
+_Caption: A single run's detail view — streamed output, tool calls, and session info._
 
-Thanks for helping make ClawdCode better.
+## Contributing
 
-<a href="https://github.com/moazbuilds/clawdcode/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=moazbuilds/clawdcode" />
+First clone:
+
+```bash
+cd errandd       # root holds only the plugin; everything else is here
+mise install     # pinned toolchain, including pi 0.80.6
+mise run setup   # bun install + hk git hooks (pre-commit: eslint + typecheck; pre-push: tests + web build)
+```
+
+**Before opening any PR**, bump the plugin metadata — both are required CI guards:
+
+```bash
+bun run bump:plugin-version
+bun run bump:marketplace-version
+```
+
+The `plugin-version-guard` and `marketplace-version-guard` checks fail if `.claude-plugin/plugin.json` or `.claude-plugin/marketplace.json` still carry the same version as the merge base — commit the bumps alongside your changes and push before creating the PR.
+
+Thanks for helping make Errandd better.
+
+<a href="https://github.com/moazbuilds/errandd/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=moazbuilds/errandd" />
 </a>

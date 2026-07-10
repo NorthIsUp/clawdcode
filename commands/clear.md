@@ -6,7 +6,7 @@ Clear the current Claude session by backing it up and restarting the daemon with
 
 Run:
 ```bash
-bun run ${CLAUDE_PLUGIN_ROOT}/src/index.ts --clear
+bun run ${CLAUDE_PLUGIN_ROOT}/errandd/app/index.ts --clear
 ```
 
 This will:

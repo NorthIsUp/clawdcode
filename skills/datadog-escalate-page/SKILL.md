@@ -52,7 +52,7 @@ curl -sf -X POST \
   "urgency": "high",
   "target": { "type": "team_handle", "identifier": "$DD_ONCALL_TEAM" },
   "description": "Automated first-responder could not recover this alert.\nMonitor: https://app.$DD_SITE/monitors/$MONITOR_ID\nService: $SERVICE ($NAMESPACE)\nTried: $WHAT_WAS_TRIED\nState: $CURRENT_STATE\nWhy escalating: $REASON",
-  "tags": ["source:clawdcode","escalation:oncall","monitor_id:$MONITOR_ID","service:$SERVICE"]
+  "tags": ["source:errandd","escalation:oncall","monitor_id:$MONITOR_ID","service:$SERVICE"]
 } } }
 JSON
 ```
@@ -70,7 +70,7 @@ curl -sf -X POST \
   -H "DD-API-KEY: $DD_API_KEY" -H "DD-APPLICATION-KEY: $DD_APP_KEY" \
   -H "Content-Type: application/json" \
   "https://api.$DD_SITE/api/v1/events" \
-  -d "{\"title\":\"🚨 Escalation: $ALERT_TITLE\",\"text\":\"$DD_ONCALL_HANDLE L1 could not recover. Monitor: https://app.$DD_SITE/monitors/$MONITOR_ID • Tried: $WHAT_WAS_TRIED • Why: $REASON\",\"alert_type\":\"error\",\"tags\":[\"source:clawdcode\",\"escalation:oncall\"]}"
+  -d "{\"title\":\"🚨 Escalation: $ALERT_TITLE\",\"text\":\"$DD_ONCALL_HANDLE L1 could not recover. Monitor: https://app.$DD_SITE/monitors/$MONITOR_ID • Tried: $WHAT_WAS_TRIED • Why: $REASON\",\"alert_type\":\"error\",\"tags\":[\"source:errandd\",\"escalation:oncall\"]}"
 ```
 
 > Host note: On-Call is served on the standard `api.$DD_SITE` host. Some orgs

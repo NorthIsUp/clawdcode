@@ -56,7 +56,7 @@ curl -sf -X POST \
   -H "DD-API-KEY: $DD_API_KEY" -H "DD-APPLICATION-KEY: $DD_APP_KEY" \
   -H "Content-Type: application/json" \
   "https://api.$DD_SITE/api/v1/events" \
-  -d "{\"title\":\"✅ Resolved: $ALERT_TITLE — recovered after L1 remediation\",\"text\":\"Monitor https://app.$DD_SITE/monitors/$MONITOR_ID is back to OK. Fix: $SUMMARY_OF_FIX${PR:+ (PR #$PR)}. Verified overall_state=OK + metric healthy for 2 checks.\",\"alert_type\":\"success\",\"tags\":[\"source:clawdcode\",\"resolution:auto\",\"monitor_id:$MONITOR_ID\"]}"
+  -d "{\"title\":\"✅ Resolved: $ALERT_TITLE — recovered after L1 remediation\",\"text\":\"Monitor https://app.$DD_SITE/monitors/$MONITOR_ID is back to OK. Fix: $SUMMARY_OF_FIX${PR:+ (PR #$PR)}. Verified overall_state=OK + metric healthy for 2 checks.\",\"alert_type\":\"success\",\"tags\":[\"source:errandd\",\"resolution:auto\",\"monitor_id:$MONITOR_ID\"]}"
 ```
 
 ## After resolving
