@@ -1,4 +1,4 @@
-# Codebase Audit — clawdcode (consolidated)
+# Codebase Audit — errandd (consolidated)
 
 ## Executive summary
 

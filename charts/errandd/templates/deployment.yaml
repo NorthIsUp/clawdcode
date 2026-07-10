@@ -1,20 +1,20 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "clawdcode.fullname" . }}
+  name: {{ include "errandd.fullname" . }}
   labels:
-    {{- include "clawdcode.labels" . | nindent 4 }}
+    {{- include "errandd.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
   strategy:
     type: {{ .Values.strategy }}
   selector:
     matchLabels:
-      {{- include "clawdcode.selectorLabels" . | nindent 6 }}
+      {{- include "errandd.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
-        {{- include "clawdcode.selectorLabels" . | nindent 8 }}
+        {{- include "errandd.selectorLabels" . | nindent 8 }}
         {{- with .Values.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -23,7 +23,7 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
     spec:
-      serviceAccountName: {{ include "clawdcode.serviceAccountName" . }}
+      serviceAccountName: {{ include "errandd.serviceAccountName" . }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -33,7 +33,7 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       containers:
-        - name: clawdcode
+        - name: errandd
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           {{- with .Values.command }}
@@ -49,23 +49,23 @@ spec:
               containerPort: {{ .Values.service.port }}
               protocol: TCP
           env:
-            - name: CLAWDCODE_WEB_ENABLED
+            - name: ERRANDD_WEB_ENABLED
               value: "true"
-            - name: CLAWDCODE_WEB_HOST
+            - name: ERRANDD_WEB_HOST
               value: "0.0.0.0"
-            - name: CLAWDCODE_WEB_PORT
+            - name: ERRANDD_WEB_PORT
               value: {{ .Values.service.port | quote }}
             - name: ANTHROPIC_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "clawdcode.secretName" . }}
+                  name: {{ include "errandd.secretName" . }}
                   key: ANTHROPIC_API_KEY
             {{- if or .Values.secrets.webToken .Values.secrets.existingSecret }}
-            - name: CLAWDCODE_WEB_TOKEN
+            - name: ERRANDD_WEB_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "clawdcode.secretName" . }}
-                  key: CLAWDCODE_WEB_TOKEN
+                  name: {{ include "errandd.secretName" . }}
+                  key: ERRANDD_WEB_TOKEN
                   optional: true
             {{- end }}
             {{- range $k, $v := .Values.env }}
@@ -107,7 +107,7 @@ spec:
         - name: data
           {{- if .Values.persistence.enabled }}
           persistentVolumeClaim:
-            claimName: {{ include "clawdcode.pvcName" . }}
+            claimName: {{ include "errandd.pvcName" . }}
           {{- else }}
           emptyDir: {}
           {{- end }}

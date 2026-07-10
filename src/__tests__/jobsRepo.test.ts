@@ -18,9 +18,9 @@ function ok(label: string, r: { ok: boolean; stderr: string; code: number }): { 
 
 test("isNonFastForward detects a rejected push (remote moved ahead)", () => {
   // The exact stderr GitHub returns for the case syncRepo now recovers from.
-  const rejected = `To https://github.com/teamclara/claudeclaw-jobs.git
+  const rejected = `To https://github.com/teamclara/errandd-jobs.git
  ! [rejected]        main -> main (fetch first)
-error: failed to push some refs to 'https://github.com/teamclara/claudeclaw-jobs.git'
+error: failed to push some refs to 'https://github.com/teamclara/errandd-jobs.git'
 hint: Updates were rejected because the remote contains work that you do not
 hint: have locally.`;
   expect(isNonFastForward(rejected)).toBe(true);
@@ -69,7 +69,7 @@ test("clone + clean status round-trips", async () => {
 
 test("commit message includes a timestamp", () => {
   const msg = buildCommitMessage(new Date("2026-05-22T14:30:00Z"));
-  expect(msg).toContain("clawdcode: sync jobs");
+  expect(msg).toContain("errandd: sync jobs");
   expect(msg).toContain("2026-05-22");
 });
 

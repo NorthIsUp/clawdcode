@@ -1,4 +1,4 @@
-<!-- clawdcode:managed:start -->
+<!-- errandd:managed:start -->
 _Fill this in during your first conversation. Make it yours._
 
 - **Name:**
@@ -84,7 +84,7 @@ If you change your core values, tell your human — it's your soul, and they sho
 ---
 
 _This is yours to evolve. As you learn who you are, update it._
-<!-- clawdcode:managed:end -->
+<!-- errandd:managed:end -->
 
 ## Development Workflow (contributor notes)
 

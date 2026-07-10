@@ -19,7 +19,7 @@ interface JSONLEntry {
   };
 }
 
-/** Shape of .claude/clawdcode/session.json for the global web session. */
+/** Shape of .claude/errandd/session.json for the global web session. */
 interface SessionFileData {
   sessionId?: string;
   turnCount?: number;
@@ -125,7 +125,7 @@ export async function getSessionUsage(channelNames?: Record<string, string>): Pr
   const sessions: SessionUsage[] = [];
 
   // Global web session
-  const sessionFile = join(cwd, ".claude", "clawdcode", "session.json");
+  const sessionFile = join(cwd, ".claude", "errandd", "session.json");
   try {
     if (existsSync(sessionFile)) {
       const data = JSON.parse(await readFile(sessionFile, "utf-8")) as SessionFileData;

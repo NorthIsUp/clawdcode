@@ -36,7 +36,7 @@ const FRONTMATTER_KEYS: { label: string; value: string; info: string }[] = [
   { label: "recurring", value: "recurring: true", info: "true to keep firing on schedule; false for one-shot" },
   { label: "enabled", value: "enabled: true", info: "Set false to pause without deleting" },
   { label: "notify", value: "notify: error", info: "Notify channel: true | false | error" },
-  { label: "skip_self", value: "skip_self: false", info: "Set false to allow clawdcode's own events to trigger (default skips self)" },
+  { label: "skip_self", value: "skip_self: false", info: "Set false to allow errandd's own events to trigger (default skips self)" },
   { label: "reuse_session", value: "reuse_session: false", info: "Resume the same Claude session each fire" },
   { label: "model", value: "model: sonnet", info: "Override the default model for this routine" },
   { label: "effort", value: "effort: medium", info: "Reasoning effort: low | medium | high" },

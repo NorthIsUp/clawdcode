@@ -617,7 +617,7 @@ describe("linear schema + matching", () => {
   const ISSUE = {
     type: "Issue",
     action: "create",
-    data: { identifier: "CLA-1200", title: "x", team: { key: "CLA" }, description: "hey @clawd" },
+    data: { identifier: "CLA-1200", title: "x", team: { key: "CLA" }, description: "hey @errandd" },
   };
 
   test("linear: true → @mentioned Issue/Comment, any team default", () => {
@@ -687,7 +687,7 @@ describe("linear schema + matching", () => {
     const comment = readLinearPayload({
       type: "Comment",
       action: "create",
-      data: { body: "ping @clawd", issue: { identifier: "ENG-9", title: "T", team: { key: "ENG" } } },
+      data: { body: "ping @errandd", issue: { identifier: "ENG-9", title: "T", team: { key: "ENG" } } },
     });
     expect(comment.identifier).toBe("ENG-9");
     expect(comment.team).toBe("ENG");
@@ -709,7 +709,7 @@ describe("linear schema + matching", () => {
       creator: { name: "Grace" },
       labels: [{ name: "bug" }, { name: "p0" }],
       url: "https://linear.app/clara/issue/ENG-42/fix-the-thing",
-      description: "hey @clawd take a look",
+      description: "hey @errandd take a look",
     },
   };
 

@@ -1,4 +1,4 @@
-# ClawdCode Multi-Session Thread Support - Feature Spec
+# Errandd Multi-Session Thread Support - Feature Spec
 
 ## Goal
 Add Discord thread binding with independent Claude CLI sessions per thread, enabling parallel conversations.
@@ -18,7 +18,7 @@ Add Discord thread binding with independent Claude CLI sessions per thread, enab
 
 ### 1. NEW: `src/sessionManager.ts`
 - `SessionMap` class managing thread → session mappings
-- Storage: `.claude/clawdcode/sessions.json`
+- Storage: `.claude/errandd/sessions.json`
 - Methods:
   - `getSession(threadId?: string)` — get or create session for thread
   - `createSession(threadId: string)` — bootstrap new Claude CLI session

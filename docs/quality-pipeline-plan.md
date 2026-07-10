@@ -1,4 +1,4 @@
-# clawdcode quality pipeline — remaining plan
+# errandd quality pipeline — remaining plan
 
 Status snapshot: **2026-06-11**. Paused at user request (subagent usage). This is
 the continuation of the deep-analysis → refactor → provider-excellence pipeline.

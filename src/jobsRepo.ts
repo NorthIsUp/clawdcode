@@ -35,7 +35,7 @@ export interface RepoStatus {
   lastPullAt: string | null;
   lastError: string | null;
   plugins: JobsRepoPlugin[];
-  /** Count of `.md` files at the source root — clawdcode treats those as
+  /** Count of `.md` files at the source root — errandd treats those as
    *  candidate routines. Surfaced separately from plugins because routines
    *  live at the top level, not nested inside a `.claude-plugin/` plugin. */
   jobs: number;
@@ -55,7 +55,7 @@ export interface SyncResult {
  *  containerized deployments where the global git config is empty.
  *
  *  Credential-helper handling is opt-out via the
- *  `CLAWDCODE_GIT_KEEP_CREDENTIAL_HELPER` env var. By default we still
+ *  `ERRANDD_GIT_KEEP_CREDENTIAL_HELPER` env var. By default we still
  *  inject `-c credential.helper=` so the published Docker image's
  *  bundled `gh` doesn't hijack every clone and return 403 against repos
  *  the App can't see (the original rationale). Set the env var to a
@@ -63,7 +63,7 @@ export interface SyncResult {
  *  intentionally set up (e.g. via `gh auth setup-git` so the daemon can
  *  reach private HTTPS repos). */
 function shouldKeepInheritedCredentialHelper(): boolean {
-  const raw = (process.env.CLAWDCODE_GIT_KEEP_CREDENTIAL_HELPER ?? "").toLowerCase();
+  const raw = (process.env.ERRANDD_GIT_KEEP_CREDENTIAL_HELPER ?? "").toLowerCase();
   return raw === "1" || raw === "true" || raw === "yes";
 }
 
@@ -82,8 +82,8 @@ export async function runGit(cwd: string, args: string[]): Promise<GitResult> {
     const name = git?.name;
     const email = git?.email;
     const config = [
-      "-c", `user.name=${name || "ClawdCode"}`,
-      "-c", `user.email=${email || "clawdcode@localhost"}`,
+      "-c", `user.name=${name || "Errandd"}`,
+      "-c", `user.email=${email || "errandd@localhost"}`,
       // Headless daemon: never attempt to sign jobs-repo commits. A host with
       // commit.gpgsign on but no available signer (k8s pod, or a laptop whose
       // signing agent declines) would otherwise hang/fail the whole sync.
@@ -109,7 +109,7 @@ export function parseStatus(porcelain: string): { dirty: boolean } {
 
 /** Auto-generated commit message for a UI-triggered sync. */
 export function buildCommitMessage(now: Date = new Date()): string {
-  return `clawdcode: sync jobs (${now.toISOString().replace("T", " ").slice(0, 19)} UTC)`;
+  return `errandd: sync jobs (${now.toISOString().replace("T", " ").slice(0, 19)} UTC)`;
 }
 
 // ---- Per-repo state ----
@@ -541,7 +541,7 @@ export async function getRepoStatus(repo: JobsRepoConfig): Promise<RepoStatus> {
   };
 }
 
-/** Count top-level `.md` files in a source dir — clawdcode's job-loader
+/** Count top-level `.md` files in a source dir — errandd's job-loader
  *  picks routines from here. Returns 0 when the dir isn't present. */
 async function countRootMdFiles(dir: string, present: boolean): Promise<number> {
   if (!present) return 0;

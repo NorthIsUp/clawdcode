@@ -1,6 +1,6 @@
 # Multi-Session Thread Support
 
-Technical documentation for ClawdCode's multi-session thread feature.
+Technical documentation for Errandd's multi-session thread feature.
 
 ## Overview
 
@@ -56,7 +56,7 @@ Each queue prevents concurrent `--resume` calls on the same session (which would
 
 ## Storage
 
-### Global session: `.claude/clawdcode/session.json`
+### Global session: `.claude/errandd/session.json`
 ```json
 {
   "sessionId": "uuid",
@@ -67,7 +67,7 @@ Each queue prevents concurrent `--resume` calls on the same session (which would
 }
 ```
 
-### Thread sessions: `.claude/clawdcode/sessions.json`
+### Thread sessions: `.claude/errandd/sessions.json`
 ```json
 {
   "threads": {

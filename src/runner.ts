@@ -76,8 +76,8 @@ import {
   clearRateLimitDetected,
 } from "./rate-limit";
 
-const LOGS_DIR = join(process.cwd(), ".claude/clawdcode/logs");
-const ACTIVE_RUNS_FILE = join(process.cwd(), ".claude/clawdcode/active-runs");
+const LOGS_DIR = join(process.cwd(), ".claude/errandd/logs");
+const ACTIVE_RUNS_FILE = join(process.cwd(), ".claude/errandd/active-runs");
 
 // Re-export symbols that moved into sibling modules so existing importers of
 // "./runner" keep working unchanged. Behavior-preserving public surface.
@@ -110,12 +110,12 @@ export {
  *   session burns millions of cache-read tokens (e.g. nightly-refactor ~7M).
  *   Compacting proactively after such a run keeps the NEXT resume small. The
  *   only prior trigger was a timeout (exit 124) — size-based never fired.
- *   Tunable via CLAWDCODE_COMPACT_TOKENS; 0 disables.
+ *   Tunable via ERRANDD_COMPACT_TOKENS; 0 disables.
  */
 const COMPACT_WARN_THRESHOLD = 25;
 const COMPACT_TIMEOUT_ENABLED = true;
 const COMPACT_TOKEN_THRESHOLD = (() => {
-  const raw = process.env.CLAWDCODE_COMPACT_TOKENS;
+  const raw = process.env.ERRANDD_COMPACT_TOKENS;
   if (raw === undefined) return 750_000;
   const n = Number(raw);
   if (!Number.isFinite(n) || n < 0) return 750_000;
@@ -477,7 +477,7 @@ export async function compactCurrentThreadSession(
 }
 
 /** First non-empty `RULES.md` found across the given jobs dirs, trimmed (or "").
- *  These are the universal claw ground rules injected into every routine run.
+ *  These are the universal errandd ground rules injected into every routine run.
  *  First-found wins: prod has one jobs repo; a genuinely multi-repo setup would
  *  need per-job source-dir routing. Missing/empty files are skipped, not errors. */
 export async function loadJobRules(dirs: string[]): Promise<string> {
@@ -580,7 +580,7 @@ async function execClaude(
   // Prompt files (IDENTITY.md, USER.md, SOUL.md) are already embedded in
   // CLAUDE.md by ensureProjectClaudeMd(), which runs before every call.
   const appendParts: string[] = [
-    "You are running inside ClawdCode.",
+    "You are running inside Errandd.",
   ];
 
   // Routine attribution: the GitHub App always authors posts as the same bot
@@ -591,11 +591,11 @@ async function execClaude(
   // agent) sees. `name` is the job/routine name (e.g. "pr-review" → pr-review.md).
   if (name && name !== "chat" && name !== "heartbeat" && name !== "trigger") {
     appendParts.push(
-      `You are the ClawdCode routine \`${name}\`. Whenever you post to GitHub — a PR or issue comment, a review, or a PR/issue body — BEGIN the post with these two lines, before any other content:\n\n<!-- clawdcode:routine=${name} -->\n— claraclawd[${name}.md]\n\nThe HTML comment is invisible in rendered markdown but lets ClawdCode reliably tell which routine authored a post (so a routine can recognize its own posts without mistaking a sibling routine's); the signature line tells a human reading the PR. Put them at the very top so the routine context reads first. Add them ONLY to GitHub posts, never to non-GitHub output (Telegram/Discord replies, run summaries, commit messages).`,
+      `You are the Errandd routine \`${name}\`. Whenever you post to GitHub — a PR or issue comment, a review, or a PR/issue body — BEGIN the post with these two lines, before any other content:\n\n<!-- errandd:routine=${name} -->\n— claraclawd[${name}.md]\n\nThe HTML comment is invisible in rendered markdown but lets Errandd reliably tell which routine authored a post (so a routine can recognize its own posts without mistaking a sibling routine's); the signature line tells a human reading the PR. Put them at the very top so the routine context reads first. Add them ONLY to GitHub posts, never to non-GitHub output (Telegram/Discord replies, run summaries, commit messages).`,
     );
 
     // Ground rules: every routine loads the jobs repo's RULES.md — the universal
-    // claw contract (reactions, comment handling, coordination, diff integrity,
+    // errandd contract (reactions, comment handling, coordination, diff integrity,
     // endings). Injected here, not via a per-file @import, so no job can forget
     // it; re-read every call so edits in the jobs repo hot-reload without a
     // restart. Kept small on purpose: --append-system-prompt is re-sent every
@@ -613,9 +613,9 @@ async function execClaude(
   // the TARGET repo's CLAUDE.md from cwd. Since --append-system-prompt doesn't
   // survive --resume it's re-sent EVERY turn, so on a long routine run it's pure
   // per-turn overhead (× ~100 turns = millions of cache-read tokens). Inject it
-  // only for interactive runs; override with CLAWDCODE_PERSONA_IN_JOBS=1.
+  // only for interactive runs; override with ERRANDD_PERSONA_IN_JOBS=1.
   const isInteractiveRun = !name || name === "chat" || name === "heartbeat" || name === "trigger";
-  if (isInteractiveRun || process.env.CLAWDCODE_PERSONA_IN_JOBS === "1") {
+  if (isInteractiveRun || process.env.ERRANDD_PERSONA_IN_JOBS === "1") {
     try {
       const claudeMd = await Bun.file(PROJECT_CLAUDE_MD).text();
       if (claudeMd.trim()) appendParts.push(claudeMd.trim());
@@ -1022,7 +1022,7 @@ async function streamClaude(
 
   if (existing) args.push("--resume", existing.sessionId);
 
-  const appendParts: string[] = ["You are running inside ClawdCode."];
+  const appendParts: string[] = ["You are running inside Errandd."];
 
   if (streamRotationSummary) appendParts.push(`Context from the previous session:\n\n${streamRotationSummary}`);
 
@@ -1246,7 +1246,7 @@ const FORK_SYSTEM_PROMPT = [
   "• Short factual answers",
   "• Reporting on what the main agent is currently doing",
   "",
-  `Main session info lives at: /project/.claude/clawdcode/session.json`,
+  `Main session info lives at: /project/.claude/errandd/session.json`,
   `Session JSONL transcripts dir: ${CLAUDE_SESSIONS_DIR}`,
   "To peek at main agent progress: read session.json for the session ID, then read the .jsonl file in the transcripts dir.",
   "Each JSONL line is a turn. The last few lines show what the main agent is currently doing.",

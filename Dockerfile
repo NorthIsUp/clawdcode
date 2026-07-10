@@ -53,7 +53,7 @@ COPY --chown=claude:claude . .
 RUN bun run build:web
 
 # Unify all Claude session state under the persisted VOLUME (/app/.claude).
-# sessions.json lives at <cwd>/.claude/clawdcode (= /app/.claude/clawdcode), but
+# sessions.json lives at <cwd>/.claude/errandd (= /app/.claude/errandd), but
 # the agent's *transcripts* are written by the claude CLI to $HOME/.claude/
 # projects (= /home/claude/.claude/projects) — which is NOT under the volume.
 # Without this, `claude --resume <id>` finds no transcript after a restart, so

@@ -11,12 +11,12 @@ import { handleSignedWebhook, type WebhookSpec } from "./webhookEnvelope";
  * https://docs.datadoghq.com/integrations/webhooks/
  *
  * Datadog webhooks are NOT HMAC-signed — the payload is fully user-defined.
- * clawdcode authenticates with a shared token: the value of
- * CLAWDCODE_DATADOG_WEBHOOK_SECRET must arrive either as the
- * `X-Clawdcode-Token` header or a `?token=` query param. When the secret is
+ * errandd authenticates with a shared token: the value of
+ * ERRANDD_DATADOG_WEBHOOK_SECRET must arrive either as the
+ * `X-Errandd-Token` header or a `?token=` query param. When the secret is
  * unset, deliveries are accepted as-is (dev/testing).
  *
- * Because the payload shape is user-controlled, clawdcode recommends a
+ * Because the payload shape is user-controlled, errandd recommends a
  * canonical webhook payload template in the Datadog integration config
  * (see RECOMMENDED_DATADOG_PAYLOAD). Matching keys off those field names.
  *
@@ -26,10 +26,10 @@ import { handleSignedWebhook, type WebhookSpec } from "./webhookEnvelope";
  */
 
 export function getDatadogSecret(): string {
-  return process.env.CLAWDCODE_DATADOG_WEBHOOK_SECRET ?? "";
+  return process.env.ERRANDD_DATADOG_WEBHOOK_SECRET ?? "";
 }
 
-/** The payload template clawdcode recommends pasting into the Datadog
+/** The payload template errandd recommends pasting into the Datadog
  *  webhook "Payload" field. Surfaced by the receiver-status endpoint so
  *  the Settings UI can show a copy-paste block. */
 export const RECOMMENDED_DATADOG_PAYLOAD = {
@@ -57,7 +57,7 @@ export function handleDatadogWebhook(
     source: "datadog",
     // Datadog payloads are not HMAC-signed — shared-token auth (header or
     // ?token= query param). Unset secret ⇒ accept as-is (dev/testing).
-    auth: { kind: "token", header: "x-clawdcode-token", secret: getDatadogSecret() },
+    auth: { kind: "token", header: "x-errandd-token", secret: getDatadogSecret() },
     deriveIdentity: (_req, payload) => {
       const dp = readDatadogPayload(payload);
       const summary = [

@@ -5,7 +5,7 @@ import { cn } from "./ui/utils";
 /**
  * v3 theme picker (spec §14). A curated set of 5 themes plus a "System" option
  * that follows `prefers-color-scheme` + `prefers-contrast` live. An explicit
- * choice is persisted under `clawdcode:v3:theme`; "System" clears it. The
+ * choice is persisted under `errandd:v3:theme`; "System" clears it. The
  * before-paint default lives in index.html — this keeps it in sync at runtime.
  */
 
@@ -17,7 +17,7 @@ const THEMES = [
   { id: "colorblind", label: "Colorblind", hint: "Okabe-Ito" },
 ] as const;
 const VALID: string[] = THEMES.map((t) => t.id);
-const KEY = "clawdcode:v3:theme";
+const KEY = "errandd:v3:theme";
 
 function systemTheme(): string {
   const dark = matchMedia("(prefers-color-scheme: dark)").matches;

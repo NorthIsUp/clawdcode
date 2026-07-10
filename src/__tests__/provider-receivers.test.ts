@@ -59,17 +59,17 @@ function ddReq(body: unknown, headers: Record<string, string> = {}, query = ""):
 }
 
 describe("handleDatadogWebhook (envelope)", () => {
-  const prev = process.env.CLAWDCODE_DATADOG_WEBHOOK_SECRET;
+  const prev = process.env.ERRANDD_DATADOG_WEBHOOK_SECRET;
   afterEach(() => {
     if (prev === undefined) {
-      delete process.env.CLAWDCODE_DATADOG_WEBHOOK_SECRET;
+      delete process.env.ERRANDD_DATADOG_WEBHOOK_SECRET;
     } else {
-      process.env.CLAWDCODE_DATADOG_WEBHOOK_SECRET = prev;
+      process.env.ERRANDD_DATADOG_WEBHOOK_SECRET = prev;
     }
   });
 
   test("a P1 alert matches a `datadog: true` job → 200 matched + trigger routine", async () => {
-    delete process.env.CLAWDCODE_DATADOG_WEBHOOK_SECRET;
+    delete process.env.ERRANDD_DATADOG_WEBHOOK_SECRET;
     const fires: string[] = [];
     const res = await handleDatadogWebhook(ddReq({ ...DD_P1, aggreg_key: `e2e-${seq++}` }), {
       getJobs: () => [makeJob("dd", [{ datadog: true }])],
@@ -85,7 +85,7 @@ describe("handleDatadogWebhook (envelope)", () => {
   });
 
   test("a normal-priority alert is skipped with a reason (priority floor)", async () => {
-    delete process.env.CLAWDCODE_DATADOG_WEBHOOK_SECRET;
+    delete process.env.ERRANDD_DATADOG_WEBHOOK_SECRET;
     const res = await handleDatadogWebhook(
       ddReq({ ...DD_P1, priority: "normal", aggreg_key: `e2e-${seq++}` }),
       { getJobs: () => [makeJob("dd", [{ datadog: true }])], onHookFire: () => {} },
@@ -97,9 +97,9 @@ describe("handleDatadogWebhook (envelope)", () => {
   });
 
   test("token auth: bad token → 401 'bad token'; correct ?token= → 200", async () => {
-    process.env.CLAWDCODE_DATADOG_WEBHOOK_SECRET = "TOK";
+    process.env.ERRANDD_DATADOG_WEBHOOK_SECRET = "TOK";
     const bad = await handleDatadogWebhook(
-      ddReq({ ...DD_P1, aggreg_key: `e2e-${seq++}` }, { "x-clawdcode-token": "nope" }),
+      ddReq({ ...DD_P1, aggreg_key: `e2e-${seq++}` }, { "x-errandd-token": "nope" }),
       {},
     );
     expect(bad).toEqual({ status: 401, body: { ok: false, error: "bad token" } });
@@ -112,7 +112,7 @@ describe("handleDatadogWebhook (envelope)", () => {
   });
 
   test("duplicate delivery id → duplicate:true", async () => {
-    delete process.env.CLAWDCODE_DATADOG_WEBHOOK_SECRET;
+    delete process.env.ERRANDD_DATADOG_WEBHOOK_SECRET;
     const body = { ...DD_P1, aggreg_key: `dup-${seq++}` };
     const first = await handleDatadogWebhook(ddReq(body), {});
     expect(first.status).toBe(200);
@@ -144,22 +144,22 @@ function linReq(body: unknown, headers: Record<string, string> = {}): Request {
 }
 
 describe("handleLinearWebhook (envelope)", () => {
-  const prevSecret = process.env.CLAWDCODE_LINEAR_WEBHOOK_SECRET;
-  const prevMention = process.env.CLAWDCODE_LINEAR_BOT_MENTION;
+  const prevSecret = process.env.ERRANDD_LINEAR_WEBHOOK_SECRET;
+  const prevMention = process.env.ERRANDD_LINEAR_BOT_MENTION;
   beforeEach(() => {
-    delete process.env.CLAWDCODE_LINEAR_WEBHOOK_SECRET;
-    process.env.CLAWDCODE_LINEAR_BOT_MENTION = "@clawd";
+    delete process.env.ERRANDD_LINEAR_WEBHOOK_SECRET;
+    process.env.ERRANDD_LINEAR_BOT_MENTION = "@errandd";
   });
   afterEach(() => {
-    if (prevSecret === undefined) delete process.env.CLAWDCODE_LINEAR_WEBHOOK_SECRET;
-    else process.env.CLAWDCODE_LINEAR_WEBHOOK_SECRET = prevSecret;
-    if (prevMention === undefined) delete process.env.CLAWDCODE_LINEAR_BOT_MENTION;
-    else process.env.CLAWDCODE_LINEAR_BOT_MENTION = prevMention;
+    if (prevSecret === undefined) delete process.env.ERRANDD_LINEAR_WEBHOOK_SECRET;
+    else process.env.ERRANDD_LINEAR_WEBHOOK_SECRET = prevSecret;
+    if (prevMention === undefined) delete process.env.ERRANDD_LINEAR_BOT_MENTION;
+    else process.env.ERRANDD_LINEAR_BOT_MENTION = prevMention;
   });
 
   test("an @mentioned issue matches `linear: true` → 200 matched, pk = identifier", async () => {
     const fires: string[] = [];
-    const res = await handleLinearWebhook(linReq(LIN_ISSUE("hey @clawd please look")), {
+    const res = await handleLinearWebhook(linReq(LIN_ISSUE("hey @errandd please look")), {
       getJobs: () => [makeJob("lin", [{ linear: true }])],
       onHookFire: (job) => {
         fires.push(job);
@@ -185,9 +185,9 @@ describe("handleLinearWebhook (envelope)", () => {
   });
 
   test("bad HMAC signature (secret set) → 401 + recorded attempt", async () => {
-    process.env.CLAWDCODE_LINEAR_WEBHOOK_SECRET = "S";
+    process.env.ERRANDD_LINEAR_WEBHOOK_SECRET = "S";
     const res = await handleLinearWebhook(
-      linReq(LIN_ISSUE("hey @clawd"), { "linear-signature": "bad" }),
+      linReq(LIN_ISSUE("hey @errandd"), { "linear-signature": "bad" }),
       {},
     );
     expect(res).toEqual({ status: 401, body: { ok: false, error: "bad signature" } });
@@ -195,8 +195,8 @@ describe("handleLinearWebhook (envelope)", () => {
   });
 
   test("a correct HMAC signature (secret set) is accepted", async () => {
-    process.env.CLAWDCODE_LINEAR_WEBHOOK_SECRET = "S";
-    const body = JSON.stringify(LIN_ISSUE("hey @clawd"));
+    process.env.ERRANDD_LINEAR_WEBHOOK_SECRET = "S";
+    const body = JSON.stringify(LIN_ISSUE("hey @errandd"));
     const sig = createHmac("sha256", "S").update(body, "utf8").digest("hex");
     const req = new Request("http://local/api/webhooks/linear", {
       method: "POST",

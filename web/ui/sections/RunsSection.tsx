@@ -22,7 +22,7 @@ import { formatRoute, useRoute } from "../router";
 import { useAsync } from "../useAsync";
 
 /**
- * Roll-up of every clawdcode "run". One row per claude session.
+ * Roll-up of every errandd "run". One row per claude session.
  *
  * "Run" is intentionally session-shaped, not delivery-shaped: a
  * hook-driven job that gets re-triggered (a new comment on the same

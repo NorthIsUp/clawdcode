@@ -203,7 +203,7 @@ body {
    a brief background highlight so the eye catches what just arrived. Applied
    per-row for ~1s after the item first appears, then removed. Opacity +
    background only — transforms on <tr> render inconsistently across browsers. */
-@keyframes clawd-row-in {
+@keyframes errandd-row-in {
   from {
     opacity: 0.3;
     background-color: var(--color-base-300);
@@ -214,7 +214,7 @@ body {
   }
 }
 .row-enter {
-  animation: clawd-row-in 0.9s ease-out;
+  animation: errandd-row-in 0.9s ease-out;
 }
 @media (prefers-reduced-motion: reduce) {
   .row-enter {

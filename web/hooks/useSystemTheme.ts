@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 
 export type ThemeMode = "system" | "light" | "dark";
 
-const STORAGE_KEY = "clawd.theme";
+const STORAGE_KEY = "errandd.theme";
 
 function readStored(): ThemeMode {
   const v = localStorage.getItem(STORAGE_KEY);

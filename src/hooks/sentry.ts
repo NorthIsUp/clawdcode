@@ -12,7 +12,7 @@ import { handleSignedWebhook, type WebhookSpec } from "./webhookEnvelope";
  * https://docs.sentry.io/integrations/integration-platform/webhooks/
  *
  * - Verifies `Sentry-Hook-Signature` (HMAC-SHA256 of the raw body using the
- *   integration Client Secret in CLAWDCODE_SENTRY_CLIENT_SECRET). When the
+ *   integration Client Secret in ERRANDD_SENTRY_CLIENT_SECRET). When the
  *   secret is unset, deliveries are accepted as-is (dev/testing).
  * - Dedups on the `Request-ID` header.
  * - The resource type comes from `Sentry-Hook-Resource` (issue, error,
@@ -27,7 +27,7 @@ import { handleSignedWebhook, type WebhookSpec } from "./webhookEnvelope";
  */
 
 export function getSentrySecret(): string {
-  return process.env.CLAWDCODE_SENTRY_CLIENT_SECRET ?? "";
+  return process.env.ERRANDD_SENTRY_CLIENT_SECRET ?? "";
 }
 
 /** The `sentry-hook-resource` header value, defaulting to `event`. The single

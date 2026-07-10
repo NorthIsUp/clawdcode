@@ -118,7 +118,7 @@ const LIMIT_NOTICE_RE = /^\s*you(?:'|')ve hit your\s.{0,30}\blimit\b/i;
 interface PendingTool { partIndex: number; tool: ToolPart }
 
 /**
- * Strip ClawdCode-injected prefix blocks from a user turn so the pane shows
+ * Strip Errandd-injected prefix blocks from a user turn so the pane shows
  * the operator's actual text. Mirrors the cleanup in services/sessions.ts.
  */
 function cleanUserText(raw: string): string {

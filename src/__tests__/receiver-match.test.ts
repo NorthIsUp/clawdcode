@@ -520,29 +520,29 @@ describe("claw:ignore label pauses all hooks for a PR", () => {
   });
 });
 
-// Per-routine self-skip via the `<!-- clawdcode:routine=<name> -->` marker each
+// Per-routine self-skip via the `<!-- errandd:routine=<name> -->` marker each
 // routine stamps at the top of its GitHub posts. Self-skip narrows to the
 // AUTHORING routine: a routine ignores its own posts but a sibling routine may
 // act on them (if its own user filter accepts the bot). An unmarked bot post
-// fails safe — self for everyone. `CLAWDCODE_SELF_LOGIN` pins "self" so the
+// fails safe — self for everyone. `ERRANDD_SELF_LOGIN` pins "self" so the
 // test doesn't depend on the runner's resolved `gh` login.
 describe("marker-aware self-skip (per-routine identity)", () => {
   const SELF = "claraclawd[bot]";
   let saved: string | undefined;
   beforeAll(() => {
-    saved = process.env.CLAWDCODE_SELF_LOGIN;
-    process.env.CLAWDCODE_SELF_LOGIN = SELF;
+    saved = process.env.ERRANDD_SELF_LOGIN;
+    process.env.ERRANDD_SELF_LOGIN = SELF;
   });
   afterAll(() => {
     if (saved === undefined) {
-      delete process.env.CLAWDCODE_SELF_LOGIN;
+      delete process.env.ERRANDD_SELF_LOGIN;
     } else {
-      process.env.CLAWDCODE_SELF_LOGIN = saved;
+      process.env.ERRANDD_SELF_LOGIN = saved;
     }
   });
 
   const body = (marker: string | null) =>
-    marker ? `<!-- clawdcode:routine=${marker} -->\n— claraclawd[${marker}.md]\n\nlgtm` : "lgtm";
+    marker ? `<!-- errandd:routine=${marker} -->\n— claraclawd[${marker}.md]\n\nlgtm` : "lgtm";
 
   const issueComment = (marker: string | null) => ({
     action: "created",
@@ -596,7 +596,7 @@ describe("marker-aware self-skip (per-routine identity)", () => {
     sender: { login },
   });
 
-  test("loop guard caps clawdcode→clawdcode comment hops per thread", async () => {
+  test("loop guard caps errandd→errandd comment hops per thread", async () => {
     const job = makeJob("pr-followup", [{ comments: true }]);
     // The first 6 (INTERNAL_HOP_MAX) cross-routine triggers fire…
     for (let i = 0; i < 6; i++) {
@@ -618,7 +618,7 @@ describe("marker-aware self-skip (per-routine identity)", () => {
     expect(await firedJobs("issue_comment", siblingComment(98, "alice", null), [job])).toContain(
       "pr-followup",
     );
-    // …so the next clawdcode comment may act again.
+    // …so the next errandd comment may act again.
     expect(await firedJobs("issue_comment", siblingComment(98), [job])).toContain("pr-followup");
   });
 });

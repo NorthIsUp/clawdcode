@@ -12,8 +12,8 @@ import type { MainPaneProps } from "../App";
  * navigation.
  *
  * `hideAppearance` drops the legacy theme controls — v3 owns its own theme
- * system (sidebar ThemePicker / `clawdcode:v3:theme`); the old Appearance
- * panel writes conflicting `clawdcode:theme` keys, which was the source of the
+ * system (sidebar ThemePicker / `errandd:v3:theme`); the old Appearance
+ * panel writes conflicting `errandd:theme` keys, which was the source of the
  * "themes all messed up" behavior when visiting Settings.
  */
 export function SettingsView(_props: MainPaneProps) {

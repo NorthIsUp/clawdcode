@@ -77,7 +77,7 @@ describe("parseStartArgs", () => {
   });
 
   test("--prompt without payload → usage error", () => {
-    expect(err(["--prompt"])).toContain("Usage: clawdcode start --prompt");
+    expect(err(["--prompt"])).toContain("Usage: errandd start --prompt");
   });
 
   test("payload without --prompt → error", () => {

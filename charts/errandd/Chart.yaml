@@ -1,12 +1,12 @@
 apiVersion: v2
-name: clawdcode
+name: errandd
 description: A daemon for Claude Code routines, chats, and hooks, with a web UI.
 type: application
 version: 0.1.0
 appVersion: "0.1.0"
-home: https://github.com/NorthIsUp/clawdcode
+home: https://github.com/NorthIsUp/errandd
 sources:
-  - https://github.com/NorthIsUp/clawdcode
+  - https://github.com/NorthIsUp/errandd
 keywords:
   - claude
   - claude-code
@@ -15,4 +15,4 @@ keywords:
   - daemon
 maintainers:
   - name: NorthIsUp
-icon: https://raw.githubusercontent.com/NorthIsUp/clawdcode/master/images/logo.png
+icon: https://raw.githubusercontent.com/NorthIsUp/errandd/master/images/logo.png

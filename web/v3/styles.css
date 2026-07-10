@@ -4,7 +4,7 @@
      default, a high-contrast dark + light (WCAG-friendly), and a colorblind-
      safe theme (Okabe-Ito palette — no red/green status pairing). The active
      theme is system-informed (prefers-color-scheme + prefers-contrast) and
-     persisted under `clawdcode:v3:theme`; see index.html + the sidebar picker. */
+     persisted under `errandd:v3:theme`; see index.html + the sidebar picker. */
   themes:
     abyssal --default,
     tidepool,

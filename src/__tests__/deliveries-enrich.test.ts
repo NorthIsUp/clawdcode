@@ -349,7 +349,7 @@ describe("handleWebhook enriches the ring delivery end-to-end", () => {
         draft: false,
       },
       repository: { full_name: "org/app" },
-      sender: { login: "octocat" }, // not the clawdcode self-login
+      sender: { login: "octocat" }, // not the errandd self-login
     };
     const req = new Request("http://local/api/webhooks/github", {
       method: "POST",
@@ -381,7 +381,7 @@ describe("handleWebhook enriches the ring delivery end-to-end", () => {
 
 describe("durable delivery store (persist + hydrate across restart)", () => {
   test("init → record → reset (restart) → re-init hydrates the ring", () => {
-    const tmp = `/tmp/clawd-deliveries-${seq++}.db`;
+    const tmp = `/tmp/errandd-deliveries-${seq++}.db`;
     initDeliveryStore(tmp);
     const id = uniqueId("dur");
     recordDelivery({ ...baseDelivery(id, "pull_request", { hi: 1 }), summary: "PR#7" });

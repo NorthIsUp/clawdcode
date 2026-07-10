@@ -21,7 +21,7 @@
 import { Database } from "bun:sqlite";
 import { join } from "node:path";
 
-const DEFAULT_DB_PATH = join(process.cwd(), ".claude", "clawdcode", "sentry-seen.db");
+const DEFAULT_DB_PATH = join(process.cwd(), ".claude", "errandd", "sentry-seen.db");
 
 /** 90 days. Issues are long-lived; an issue that re-appears after months of
  *  silence SHOULD re-triage, so the prune window is generous. */

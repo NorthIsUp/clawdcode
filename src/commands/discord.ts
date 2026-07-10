@@ -505,7 +505,7 @@ interface ThreadIntent {
 // it is OFF by default and must be explicitly opted in.
 //
 // Enable via either:
-//   - env: CLAWDCODE_DISCORD_THREAD_INTENT=1 (truthy: 1/true/yes/on)
+//   - env: ERRANDD_DISCORD_THREAD_INTENT=1 (truthy: 1/true/yes/on)
 //   - settings: discord.threadIntentClassifier === true (if surfaced by config parsing)
 //
 // Kept entirely within this module so the default-OFF guarantee holds regardless of
@@ -522,7 +522,7 @@ function threadIntentEnabledFrom(
 }
 
 function isThreadIntentClassifierEnabled(): boolean {
-  const env = process.env.CLAWDCODE_DISCORD_THREAD_INTENT;
+  const env = process.env.ERRANDD_DISCORD_THREAD_INTENT;
   // Avoid touching getSettings() (it throws pre-load) when the env opt-in already decides.
   if (threadIntentEnabledFrom(env, false)) return true;
   const cfg = getSettings().discord as { threadIntentClassifier?: boolean };
@@ -608,7 +608,7 @@ async function downloadDiscordAttachment(
   attachment: DiscordAttachment,
   type: "image" | "voice",
 ): Promise<string | null> {
-  const dir = join(process.cwd(), ".claude", "clawdcode", "inbox", "discord");
+  const dir = join(process.cwd(), ".claude", "errandd", "inbox", "discord");
   await mkdir(dir, { recursive: true });
 
   const response = await fetch(attachment.url);
@@ -909,7 +909,7 @@ async function handleMessageCreate(token: string, message: DiscordMessage, skipC
     `[${new Date().toLocaleTimeString()}] Discord ${label}${mediaSuffix}: "${cleanContent.slice(0, 60)}${cleanContent.length > 60 ? "..." : ""}"`,
   );
 
-  // Plugin wizard: intercept /plugin and /clawdcode:plugin before thread management and Claude routing.
+  // Plugin wizard: intercept /plugin and /errandd:plugin before thread management and Claude routing.
   // Must run here — after auth + non-empty checks but before AI thread intent classification,
   // so an active wizard cannot be bypassed by messages that classify as "hire" / "fire".
   const threadInfo = knownThreads.get(channelId);
@@ -1492,8 +1492,8 @@ function sendIdentify(token: string): void {
       intents: INTENTS,
       properties: {
         os: process.platform,
-        browser: "clawdcode",
-        device: "clawdcode",
+        browser: "errandd",
+        device: "errandd",
       },
     },
   });
@@ -1818,7 +1818,7 @@ export async function discord() {
   const config = getSettings().discord;
 
   if (!config.token) {
-    console.error("Discord token not configured. Set discord.token in .claude/clawdcode/settings.json");
+    console.error("Discord token not configured. Set discord.token in .claude/errandd/settings.json");
     process.exit(1);
   }
 

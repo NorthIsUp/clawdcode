@@ -32,7 +32,7 @@ the daemon redeploys (`docker-publish` on master) incrementally.
 8. **Settings frontend-design pass.** Over/under field layout (Git identity Name/Email
    are inline now), consistent spacing across all settings sections. Shared with /v2.
 9. **Dev mode → prod data.** Point the local v3 UI at the tailnet API
-   (`https://clawdcode.raccoon-fish.ts.net`) for real data while iterating — likely a
+   (`https://errandd.raccoon-fish.ts.net`) for real data while iterating — likely a
    local server-side `/api/*` proxy (env-gated) to avoid CORS; reuse tailnet trust for
    auth. Unblocks real-data UI verification.
 

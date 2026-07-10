@@ -33,7 +33,7 @@ import { prefilterReason } from "../../shared/hookEssentials";
 
 /**
  * GitHub webhook receiver. Verifies HMAC-SHA256 signature using a secret
- * pulled from the CLAWDCODE_GITHUB_WEBHOOK_SECRET env var, records the
+ * pulled from the ERRANDD_GITHUB_WEBHOOK_SECRET env var, records the
  * delivery in the ring buffer for inspection, and dispatches matching jobs.
  *
  * Follows https://docs.github.com/en/webhooks/using-webhooks/validating-webhook-deliveries
@@ -80,7 +80,7 @@ export interface WebhookDeps {
 }
 
 export function getWebhookSecret(): string {
-  return process.env.CLAWDCODE_GITHUB_WEBHOOK_SECRET ?? "";
+  return process.env.ERRANDD_GITHUB_WEBHOOK_SECRET ?? "";
 }
 
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: linear pipeline (auth → parse → record → match); breaking up obscures the flow.
@@ -92,7 +92,7 @@ export async function handleWebhook(req: Request, deps: WebhookDeps = {}): Promi
 
   const rawBody = await req.text();
 
-  // Signature verification is OPT-IN. When CLAWDCODE_GITHUB_WEBHOOK_SECRET
+  // Signature verification is OPT-IN. When ERRANDD_GITHUB_WEBHOOK_SECRET
   // is set we require a valid X-Hub-Signature-256; when unset we accept
   // deliveries as-is (useful for dev/testing; the receiver-status endpoint
   // surfaces which mode is active so the UI can warn).
@@ -206,7 +206,7 @@ export async function dispatchHook(
     return matched;
   }
   const jobs = await deps.getJobs();
-  // "Self" is the GitHub login the clawdcode user authenticates as; events
+  // "Self" is the GitHub login the errandd user authenticates as; events
   // whose actor matches self are dropped (skipSelf default true) so a routine
   // doesn't retrigger on its own PRs / comments.
   const selfLogin = await getSelfLogin();
@@ -225,7 +225,7 @@ export async function dispatchHook(
   const selfSkipReason = (actor: string) =>
     selfMarkerRoutine
       ? `\`${selfMarkerRoutine}\` posted this itself (self-skip)`
-      : `triggered by \`${actor || "?"}\` (this clawdcode user — self-skip)`;
+      : `triggered by \`${actor || "?"}\` (this errandd user — self-skip)`;
 
   // A `claw:ignore` label on the PR pauses ALL hooks for it (PR events +
   // comments), independent of routine config — a human flips it to make the bot
@@ -271,13 +271,13 @@ export async function dispatchHook(
     // pull_request_review_comment never have a reviews rule and always go
     // through the comments path below.
     const reviewPayload = event === "pull_request_review" ? readReviewPayload(payload) : null;
-    // Loop guard (per thread): a clawdcode-authored comment that fires a sibling
+    // Loop guard (per thread): a errandd-authored comment that fires a sibling
     // routine consumes one hop; an external comment resets the budget. Decided
     // once per delivery so multiple firing routines still count as a single hop.
     const scope = extractHookScope(event, payload);
     const now = Date.now();
     const internalOverBudget = isSelfActor && !underHopBudget(scope, now);
-    const loopGuardReason = `cross-routine loop guard — \`${scope ?? "?"}\` hit ${INTERNAL_HOP_MAX} clawdcode-authored triggers within ${INTERNAL_HOP_WINDOW_MS / 60000}m; pausing until an external comment or the window resets`;
+    const loopGuardReason = `cross-routine loop guard — \`${scope ?? "?"}\` hit ${INTERNAL_HOP_MAX} errandd-authored triggers within ${INTERNAL_HOP_WINDOW_MS / 60000}m; pausing until an external comment or the window resets`;
     let commentFired = false;
     for (const job of jobs) {
       const reviewsCfg = job.hookConfig?.reviews;
@@ -521,11 +521,11 @@ function readTriggerBody(event: string, payload: unknown): string | null {
   return typeof body === "string" ? body : null;
 }
 
-/** Pull the authoring routine out of a clawdcode marker
- *  (`<!-- clawdcode:routine=<name> … -->`) stamped at the top of a GitHub post.
+/** Pull the authoring routine out of a errandd marker
+ *  (`<!-- errandd:routine=<name> … -->`) stamped at the top of a GitHub post.
  *  Returns null when absent. Tolerant of extra fields after the name so the
  *  marker can carry more metadata later. */
-const ROUTINE_MARKER_RE = /<!--\s*clawdcode:routine=([\w./-]+)/;
+const ROUTINE_MARKER_RE = /<!--\s*errandd:routine=([\w./-]+)/;
 function parseRoutineMarker(body: string | null): string | null {
   if (!body) {
     return null;
@@ -536,7 +536,7 @@ function parseRoutineMarker(body: string | null): string | null {
 // ── Cross-routine loop guard ────────────────────────────────────────────────
 // The marker self-skip lets a routine act on a SIBLING routine's posts. Two
 // routines that both accept bot comments could otherwise ping-pong forever. Bound
-// the number of clawdcode-authored ("internal") comment triggers that may fire on
+// the number of errandd-authored ("internal") comment triggers that may fire on
 // a single PR/issue thread within a window; any external (human / third-party-bot)
 // comment that fires resets the thread's budget. In-memory, best-effort (resets
 // on restart) — a backstop, not exact accounting.
@@ -559,7 +559,7 @@ function underHopBudget(scope: string | null, now: number): boolean {
   return scope ? hopEntry(scope, now).count < INTERNAL_HOP_MAX : true;
 }
 /** Consume one internal hop — call once per delivery that actually fired a
- *  routine off a clawdcode-authored comment. */
+ *  routine off a errandd-authored comment. */
 function commitInternalHop(scope: string | null, now: number): void {
   if (scope) {
     hopEntry(scope, now).count += 1;
@@ -588,7 +588,7 @@ function readSenderLogin(payload: unknown): string | null {
 }
 
 /**
- * Resolve clawdcode's own GitHub login. `CLAWDCODE_SELF_LOGIN` overrides
+ * Resolve errandd's own GitHub login. `ERRANDD_SELF_LOGIN` overrides
  * everything (explicit config for deployments where `gh` isn't on PATH, and the
  * seam tests use); otherwise `gh api user --jq .login`, cached for the process
  * lifetime (null if gh isn't auth'd / not on PATH, making skipSelf a no-op).
@@ -597,7 +597,7 @@ function readSenderLogin(payload: unknown): string | null {
  */
 let _selfLoginPromise: Promise<string | null> | null = null;
 async function getSelfLogin(): Promise<string | null> {
-  const override = process.env.CLAWDCODE_SELF_LOGIN?.trim();
+  const override = process.env.ERRANDD_SELF_LOGIN?.trim();
   if (override) {
     return override;
   }

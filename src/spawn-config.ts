@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { getSettings, type ModelConfig, type SecurityConfig } from "./config";
 
-const PERMISSION_MODE_FILE = join(process.cwd(), ".claude/clawdcode/permission-mode.json");
+const PERMISSION_MODE_FILE = join(process.cwd(), ".claude/errandd/permission-mode.json");
 
 /**
  * On Windows, `claude` resolves to `claude.cmd`, a batch wrapper that must

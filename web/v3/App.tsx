@@ -73,7 +73,7 @@ const MAIN_VIEWS: Record<V3View, ComponentType<MainPaneProps>> = {
   about: AboutView,
 };
 
-const SIDEBAR_W_KEY = "clawdcode:v3:sidebarW";
+const SIDEBAR_W_KEY = "errandd:v3:sidebarW";
 const SIDEBAR_MIN = 220;
 const SIDEBAR_MAX = 600;
 

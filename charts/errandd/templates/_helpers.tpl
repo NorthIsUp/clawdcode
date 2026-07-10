@@ -1,10 +1,10 @@
 {{/* Common helpers */}}
 
-{{- define "clawdcode.name" -}}
+{{- define "errandd.name" -}}
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
-{{- define "clawdcode.fullname" -}}
+{{- define "errandd.fullname" -}}
 {{- if .Values.fullnameOverride -}}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" -}}
 {{- else -}}
@@ -17,42 +17,42 @@
 {{- end -}}
 {{- end -}}
 
-{{- define "clawdcode.chart" -}}
+{{- define "errandd.chart" -}}
 {{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
-{{- define "clawdcode.labels" -}}
-helm.sh/chart: {{ include "clawdcode.chart" . }}
-{{ include "clawdcode.selectorLabels" . }}
+{{- define "errandd.labels" -}}
+helm.sh/chart: {{ include "errandd.chart" . }}
+{{ include "errandd.selectorLabels" . }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end -}}
 
-{{- define "clawdcode.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "clawdcode.name" . }}
+{{- define "errandd.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "errandd.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 
-{{- define "clawdcode.serviceAccountName" -}}
+{{- define "errandd.serviceAccountName" -}}
 {{- if .Values.serviceAccount.create -}}
-{{- default (include "clawdcode.fullname" .) .Values.serviceAccount.name -}}
+{{- default (include "errandd.fullname" .) .Values.serviceAccount.name -}}
 {{- else -}}
 {{- default "default" .Values.serviceAccount.name -}}
 {{- end -}}
 {{- end -}}
 
-{{- define "clawdcode.secretName" -}}
+{{- define "errandd.secretName" -}}
 {{- if .Values.secrets.existingSecret -}}
 {{- .Values.secrets.existingSecret -}}
 {{- else -}}
-{{- include "clawdcode.fullname" . -}}
+{{- include "errandd.fullname" . -}}
 {{- end -}}
 {{- end -}}
 
-{{- define "clawdcode.pvcName" -}}
+{{- define "errandd.pvcName" -}}
 {{- if .Values.persistence.existingClaim -}}
 {{- .Values.persistence.existingClaim -}}
 {{- else -}}
-{{- printf "%s-data" (include "clawdcode.fullname" .) -}}
+{{- printf "%s-data" (include "errandd.fullname" .) -}}
 {{- end -}}
 {{- end -}}

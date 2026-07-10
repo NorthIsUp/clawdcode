@@ -7,15 +7,15 @@ import { join, resolve, sep } from "path";
 
 const PROJECT_DIR = process.cwd();
 
-// Resolve prompts relative to the clawdcode installation, not the project dir
+// Resolve prompts relative to the errandd installation, not the project dir
 const PROMPTS_DIR = join(import.meta.dir, "..", "prompts");
 const HEARTBEAT_PROMPT_FILE = join(PROMPTS_DIR, "heartbeat", "HEARTBEAT.md");
 // Project-level prompt overrides live here (gitignored, user-owned)
-const PROJECT_PROMPTS_DIR = join(process.cwd(), ".claude", "clawdcode", "prompts");
+const PROJECT_PROMPTS_DIR = join(process.cwd(), ".claude", "errandd", "prompts");
 const PROJECT_CLAUDE_MD = join(process.cwd(), "CLAUDE.md");
 const LEGACY_PROJECT_CLAUDE_MD = join(process.cwd(), ".claude", "CLAUDE.md");
-const CLAWDCODE_BLOCK_START = "<!-- clawdcode:managed:start -->";
-const CLAWDCODE_BLOCK_END = "<!-- clawdcode:managed:end -->";
+const ERRANDD_BLOCK_START = "<!-- errandd:managed:start -->";
+const ERRANDD_BLOCK_END = "<!-- errandd:managed:end -->";
 
 /** Absolute path to the project's CLAUDE.md (read on every spawn). */
 export const PROJECT_CLAUDE_MD_PATH = PROJECT_CLAUDE_MD;
@@ -121,9 +121,9 @@ export async function ensureProjectClaudeMd(): Promise<void> {
 
   const promptContent = (await loadPrompts()).trim();
   const managedBlock = [
-    CLAWDCODE_BLOCK_START,
+    ERRANDD_BLOCK_START,
     promptContent,
-    CLAWDCODE_BLOCK_END,
+    ERRANDD_BLOCK_END,
   ].join("\n");
 
   let content = "";
@@ -140,9 +140,9 @@ export async function ensureProjectClaudeMd(): Promise<void> {
 
   const normalized = content.trim();
   const hasManagedBlock =
-    normalized.includes(CLAWDCODE_BLOCK_START) && normalized.includes(CLAWDCODE_BLOCK_END);
+    normalized.includes(ERRANDD_BLOCK_START) && normalized.includes(ERRANDD_BLOCK_END);
   const managedPattern = new RegExp(
-    `${CLAWDCODE_BLOCK_START}[\\s\\S]*?${CLAWDCODE_BLOCK_END}`,
+    `${ERRANDD_BLOCK_START}[\\s\\S]*?${ERRANDD_BLOCK_END}`,
     "m"
   );
 
@@ -162,7 +162,7 @@ export async function ensureProjectClaudeMd(): Promise<void> {
 /**
  * Load the heartbeat prompt template.
  * Project-level override takes precedence: place a file at
- * .claude/clawdcode/prompts/HEARTBEAT.md to fully replace the built-in template.
+ * .claude/errandd/prompts/HEARTBEAT.md to fully replace the built-in template.
  */
 export async function loadHeartbeatPromptTemplate(): Promise<string> {
   const projectOverride = join(PROJECT_PROMPTS_DIR, "HEARTBEAT.md");

@@ -1,9 +1,9 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "clawdcode.fullname" . }}
+  name: {{ include "errandd.fullname" . }}
   labels:
-    {{- include "clawdcode.labels" . | nindent 4 }}
+    {{- include "errandd.labels" . | nindent 4 }}
   {{- with .Values.service.annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
@@ -16,4 +16,4 @@ spec:
       targetPort: http
       protocol: TCP
   selector:
-    {{- include "clawdcode.selectorLabels" . | nindent 4 }}
+    {{- include "errandd.selectorLabels" . | nindent 4 }}

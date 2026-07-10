@@ -24,7 +24,7 @@ interface PersistedView {
 }
 
 function storageKey(source: string): string {
-  return `clawdcode:v3:view:${source}`;
+  return `errandd:v3:view:${source}`;
 }
 
 const DEFAULT_MODE: ViewMode = "count";

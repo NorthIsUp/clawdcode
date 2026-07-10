@@ -35,7 +35,7 @@ export function ReceiverCard({ status }: { status: ReceiverStatus }) {
       configured: status.configured,
       secret: status.secret,
       url: status.url,
-      secretEnv: "CLAWDCODE_GITHUB_WEBHOOK_SECRET",
+      secretEnv: "ERRANDD_GITHUB_WEBHOOK_SECRET",
     },
     sentry: undefined,
     datadog: undefined,
@@ -116,7 +116,7 @@ export function ReceiverCard({ status }: { status: ReceiverStatus }) {
           urlHint={
             <>
               Add this as a webhook URL in Linear (Settings → API → Webhooks). Linear provides the
-              signing secret — set it as <code className="font-mono">CLAWDCODE_LINEAR_WEBHOOK_SECRET</code>.
+              signing secret — set it as <code className="font-mono">ERRANDD_LINEAR_WEBHOOK_SECRET</code>.
             </>
           }
         >
@@ -273,7 +273,7 @@ function DatadogPayloadBlock({ payload }: { payload: unknown }) {
         {text}
       </pre>
       <p className="text-[11px] text-base-content/50 mt-1">
-        Datadog payloads are user-defined — clawdcode matches on these exact field names, so keep
+        Datadog payloads are user-defined — errandd matches on these exact field names, so keep
         the keys intact.
       </p>
     </div>
@@ -284,7 +284,7 @@ function GithubCurlSnippet({ url }: { url: string }) {
   return (
     <details className="text-xs">
       <summary className="cursor-pointer text-base-content/70">Test from curl</summary>
-      <pre className="mt-2 bg-base-200 border border-base-300 rounded-box px-3 py-2 overflow-x-auto font-mono text-[11px]">{`SECRET=$CLAWDCODE_GITHUB_WEBHOOK_SECRET
+      <pre className="mt-2 bg-base-200 border border-base-300 rounded-box px-3 py-2 overflow-x-auto font-mono text-[11px]">{`SECRET=$ERRANDD_GITHUB_WEBHOOK_SECRET
 BODY='{"zen":"hello"}'
 SIG=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$SECRET" -hex | cut -d' ' -f2)
 curl -sS -X POST "${url}" \\

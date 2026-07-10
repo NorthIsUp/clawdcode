@@ -17,7 +17,7 @@ import { join } from "node:path";
 import type { DeliveryField, DeliveryKeys } from "../shared/deliveryTypes";
 import { fibBackoffMs } from "./rate-limit";
 
-const DB_PATH = join(process.cwd(), ".claude", "clawdcode", "hook-queue.db");
+const DB_PATH = join(process.cwd(), ".claude", "errandd", "hook-queue.db");
 
 export type QueueStatus = "pending" | "running" | "done" | "failed";
 /** The agent's result once a `done` message has run — distinct from the queue

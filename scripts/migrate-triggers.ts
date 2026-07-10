@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /**
  * Migrate routine .md frontmatter to the unified `on:` triggers list.
- * Idempotent — safe to run repeatedly. Run from a clawdcode workspace (or
+ * Idempotent — safe to run repeatedly. Run from a errandd workspace (or
  * a routine source repo) to upgrade its job files in place.
  */
 import { migrateTriggers } from "../src/migrateTriggers";

@@ -145,20 +145,20 @@ export const receiver: RouteHandler = async ({ url }) => {
         configured: secret.length > 0,
         secret,
         url: `${url.origin}/api/webhooks/github`,
-        secretEnv: "CLAWDCODE_GITHUB_WEBHOOK_SECRET",
+        secretEnv: "ERRANDD_GITHUB_WEBHOOK_SECRET",
       },
       sentry: {
         configured: sentrySecret.length > 0,
         secret: sentrySecret,
         url: `${url.origin}/api/webhooks/sentry`,
-        secretEnv: "CLAWDCODE_SENTRY_CLIENT_SECRET",
+        secretEnv: "ERRANDD_SENTRY_CLIENT_SECRET",
       },
       datadog: {
         configured: datadogSecret.length > 0,
         secret: datadogSecret,
         url: `${url.origin}/api/webhooks/datadog`,
-        secretEnv: "CLAWDCODE_DATADOG_WEBHOOK_SECRET",
-        // Datadog auth rides as ?token= or X-Clawdcode-Token, and the
+        secretEnv: "ERRANDD_DATADOG_WEBHOOK_SECRET",
+        // Datadog auth rides as ?token= or X-Errandd-Token, and the
         // payload is user-defined — surface both the token-in-URL form
         // and the recommended payload template for copy-paste.
         tokenUrl: datadogSecret
@@ -171,10 +171,10 @@ export const receiver: RouteHandler = async ({ url }) => {
         secret: linearSecret,
         url: `${url.origin}/api/webhooks/linear`,
         // Linear provides the signing secret when you create the webhook.
-        secretEnv: "CLAWDCODE_LINEAR_WEBHOOK_SECRET",
+        secretEnv: "ERRANDD_LINEAR_WEBHOOK_SECRET",
         // The @mention gate (default-on) looks for this handle in ticket/comment text.
         botMention: getLinearBotMention(),
-        botMentionEnv: "CLAWDCODE_LINEAR_BOT_MENTION",
+        botMentionEnv: "ERRANDD_LINEAR_BOT_MENTION",
       },
     },
   });

@@ -15,7 +15,7 @@ const SESSIONS_MOD = JSON.stringify(join(import.meta.dir, "..", "sessions"));
 
 async function resetSandbox() {
   await rm(TEST_ROOT, { recursive: true, force: true });
-  await mkdir(join(TEST_ROOT, ".claude", "clawdcode"), { recursive: true });
+  await mkdir(join(TEST_ROOT, ".claude", "errandd"), { recursive: true });
 }
 
 afterAll(async () => {
@@ -80,7 +80,7 @@ test("increments from a pre-existing on-disk session (cold cache) all land", asy
   // The worst case: `current` starts null and concurrent calls each read the
   // file independently. Without serialization they read the same base value
   // and write back stale snapshots, losing updates.
-  const sessionFile = join(TEST_ROOT, ".claude", "clawdcode", "session.json");
+  const sessionFile = join(TEST_ROOT, ".claude", "errandd", "session.json");
   await writeFile(
     sessionFile,
     JSON.stringify({

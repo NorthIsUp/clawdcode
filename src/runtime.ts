@@ -396,7 +396,7 @@ export interface UpdateResult {
 /**
  * Apply whatever update mechanism matches the current deployment:
  *   - git checkout → `git pull --ff-only`
- *   - claude plugin install → `claude plugin update clawdcode`
+ *   - claude plugin install → `claude plugin update errandd`
  *   - baked image → refused with an instructive error
  *
  * The daemon needs a manual restart after either form succeeds — the

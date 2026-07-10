@@ -15,7 +15,7 @@
 import { Database } from "bun:sqlite";
 import { join } from "node:path";
 
-const DB_PATH = join(process.cwd(), ".claude", "clawdcode", "interactive-queue.db");
+const DB_PATH = join(process.cwd(), ".claude", "errandd", "interactive-queue.db");
 
 export type InteractivePlatform = "telegram" | "discord" | "slack";
 export type InteractiveStatus = "pending" | "running" | "done" | "failed";

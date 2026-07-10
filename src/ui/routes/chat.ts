@@ -119,7 +119,7 @@ export const chat: RouteHandler = async ({ req, opts }) => {
         const content = Buffer.from(att.data, "base64").toString("utf-8");
         attachmentBlocks.push(`[Attached file: ${att.name}]\n\`\`\`${ext}\n${content}\n\`\`\``);
       } else if (att.type.startsWith("image/")) {
-        const uploadDir = `${tmpdir()}/clawdcode-uploads`;
+        const uploadDir = `${tmpdir()}/errandd-uploads`;
         await import("node:fs/promises")
           .then(({ mkdir }) => mkdir(uploadDir, { recursive: true }))
           .catch(() => {});

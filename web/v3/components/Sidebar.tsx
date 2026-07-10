@@ -15,8 +15,8 @@ import { cn } from "./ui/utils";
 // first-time visitor (no saved state) sees a fully collapsed tree. The key is
 // bumped from the legacy `:collapsed` map (inverted, sections-only) so old data
 // can't leak the wrong defaults.
-const OPEN_KEY = "clawdcode:v3:open";
-const SORT_KEY = "clawdcode:v3:sort";
+const OPEN_KEY = "errandd:v3:open";
+const SORT_KEY = "errandd:v3:sort";
 
 function loadSort(): SortMode {
   try {
@@ -49,7 +49,7 @@ function loadOpen(): OpenMap {
  * v3 sidebar (spec §4). Two stacked zones inside the shell's `<aside>`:
  *
  *   ┌──────────────────────┐
- *   │ 🦞 ClawdCode      v3  │  header
+ *   │ 🦞 Errandd      v3  │  header
  *   ├──────────────────────┤
  *   │ ▸ SCHEDULES          │  hook-source tree (live, from the queue SSE)
  *   │ ▾ PULL REQUESTS      │
@@ -180,7 +180,7 @@ export function Sidebar({
           🦞
         </span>
         <span className="font-serif text-2xl leading-none tracking-tight">
-          clawd<span className="text-primary">code</span>
+          errandd<span className="text-primary">code</span>
         </span>
         <ThemePicker />
         <span

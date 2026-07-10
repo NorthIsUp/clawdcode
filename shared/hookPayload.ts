@@ -394,7 +394,7 @@ export interface DatadogPayload {
 
 /** Read the match-relevant fields from a Datadog webhook body. Datadog
  *  payloads are user-defined; this reads the canonical field names from
- *  the template clawdcode recommends (see datadog.ts). */
+ *  the template errandd recommends (see datadog.ts). */
 export function readDatadogPayload(raw: unknown): DatadogPayload | null {
   if (typeof raw !== "object" || raw === null) {
     return null;

@@ -24,7 +24,7 @@ export interface ProviderReceiver {
   /** Raw secret value when set; empty string when unset. */
   secret: string;
   url: string;
-  /** Env var the secret is read from, e.g. CLAWDCODE_SENTRY_CLIENT_SECRET. */
+  /** Env var the secret is read from, e.g. ERRANDD_SENTRY_CLIENT_SECRET. */
   secretEnv: string;
   /** Datadog only: the webhook URL with `?token=` baked in. */
   tokenUrl?: string;

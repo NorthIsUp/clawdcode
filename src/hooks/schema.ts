@@ -88,7 +88,7 @@ export interface SentryRule {
 
 /**
  * Match Datadog webhooks. Datadog payloads are user-defined, so matching
- * keys off the canonical template fields clawdcode recommends configuring
+ * keys off the canonical template fields errandd recommends configuring
  * in the Datadog webhook payload (monitor id, alert type, priority, tags).
  */
 export interface DatadogRule {
@@ -214,7 +214,7 @@ export interface HookConfig {
   /** Fire on the plain GitHub `issues` event. `true` = the `opened` default; an
    *  object filters by action / label. Unset = off. */
   issues?: boolean | IssuesRule;
-  /** Drop events where the actor matches the clawdcode user's own GitHub
+  /** Drop events where the actor matches the errandd user's own GitHub
    *  login — so a routine that comments on a PR doesn't get retriggered
    *  by its own comment. Defaults to `true`; explicit `false` allows
    *  self-retrigger (useful for testing or self-replay scenarios). The

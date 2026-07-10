@@ -9,7 +9,7 @@ import { dispatch } from "./routes";
 import type { RouteCtx } from "./routes/types";
 import type { StartWebUiOptions, WebServerHandle } from "./types";
 
-// When clawdcode is installed via `claude plugin install` the source is
+// When errandd is installed via `claude plugin install` the source is
 // extracted to ~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/
 // without a dist/web/ — `bun run build:web` is a dev-time step that the
 // plugin tarball doesn't carry. Without it the /ui/, /darwin/, /os9/,
@@ -21,13 +21,13 @@ function ensureWebBuilt(): void {
   if (existsSync(sentinel)) {
     return;
   }
-  console.error("[clawdcode] dist/web missing — running `bun run build:web`...");
+  console.error("[errandd] dist/web missing — running `bun run build:web`...");
   const r = spawnSync("bun", ["run", "build:web"], {
     cwd: pkgRoot,
     stdio: "inherit",
   });
   if (r.status !== 0) {
-    console.error("[clawdcode] build:web failed — /ui/ will 404 until you fix it.");
+    console.error("[errandd] build:web failed — /ui/ will 404 until you fix it.");
   }
 }
 
@@ -85,14 +85,14 @@ export function startWebUi(opts: StartWebUiOptions): WebServerHandle {
   ensureWebBuilt();
 
   // Dev API proxy target — validated ONCE at startup, not per-request. Only
-  // enabled when CLAWDCODE_DEV_API_PROXY is a valid http(s) URL AND we are not
+  // enabled when ERRANDD_DEV_API_PROXY is a valid http(s) URL AND we are not
   // in production, so a stray env var in a prod deploy can never turn the
   // daemon into an auth-bypassing forwarder. Null = disabled (the normal case).
   const devProxyBase: string | null = (() => {
-    const raw = process.env.CLAWDCODE_DEV_API_PROXY?.trim();
+    const raw = process.env.ERRANDD_DEV_API_PROXY?.trim();
     if (!raw) return null;
     if (process.env.NODE_ENV === "production") {
-      console.error("[clawdcode] CLAWDCODE_DEV_API_PROXY ignored in production");
+      console.error("[errandd] ERRANDD_DEV_API_PROXY ignored in production");
       return null;
     }
     try {
@@ -100,10 +100,10 @@ export function startWebUi(opts: StartWebUiOptions): WebServerHandle {
       if (u.protocol !== "http:" && u.protocol !== "https:") {
         throw new Error(`unsupported protocol ${u.protocol}`);
       }
-      console.error(`[clawdcode] DEV API proxy ON → ${u.origin} (local auth bypassed for /api/*)`);
+      console.error(`[errandd] DEV API proxy ON → ${u.origin} (local auth bypassed for /api/*)`);
       return raw.replace(/\/+$/, "");
     } catch (err) {
-      console.error(`[clawdcode] CLAWDCODE_DEV_API_PROXY invalid, ignoring: ${String(err)}`);
+      console.error(`[errandd] ERRANDD_DEV_API_PROXY invalid, ignoring: ${String(err)}`);
       return null;
     }
   })();

@@ -60,7 +60,7 @@ const SECTIONS = [
 /**
  * @param hideAppearance v3 reuses this panel for its functional settings but
  *   owns its own theme system (Abyssal/Tidepool/etc. via the sidebar picker).
- *   The legacy "Appearance" controls here write the old `clawdcode:theme` keys
+ *   The legacy "Appearance" controls here write the old `errandd:theme` keys
  *   and would fight v3's `data-theme`, so v3 passes `hideAppearance` to drop it.
  */
 export function SettingsSection({ hideAppearance = false }: { hideAppearance?: boolean } = {}) {
@@ -506,24 +506,24 @@ function ReposPanel() {
 // ---------------------------------------------------------------------------
 
 /** Lists every plugin installed under the current Claude user/project scope,
- *  plus a synthetic "self" row for clawdcode (which lives on disk as a git
+ *  plus a synthetic "self" row for errandd (which lives on disk as a git
  *  checkout, not as an installed plugin, so it doesn't show up in
  *  `claude plugin list`). Each row offers enable/disable + update + uninstall
- *  except for clawdcode, where uninstall is suppressed — see
+ *  except for errandd, where uninstall is suppressed — see
  *  `isSelfPluginId` in `src/ui/services/claudePlugins.ts` for the matching
  *  belt-and-suspenders backend check. */
 function InstalledPluginsCard({ runtimeVersion }: { runtimeVersion: string | null }) {
   const plugins = useAsync(() => listPlugins());
   const installed = plugins.data?.installed ?? [];
 
-  // Synthesise a "self" row when clawdcode isn't already in the CLI output
+  // Synthesise a "self" row when errandd isn't already in the CLI output
   // (it usually isn't — we run from a git checkout).
   const hasSelf = installed.some((p) => isSelfPlugin(p.id));
   const rows: InstalledPlugin[] = hasSelf
     ? installed
     : [
         {
-          id: "clawdcode",
+          id: "errandd",
           version: runtimeVersion ?? "dev",
           scope: "local",
           enabled: true,
@@ -567,7 +567,7 @@ function InstalledPluginsCard({ runtimeVersion }: { runtimeVersion: string | nul
 
 function isSelfPlugin(id: string): boolean {
   const name = id.split("@", 1)[0];
-  return name === "clawdcode";
+  return name === "errandd";
 }
 
 function InstalledPluginRow({
@@ -636,7 +636,7 @@ function InstalledPluginRow({
           className="btn btn-ghost btn-xs"
           onClick={() => void run("update")}
           disabled={busy !== null || self}
-          title={self ? "Update clawdcode from the About page" : "Update"}
+          title={self ? "Update errandd from the About page" : "Update"}
         >
           {busy === "update" ? "Updating…" : "Update"}
         </button>
@@ -986,7 +986,7 @@ function GitIdentityPanel() {
       {err ? <ErrorBanner error={err} /> : null}
       <p className="text-xs text-base-content/60 mb-2">
         Used as <code className="font-mono">user.name</code> and{" "}
-        <code className="font-mono">user.email</code> when clawdcode commits to a jobs repo.
+        <code className="font-mono">user.email</code> when errandd commits to a jobs repo.
         Required in containerized deployments where the global git config is empty.
       </p>
       <div className="space-y-3">
@@ -997,7 +997,7 @@ function GitIdentityPanel() {
             className="input border-base-300 input-sm w-full"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="Clawdcode Bot"
+            placeholder="Errandd Bot"
           />
         </label>
         <label className="flex flex-col gap-1.5">

@@ -20,7 +20,7 @@ export function AboutSection() {
           </span>
           <div>
             <div className="flex items-baseline gap-2">
-              <h2 className="text-xl font-semibold">ClawdCode</h2>
+              <h2 className="text-xl font-semibold">Errandd</h2>
               {state.data?.runtime.version && (
                 <code className="text-xs text-base-content/60 font-mono">
                   v{state.data.runtime.version}
@@ -77,7 +77,7 @@ export function AboutSection() {
           <li>
             <a
               className="link link-primary"
-              href="https://github.com/teamclara/clawdcode"
+              href="https://github.com/teamclara/errandd"
               target="_blank"
               rel="noopener noreferrer"
             >

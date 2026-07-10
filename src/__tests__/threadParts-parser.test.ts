@@ -154,7 +154,7 @@ describe("parseTranscript (spec §6)", () => {
     expect(tool.tool.output).toEqual({ text: "done" });
   });
 
-  test("strips ClawdCode-injected timestamp prefix from user text", () => {
+  test("strips Errandd-injected timestamp prefix from user text", () => {
     const t = JSON.stringify({
       type: "user",
       message: { role: "user", content: "[2026-06-08 12:00:00 UTC]\nthe real message" },

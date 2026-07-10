@@ -6,7 +6,7 @@
  * housekeeping task is registered in `registry.ts` and run from here.
  *
  *   - **Migrations** run ONCE, in order, and are recorded in a ledger
- *     (`.claude/clawdcode/maintenance.jsonl`) so they never re-run. Forward-only:
+ *     (`.claude/errandd/maintenance.jsonl`) so they never re-run. Forward-only:
  *     if one fails, later migrations are held back until it succeeds.
  *   - **Cleanups** run EVERY boot (and on the hourly tick). They must be
  *     idempotent — a no-op when there's nothing to do.
@@ -19,7 +19,7 @@ import { appendFile, mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { CLEANUPS, MIGRATIONS } from "./registry";
 
-const DIR = join(process.cwd(), ".claude", "clawdcode");
+const DIR = join(process.cwd(), ".claude", "errandd");
 const LEDGER = join(DIR, "maintenance.jsonl");
 
 /** A unit of maintenance work. `run` is idempotent and returns a one-line

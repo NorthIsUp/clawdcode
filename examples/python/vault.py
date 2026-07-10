@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Encrypted secrets vault for ClawdCode agents.
+Encrypted secrets vault for Errandd agents.
 Credentials are never stored in plaintext on disk.
 Fernet encryption (AES-128-CBC + HMAC-SHA256).
 
@@ -21,8 +21,8 @@ except ImportError:
     print("ERROR: pip3 install cryptography", file=sys.stderr)
     sys.exit(1)
 
-VAULT_FILE = Path.home() / ".clawdcode" / "vault" / "secrets.enc"
-KEY_FILE = Path.home() / ".clawdcode" / "vault" / ".vault_key"
+VAULT_FILE = Path.home() / ".errandd" / "vault" / "secrets.enc"
+KEY_FILE = Path.home() / ".errandd" / "vault" / ".vault_key"
 
 
 class VaultError(RuntimeError):
@@ -32,7 +32,7 @@ class VaultError(RuntimeError):
 def _get_key() -> bytes:
     """Load or generate the master vault key."""
     # Priority 1: environment variable.
-    env_key = os.environ.get("CLAWDCODE_VAULT_KEY")
+    env_key = os.environ.get("ERRANDD_VAULT_KEY")
     if env_key:
         return env_key.encode()
 
@@ -137,7 +137,7 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="ClawdCode encrypted secrets vault CLI",
+        description="Errandd encrypted secrets vault CLI",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""Examples:
   python3 vault.py set TELEGRAM_BOT_TOKEN "1234:abc..."

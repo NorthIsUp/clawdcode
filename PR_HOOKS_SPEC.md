@@ -1,4 +1,4 @@
-# ClawdCode PR Hooks — Design Spec
+# Errandd PR Hooks — Design Spec
 
 ## Goal
 
@@ -197,7 +197,7 @@ document in the UI's empty-state, in order of friction:
    dev. Document the exact tunnel command.
 2. **Self-hosted on a public host** — point `settings.web.host` at a public
    interface; user is responsible for TLS / reverse-proxy.
-3. **Future**: bundled tunnel mode in ClawdCode itself (deferred).
+3. **Future**: bundled tunnel mode in Errandd itself (deferred).
 
 The Hooks tab should not pretend the local-only default `127.0.0.1` listener
 works for webhooks — show a yellow banner with the appropriate setup link
@@ -308,7 +308,7 @@ Each step is shippable on its own.
 ## Open questions
 
 1. **Match-anywhere on body?** Should we support a `body:` glob (match a
-   trigger phrase inside PR description, like `[clawdcode: please-review]`)?
+   trigger phrase inside PR description, like `[errandd: please-review]`)?
    Recommendation: yes in v1.1, not v1 — orthogonal feature, separate review.
 2. **Reply path** — does the matched job's output get posted back as a PR
    comment? Requires a GitHub App install (or PAT); deferred to v2 along with

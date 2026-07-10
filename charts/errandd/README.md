@@ -1,42 +1,42 @@
-# clawdcode Helm chart
+# errandd Helm chart
 
-Run the ClawdCode daemon + web UI on Kubernetes from the existing
+Run the Errandd daemon + web UI on Kubernetes from the existing
 [`Dockerfile`](../../Dockerfile).
 
 ## Quickstart
 
 ```sh
-helm install clawdcode ./charts/clawdcode \
+helm install errandd ./charts/errandd \
   --set secrets.anthropicApiKey=sk-ant-... \
   --set ingress.enabled=true \
-  --set ingress.hosts[0].host=clawdcode.example.com
+  --set ingress.hosts[0].host=errandd.example.com
 ```
 
 Then port-forward (or hit your Ingress):
 
 ```sh
-kubectl port-forward svc/clawdcode 4632:4632
+kubectl port-forward svc/errandd 4632:4632
 # → http://127.0.0.1:4632/ui/?token=<from web.token>
 ```
 
-The daemon writes its auth token to `/app/.claude/clawdcode/web.token` on
+The daemon writes its auth token to `/app/.claude/errandd/web.token` on
 first start. Read it with:
 
 ```sh
-kubectl exec deploy/clawdcode -- cat /app/.claude/clawdcode/web.token
+kubectl exec deploy/errandd -- cat /app/.claude/errandd/web.token
 ```
 
 ## Values cheat sheet
 
 | Key | Default | Purpose |
 | --- | --- | --- |
-| `image.repository` | `ghcr.io/northisup/clawdcode` | Container image (the repo Dockerfile, hosted) |
+| `image.repository` | `ghcr.io/northisup/errandd` | Container image (the repo Dockerfile, hosted) |
 | `image.tag` | `Chart.appVersion` | Image tag |
 | `service.port` | `4632` | Web UI port (matches Dockerfile `EXPOSE`) |
 | `persistence.enabled` | `true` | Mount a PVC at `/app/.claude` |
 | `persistence.size` | `5Gi` | PVC size |
 | `secrets.anthropicApiKey` | `""` | Required; goes into the auto-created Secret |
-| `secrets.existingSecret` | `""` | BYO Secret with `ANTHROPIC_API_KEY` (+ optional `CLAWDCODE_WEB_TOKEN`) |
+| `secrets.existingSecret` | `""` | BYO Secret with `ANTHROPIC_API_KEY` (+ optional `ERRANDD_WEB_TOKEN`) |
 | `ingress.enabled` | `false` | Provision an Ingress |
 | `resources` | 100m / 256Mi req · 1 CPU / 1Gi limit | Right-size to your load |
 

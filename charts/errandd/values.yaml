@@ -1,8 +1,8 @@
-# Default values for clawdcode.
+# Default values for errandd.
 # Override any of these with `helm install -f my-values.yaml ...`.
 
 image:
-  repository: ghcr.io/northisup/clawdcode
+  repository: ghcr.io/northisup/errandd
   tag: ""              # defaults to .Chart.appVersion
   pullPolicy: IfNotPresent
 
@@ -26,15 +26,15 @@ ingress:
   className: ""
   annotations: {}
   hosts:
-    - host: clawdcode.local
+    - host: errandd.local
       paths:
         - path: /
           pathType: Prefix
   tls: []
   # Example TLS:
-  # - secretName: clawdcode-tls
+  # - secretName: errandd-tls
   #   hosts:
-  #     - clawdcode.example.com
+  #     - errandd.example.com
 
 # Persistent storage for /app/.claude (sessions, jobs, web.token, logs).
 persistence:
@@ -53,14 +53,14 @@ secrets:
   # Anthropic API key (required for the daemon to invoke Claude).
   anthropicApiKey: ""
   # Optional: pre-set a static web auth token. If empty, the daemon generates
-  # one on first launch and writes it to /app/.claude/clawdcode/web.token.
+  # one on first launch and writes it to /app/.claude/errandd/web.token.
   webToken: ""
 
-# Extra env vars passed straight through (handy for CLAWDCODE_* overrides
+# Extra env vars passed straight through (handy for ERRANDD_* overrides
 # the app reads from the environment).
 env: {}
-  # CLAWDCODE_WEB_HOST: 0.0.0.0
-  # CLAWDCODE_TIMEZONE: America/New_York
+  # ERRANDD_WEB_HOST: 0.0.0.0
+  # ERRANDD_TIMEZONE: America/New_York
 
 # Daemon command/args override. Leave empty to use the image's ENTRYPOINT+CMD.
 command: []

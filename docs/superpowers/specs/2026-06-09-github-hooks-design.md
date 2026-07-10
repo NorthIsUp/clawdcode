@@ -262,7 +262,7 @@ GitHub triggers
   - Labels globs (default empty).
   - Draft handling segmented control (Skip drafts / Drafts only / Any).
   - Repo globs (default `*/*`).
-  - `skip_self` checkbox: "Skip events from this clawdcode user (don't retrigger
+  - `skip_self` checkbox: "Skip events from this errandd user (don't retrigger
     on my own PRs/comments)" — checked by default.
 - **Summary line** (always visible, the plain-English readout). Compose from the
   matrix, e.g.:

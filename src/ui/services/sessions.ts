@@ -91,7 +91,7 @@ function extractUserText(line: string): string {
         .map((c) => c.text ?? "")
         .join("\n");
     }
-    // Strip ClawdCode-injected prefix blocks, keep the user's actual text in full.
+    // Strip Errandd-injected prefix blocks, keep the user's actual text in full.
     raw = raw
       .replace(/^\[[\d-]+ [\d:]+ UTC[^\]]*\]\n/m, "")
       .replace(/^\[(?:WhatsApp|Slack|Discord)[^\]]*\]\n/m, "")
@@ -156,7 +156,7 @@ function recoverTriggerFromFirstMessage(firstFull: string): SessionTrigger | nul
 
 export async function listSessions(includeClosed = false): Promise<SessionInfo[]> {
   const cwd = process.cwd();
-  const sessionFile = join(cwd, ".claude", "clawdcode", "session.json");
+  const sessionFile = join(cwd, ".claude", "errandd", "session.json");
 
   const sessions: SessionInfo[] = [];
   const knownIds = new Set<string>();

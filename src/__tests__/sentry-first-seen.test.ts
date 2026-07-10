@@ -13,7 +13,7 @@ import {
 
 let seq = 0;
 function tmpPath(): string {
-  return `/tmp/clawd-sentry-seen-${process.pid}-${seq++}.db`;
+  return `/tmp/errandd-sentry-seen-${process.pid}-${seq++}.db`;
 }
 
 describe("sentrySeen store", () => {

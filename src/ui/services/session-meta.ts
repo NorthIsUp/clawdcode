@@ -1,11 +1,11 @@
 import { mkdir, readdir, stat, unlink } from "fs/promises";
 import { join } from "path";
 
-const META_FILE = join(process.cwd(), ".claude", "clawdcode", "session-meta.json");
+const META_FILE = join(process.cwd(), ".claude", "errandd", "session-meta.json");
 // Full webhook payloads can be tens of KB, so they live in per-session files
 // rather than bloating the shared session-meta.json. Used by the chat
 // full-JSON disclosure, the "copy hook JSON" button, and hook reprocessing.
-const HOOK_PAYLOAD_DIR = join(process.cwd(), ".claude", "clawdcode", "hook-payloads");
+const HOOK_PAYLOAD_DIR = join(process.cwd(), ".claude", "errandd", "hook-payloads");
 // Retain hook payloads for 30 days, then prune so the volume doesn't grow
 // unbounded. Swept opportunistically on write (throttled hourly).
 const HOOK_PAYLOAD_TTL_MS = 30 * 24 * 60 * 60 * 1000;

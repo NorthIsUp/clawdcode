@@ -1,5 +1,5 @@
 /**
- * ClawdCode Daemon Plugin System
+ * Errandd Daemon Plugin System
  *
  * Provides an OpenClaw-compatible Plugin API for daemon-level plugins.
  * Plugins hook into lifecycle events that fire AROUND Claude Code invocations
@@ -157,7 +157,7 @@ export class PluginManager {
       );
     } else if (source === "openclaw") {
       candidates.push(
-        join(this.workspaceDir, ".claude", "clawdcode", id, "openclaw", "dist", "index.js"),
+        join(this.workspaceDir, ".claude", "errandd", id, "openclaw", "dist", "index.js"),
         join(this.workspaceDir, "node_modules", id, "openclaw", "dist", "index.js"),
         join(process.env.HOME || "", ".openclaw", "extensions", id, "dist", "index.js"),
       );

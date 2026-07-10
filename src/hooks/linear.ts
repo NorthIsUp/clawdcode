@@ -13,7 +13,7 @@ import { handleSignedWebhook, type WebhookSpec } from "./webhookEnvelope";
  * + Deliveries tab) and fires routines with an `on.linear` rule.
  *
  *   - verifies the `Linear-Signature` HMAC (Linear's signing secret, in
- *     CLAWDCODE_LINEAR_WEBHOOK_SECRET; unset ⇒ accept as-is for dev),
+ *     ERRANDD_LINEAR_WEBHOOK_SECRET; unset ⇒ accept as-is for dev),
  *   - dedups on the `Linear-Delivery` id,
  *   - computes the bot @mention (the common gate) from the ticket/comment text,
  *   - matches each routine's `on.linear` rule and fires it via onHookFire,
@@ -28,12 +28,12 @@ import { handleSignedWebhook, type WebhookSpec } from "./webhookEnvelope";
  */
 
 export function getLinearSecret(): string {
-  return process.env.CLAWDCODE_LINEAR_WEBHOOK_SECRET ?? "";
+  return process.env.ERRANDD_LINEAR_WEBHOOK_SECRET ?? "";
 }
 
-/** Bot handle to look for in ticket/comment text (e.g. "@clawd"). */
+/** Bot handle to look for in ticket/comment text (e.g. "@errandd"). */
 export function getLinearBotMention(): string {
-  return process.env.CLAWDCODE_LINEAR_BOT_MENTION ?? "@clawd";
+  return process.env.ERRANDD_LINEAR_BOT_MENTION ?? "@errandd";
 }
 
 export function handleLinearWebhook(

@@ -59,9 +59,9 @@ export const DARK_THEMES: DarkThemeOption[] = [
   t("abyss"),
 ];
 
-const MODE_KEY = "clawdcode:theme";
-const LIGHT_KEY = "clawdcode:theme-light";
-const DARK_KEY = "clawdcode:theme-dark";
+const MODE_KEY = "errandd:theme";
+const LIGHT_KEY = "errandd:theme-light";
+const DARK_KEY = "errandd:theme-dark";
 const DEFAULT_LIGHT = "lobster";
 const DEFAULT_DARK = "lobsterdark";
 

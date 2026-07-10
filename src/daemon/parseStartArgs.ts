@@ -1,5 +1,5 @@
 /**
- * Pure argument parser for `clawdcode start` (codebase-audit P1).
+ * Pure argument parser for `errandd start` (codebase-audit P1).
  *
  * Lifted verbatim out of the start() closure so it can be unit-tested without
  * spawning a daemon. Behaviour-identical to the former inline loop: same flags,
@@ -98,7 +98,7 @@ export function parseStartArgs(args: string[]): ParseStartArgsResult {
     return {
       ok: false,
       error:
-        "Usage: clawdcode start --prompt <prompt> [--trigger] [--telegram] [--discord] [--slack] [--debug] [--web] [--web-port <port>] [--replace-existing]",
+        "Usage: errandd start --prompt <prompt> [--trigger] [--telegram] [--discord] [--slack] [--debug] [--web] [--web-port <port>] [--replace-existing]",
     };
   }
   if (!hasPromptFlag && payload) {

@@ -107,7 +107,7 @@ export interface HookConfig {
   checks?: boolean | ChecksRule;
   /** Fire on the plain GitHub `issues` event — `true` (opened) or a filter. */
   issues?: boolean | IssuesRule;
-  /** When true (the default), drop events whose actor is the clawdcode
+  /** When true (the default), drop events whose actor is the errandd
    *  user's own GitHub login — prevents a routine from retriggering
    *  itself. Render `skip_self: false` only when explicitly disabled. */
   skipSelf: boolean;

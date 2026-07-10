@@ -36,10 +36,10 @@ export default function App() {
     <div className="h-screen flex flex-col overflow-hidden">
       <header className="shrink-0 bg-base-100/85 backdrop-blur border-b border-base-300">
         <div className="mx-auto w-full max-w-5xl px-3 sm:px-6 py-2 flex items-center gap-2 sm:gap-3">
-          <span className="text-xl sm:text-2xl select-none shrink-0" aria-hidden title="clawdcode">
+          <span className="text-xl sm:text-2xl select-none shrink-0" aria-hidden title="errandd">
             🦞
           </span>
-          <span className="font-semibold tracking-tight shrink-0 hidden sm:inline">ClawdCode</span>
+          <span className="font-semibold tracking-tight shrink-0 hidden sm:inline">Errandd</span>
           <div className="flex-1" />
           {actions && <div className="flex items-center gap-1 shrink-0">{actions}</div>}
           <div className="hidden md:block shrink-0">

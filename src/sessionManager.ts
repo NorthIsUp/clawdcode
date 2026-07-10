@@ -1,7 +1,7 @@
 import { mkdir, readFile, rename } from "node:fs/promises";
 import { join } from "path";
 
-const HEARTBEAT_DIR = join(process.cwd(), ".claude", "clawdcode");
+const HEARTBEAT_DIR = join(process.cwd(), ".claude", "errandd");
 /** Legacy single-blob store — migrated from once, then left as a backup. */
 const SESSIONS_FILE = join(HEARTBEAT_DIR, "sessions.json");
 /** Append-only log: one ThreadSession snapshot (or tombstone) per line. */

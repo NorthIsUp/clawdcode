@@ -240,7 +240,7 @@ function FilesCard({
     <Card title="Files">
       <p className="text-xs text-base-content/60 -mt-1 mb-2">
         Reference material from this source — skills, commands, agents, memory, etc.
-        Not scheduled by clawdcode.
+        Not scheduled by errandd.
       </p>
       <FileTree node={tree} slug={slug} goto={goto} />
     </Card>

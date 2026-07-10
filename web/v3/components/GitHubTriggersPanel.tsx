@@ -239,7 +239,7 @@ export function GitHubTriggersPanel({
               <span className="min-w-0">
                 <span className="text-sm font-medium block">Skip my own events</span>
                 <span className="text-xs text-base-content/60">
-                  Don't retrigger on this clawdcode user's own PRs / comments.
+                  Don't retrigger on this errandd user's own PRs / comments.
                 </span>
               </span>
             </label>

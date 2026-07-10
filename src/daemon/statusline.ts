@@ -2,7 +2,7 @@
  * The `.claude/statusline.cjs` script body, lifted verbatim out of the
  * start() daemon closure (codebase-audit P1). A standalone Node CJS script
  * (run by Claude Code as `node .claude/statusline.cjs`) that renders the
- * boxed ClawdCode status line from `.claude/clawdcode/state.json`.
+ * boxed Errandd status line from `.claude/errandd/state.json`.
  *
  * Kept as an exported string (not a loose .cjs asset) so it is bundled into
  * binary builds and travels with the daemon. setupStatusline() writes it to
@@ -12,7 +12,7 @@ export const STATUSLINE_SCRIPT = `#!/usr/bin/env node
 const { readFileSync } = require("fs");
 const { join } = require("path");
 
-const DIR = join(__dirname, "clawdcode");
+const DIR = join(__dirname, "errandd");
 const STATE_FILE = join(DIR, "state.json");
 const PID_FILE = join(DIR, "daemon.pid");
 const TOKEN_FILE = join(DIR, "web.token");
@@ -61,7 +61,7 @@ function alive() {
 }
 
 var B = DIM + "\\u2502" + R;
-var TITLE = " \\ud83e\\udd9e ClawdCode \\ud83e\\udd9e ";
+var TITLE = " \\ud83e\\udd9e Errandd \\ud83e\\udd9e ";
 var PAD = 6;
 var INNER_W = PAD + visibleLen(TITLE) + PAD;
 

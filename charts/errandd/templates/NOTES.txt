@@ -1,10 +1,10 @@
-🦞 ClawdCode is installing.
+🦞 Errandd is installing.
 
-Service: {{ include "clawdcode.fullname" . }} (port {{ .Values.service.port }})
+Service: {{ include "errandd.fullname" . }} (port {{ .Values.service.port }})
 Storage: {{ if .Values.persistence.enabled }}{{ .Values.persistence.size }} PVC{{ else }}emptyDir (NON-PERSISTENT){{ end }}
 
 1) Wait for the pod to be ready:
-   kubectl -n {{ .Release.Namespace }} rollout status deploy/{{ include "clawdcode.fullname" . }}
+   kubectl -n {{ .Release.Namespace }} rollout status deploy/{{ include "errandd.fullname" . }}
 
 2) Open the UI.
 
@@ -17,15 +17,15 @@ Storage: {{ if .Values.persistence.enabled }}{{ .Values.persistence.size }} PVC{
    {{- end }}
 {{- else }}
    Port-forward for a local visit:
-     kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "clawdcode.fullname" . }} {{ .Values.service.port }}:{{ .Values.service.port }}
+     kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "errandd.fullname" . }} {{ .Values.service.port }}:{{ .Values.service.port }}
      → http://127.0.0.1:{{ .Values.service.port }}/ui/
 {{- end }}
 
 3) Fetch the web auth token (the daemon generates one on first launch and
    stores it inside the persistent volume):
 
-     kubectl -n {{ .Release.Namespace }} exec deploy/{{ include "clawdcode.fullname" . }} -- \
-       cat /app/.claude/clawdcode/web.token
+     kubectl -n {{ .Release.Namespace }} exec deploy/{{ include "errandd.fullname" . }} -- \
+       cat /app/.claude/errandd/web.token
 
    Append it as ?token=<value> on the first hit to /ui/. The server then sets
    a session cookie so later requests don't need the query string.

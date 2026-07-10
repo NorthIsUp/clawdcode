@@ -64,8 +64,8 @@ import { startWebUi, type WebServerHandle } from "../web";
 import { handleWizardInput, hasActiveWizard, isWizardTrigger } from "./plugin-wizard";
 
 const CLAUDE_DIR = join(process.cwd(), ".claude");
-const HEARTBEAT_DIR = join(CLAUDE_DIR, "clawdcode");
-const LEGACY_HEARTBEAT_DIR = join(CLAUDE_DIR, "claudeclaw");
+const HEARTBEAT_DIR = join(CLAUDE_DIR, "errandd");
+const LEGACY_HEARTBEAT_DIR = join(CLAUDE_DIR, "errandd");
 const STATUSLINE_FILE = join(CLAUDE_DIR, "statusline.cjs");
 const CLAUDE_SETTINGS_FILE = join(CLAUDE_DIR, "settings.json");
 const PREFLIGHT_SCRIPT = fileURLToPath(new URL("../preflight.ts", import.meta.url));
@@ -386,12 +386,12 @@ async function titleHookSession(threadId: string, label: string): Promise<void> 
     threadId,
     (sessionId) => setSessionTitle(sessionId, label),
     (err, attempt) =>
-      console.warn(`[clawdcode] titleHookSession ${threadId} attempt ${attempt} failed:`, err),
+      console.warn(`[errandd] titleHookSession ${threadId} attempt ${attempt} failed:`, err),
   );
 }
 
 /**
- * Rename `.claude/claudeclaw/` → `.claude/clawdcode/` once, so installs that
+ * Rename `.claude/errandd/` → `.claude/errandd/` once, so installs that
  * pre-date the plugin rename find their existing jobs/sessions/web.token.
  * No-op if the new dir already exists or the legacy dir is missing.
  */
@@ -404,7 +404,7 @@ async function migrateLegacyStateDir(): Promise<void> {
     renameSync(LEGACY_HEARTBEAT_DIR, HEARTBEAT_DIR);
   } catch (e) {
     console.warn(
-      `[clawdcode] could not migrate ${LEGACY_HEARTBEAT_DIR} → ${HEARTBEAT_DIR}: ${(e as Error).message}`,
+      `[errandd] could not migrate ${LEGACY_HEARTBEAT_DIR} → ${HEARTBEAT_DIR}: ${(e as Error).message}`,
     );
   }
 }
@@ -555,7 +555,7 @@ export async function start(args: string[] = []) {
         `\x1b[31mAborted: daemon already running in this directory (PID ${existingPid})\x1b[0m`,
       );
       console.error(
-        "Use `clawdcode send <message> [--telegram] [--discord]` while daemon is running.",
+        "Use `errandd send <message> [--telegram] [--discord]` while daemon is running.",
       );
       process.exit(1);
     }
@@ -1076,10 +1076,10 @@ export async function start(args: string[] = []) {
     console.error("Refusing to start: telegram.token is set but telegram.allowedUserIds is empty.");
     console.error("The allowlist is now fail-closed; an empty list blocks all users.");
     console.error(
-      "Add your Telegram user ID(s) to telegram.allowedUserIds in .claude/clawdcode/settings.json.",
+      "Add your Telegram user ID(s) to telegram.allowedUserIds in .claude/errandd/settings.json.",
     );
     console.error(
-      "Run `clawdcode config` for guided setup, or see the README for migration steps.",
+      "Run `errandd config` for guided setup, or see the README for migration steps.",
     );
     process.exit(1);
   }
@@ -1088,10 +1088,10 @@ export async function start(args: string[] = []) {
     console.error("Refusing to start: discord.token is set but discord.allowedUserIds is empty.");
     console.error("The allowlist is now fail-closed; an empty list blocks all users.");
     console.error(
-      "Add your Discord user ID(s) to discord.allowedUserIds in .claude/clawdcode/settings.json.",
+      "Add your Discord user ID(s) to discord.allowedUserIds in .claude/errandd/settings.json.",
     );
     console.error(
-      "Run `clawdcode config` for guided setup, or see the README for migration steps.",
+      "Run `errandd config` for guided setup, or see the README for migration steps.",
     );
     process.exit(1);
   }
@@ -1694,10 +1694,10 @@ export async function start(args: string[] = []) {
   // queue then can't drain because draining it crashes the pod. Pacing the
   // drain (start at most N at a time; the rest stay pending and are picked up
   // on the next 3s tick as slots free) lets the backlog drain steadily under a
-  // bounded memory ceiling. Tunable via CLAWDCODE_MAX_HOOK_DRAINS.
+  // bounded memory ceiling. Tunable via ERRANDD_MAX_HOOK_DRAINS.
   const MAX_CONCURRENT_HOOK_DRAINS = Math.max(
     1,
-    Number(process.env.CLAWDCODE_MAX_HOOK_DRAINS) || 3,
+    Number(process.env.ERRANDD_MAX_HOOK_DRAINS) || 3,
   );
 
   async function runQueuedBatch(threadId: string, msgs: QueuedMessage[]): Promise<void> {

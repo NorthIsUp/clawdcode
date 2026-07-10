@@ -4,7 +4,7 @@
 // /api/* request via Authorization: Bearer.
 // ---------------------------------------------------------------------------
 
-const TOKEN_KEY = "clawdcode.token";
+const TOKEN_KEY = "errandd.token";
 
 function loadToken(): string {
   const fromUrl = new URL(location.href).searchParams.get("token");

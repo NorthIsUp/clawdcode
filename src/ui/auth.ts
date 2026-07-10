@@ -3,11 +3,11 @@ import { existsSync } from "fs";
 import { createHmac, randomBytes, timingSafeEqual } from "crypto";
 import { join } from "path";
 
-const TOKEN_FILE = join(process.cwd(), ".claude", "clawdcode", "web.token");
+const TOKEN_FILE = join(process.cwd(), ".claude", "errandd", "web.token");
 
-export const AUTH_COOKIE_NAME = "clawdcode_auth";
+export const AUTH_COOKIE_NAME = "errandd_auth";
 const COOKIE_MAX_AGE_SEC = 60 * 60 * 24 * 365; // 1 year
-const SIGN_MSG = "clawdcode-auth-v1";
+const SIGN_MSG = "errandd-auth-v1";
 
 export async function getOrCreateWebToken(): Promise<string> {
   if (existsSync(TOKEN_FILE)) {

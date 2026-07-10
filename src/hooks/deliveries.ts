@@ -83,7 +83,7 @@ function emit(d: Delivery): void {
 // initDeliveryStore() at boot we write each delivery through to SQLite and
 // hydrate the ring from it on start — so the tab shows the recent N across
 // restarts (and dedup survives too). Tests never init → pure in-memory.
-const DEFAULT_DB_PATH = join(process.cwd(), ".claude", "clawdcode", "deliveries.db");
+const DEFAULT_DB_PATH = join(process.cwd(), ".claude", "errandd", "deliveries.db");
 const KEEP_ROWS = 500;
 let db: Database | null = null;
 
