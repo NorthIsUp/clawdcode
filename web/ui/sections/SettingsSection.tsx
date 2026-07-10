@@ -390,6 +390,16 @@ function ReposPanel() {
   const gitStatus = repos.data?.filter((r) => r.kind === "git") ?? [];
   const pluginStatus = repos.data?.filter((r) => r.kind === "plugin") ?? [];
 
+  // The plugin card is Claude Code's marketplace model (add by `org/repo`).
+  // Other runtimes (e.g. Pi) don't have marketplaces — they manage extensions
+  // through their own CLI. Drive purely off the capability flag so a future
+  // runtime with plugins slots in without a new UI branch. Default to true so
+  // the Claude path is unchanged before `/api/state` capabilities load.
+  const runtimeId = state.data?.runtime.id ?? "claude";
+  const supportsPlugins = state.data?.runtime.capabilities?.supportsPlugins ?? true;
+  const runtimeLabel = runtimeId.charAt(0).toUpperCase() + runtimeId.slice(1);
+  const runtimeExe = state.data?.runtime.executable ?? runtimeId;
+
   return (
     <div className="space-y-3">
       {state.error ? <ErrorBanner error={state.error} /> : null}
@@ -452,51 +462,63 @@ function ReposPanel() {
         )}
       </Card>
 
-      <Card
-        title="Claude plugins"
-        actions={
-          <button type="button" className="btn btn-sm btn-primary" onClick={addPlugin}>
-            <Plus size={16} /> Add plugin
-          </button>
-        }
-      >
-        {pluginEntries.length === 0 && (
-          <Empty>
-            No claude plugins configured. Add by <code className="font-mono">org/repo</code> (a
-            marketplace's GitHub repo).
-          </Empty>
-        )}
-        <div className="space-y-2">
-          {pluginEntries.map((entry) => (
-            <InputWithAction
-              key={entry.id}
-              value={entry.url}
-              onChange={(v) => update(entry.id, v)}
-              placeholder="NorthIsUp/skillz"
-              aria={`Plugin ${entry.i + 1} ref`}
-              mono
-              action={{
-                icon: <Trash2 size={16} />,
-                onClick: () => remove(entry.id),
-                aria: `Remove plugin ${entry.i + 1}`,
-                title: "Remove",
-              }}
-            />
-          ))}
-        </div>
-        {pluginStatus.length > 0 && (
-          <div className="mt-4 pt-4 border-t border-base-300">
-            <h4 className="text-sm font-semibold mb-2">Current status</h4>
-            <ul className="text-sm space-y-1">
-              {pluginStatus.map((r) => (
-                <RepoStatusRow key={r.slug} repo={r} onChanged={() => repos.reload()} />
-              ))}
-            </ul>
+      {supportsPlugins ? (
+        <Card
+          title="Claude plugins"
+          actions={
+            <button type="button" className="btn btn-sm btn-primary" onClick={addPlugin}>
+              <Plus size={16} /> Add plugin
+            </button>
+          }
+        >
+          {pluginEntries.length === 0 && (
+            <Empty>
+              No claude plugins configured. Add by <code className="font-mono">org/repo</code> (a
+              marketplace's GitHub repo).
+            </Empty>
+          )}
+          <div className="space-y-2">
+            {pluginEntries.map((entry) => (
+              <InputWithAction
+                key={entry.id}
+                value={entry.url}
+                onChange={(v) => update(entry.id, v)}
+                placeholder="NorthIsUp/skillz"
+                aria={`Plugin ${entry.i + 1} ref`}
+                mono
+                action={{
+                  icon: <Trash2 size={16} />,
+                  onClick: () => remove(entry.id),
+                  aria: `Remove plugin ${entry.i + 1}`,
+                  title: "Remove",
+                }}
+              />
+            ))}
           </div>
-        )}
-      </Card>
+          {pluginStatus.length > 0 && (
+            <div className="mt-4 pt-4 border-t border-base-300">
+              <h4 className="text-sm font-semibold mb-2">Current status</h4>
+              <ul className="text-sm space-y-1">
+                {pluginStatus.map((r) => (
+                  <RepoStatusRow key={r.slug} repo={r} onChanged={() => repos.reload()} />
+                ))}
+              </ul>
+            </div>
+          )}
+        </Card>
+      ) : (
+        <Card title={`${runtimeLabel} extensions`}>
+          <Empty>
+            {runtimeLabel} manages extensions and skills through its own CLI (
+            <code className="font-mono">{runtimeExe} install …</code>), not a plugin marketplace.
+            They can&apos;t be configured here.
+          </Empty>
+        </Card>
+      )}
 
-      <InstalledPluginsCard runtimeVersion={state.data?.runtime.version ?? null} />
+      {supportsPlugins && (
+        <InstalledPluginsCard runtimeVersion={state.data?.runtime.version ?? null} />
+      )}
     </div>
   );
 }

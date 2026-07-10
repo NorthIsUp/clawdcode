@@ -95,6 +95,9 @@ export async function buildState(snapshot: WebSnapshot, opts: BuildStateOptions 
       // binary the daemon spawns — surfaced in the About > Runtime card.
       id: getRuntime().id,
       executable: getRuntime().executablePath,
+      // Feature flags for the active runtime, so the UI can degrade gracefully
+      // (e.g. the plugins card only makes sense when supportsPlugins).
+      capabilities: getRuntime().capabilities,
     },
   };
 }

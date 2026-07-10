@@ -86,6 +86,14 @@ export interface StateResponse {
     id?: string;
     /** The binary the daemon spawns (e.g. "pi", or a full path). */
     executable?: string;
+    /** Feature flags for the active runtime, driving graceful UI degradation
+     *  (e.g. the plugins card only renders when `supportsPlugins`). */
+    capabilities?: {
+      supportsResume: boolean;
+      reportsContextTokens: boolean;
+      supportsPlugins: boolean;
+      supportsMcpCli: boolean;
+    };
   };
 }
 
