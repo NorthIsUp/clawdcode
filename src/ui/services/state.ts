@@ -4,6 +4,7 @@ import type { TailnetIdentity } from "../auth";
 import { SESSION_FILE, SETTINGS_FILE, STATE_FILE } from "../constants";
 import type { WebSnapshot } from "../types";
 import { getRuntimeGit, getRuntimeVersion } from "../../runtime";
+import { getRuntime } from "../../runtime/select";
 
 export function sanitizeSettings(snapshot: WebSnapshot["settings"]) {
   return {
@@ -90,6 +91,10 @@ export async function buildState(snapshot: WebSnapshot, opts: BuildStateOptions 
     runtime: {
       git: await getRuntimeGit(),
       version: getRuntimeVersion(),
+      // Which coding-agent CLI actually executes prompts (claude | pi) and the
+      // binary the daemon spawns — surfaced in the About > Runtime card.
+      id: getRuntime().id,
+      executable: getRuntime().executablePath,
     },
   };
 }

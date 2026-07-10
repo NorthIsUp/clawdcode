@@ -40,6 +40,7 @@ export function AboutSection() {
         {state.data && (
           <dl className="grid grid-cols-1 sm:grid-cols-2 gap-y-2 gap-x-6 text-sm">
             <Row label="Model" value={state.data.model || "—"} />
+            <Row label="Runtime" value={formatRuntime(state.data.runtime)} />
             <Row label="Fallback model" value={formatFallback(state.data.fallback)} />
             <Row
               label="Daemon"
@@ -48,14 +49,6 @@ export function AboutSection() {
               }
             />
             <Row label="Timezone" value={state.data.timezone} />
-            <Row
-              label="Heartbeat"
-              value={
-                state.data.heartbeat.enabled
-                  ? `every ${state.data.heartbeat.intervalMinutes} min`
-                  : "off"
-              }
-            />
             {/* When installed as a Claude Code plugin we publish a
                 semver in plugin.json — show that. When running from a
                 checkout the daemon also has a real git tree we can show
@@ -319,6 +312,16 @@ function formatFallback(f: { model: string; api: string } | string | undefined):
     return f || "—";
   }
   return f.model || f.api || "—";
+}
+
+/** "pi", or "pi · mypi" when the spawned binary's name differs from the id. */
+function formatRuntime(r: { id?: string; executable?: string } | undefined): string {
+  const id = r?.id;
+  if (!id) {
+    return "—";
+  }
+  const proc = r?.executable?.split("/").pop();
+  return proc && proc !== id ? `${id} · ${proc}` : id;
 }
 
 function Row({ label, value }: { label: string; value: string }) {

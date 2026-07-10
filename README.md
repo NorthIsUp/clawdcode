@@ -24,9 +24,9 @@
   </a>
 </p>
 
-<p align="center"><b>A lightweight, open-source OpenClaw version built into your Claude Code.</b></p>
+<p align="center"><b>A lightweight, self-hosted daemon that turns your coding-agent CLI into a personal assistant that never sleeps.</b></p>
 
-Errandd turns your Claude Code into a personal assistant that never sleeps. It runs as a background daemon, executing tasks on a schedule, responding to messages on Telegram, Discord, and Slack, transcribing voice commands, and integrating with any service you need.
+Errandd runs a coding-agent CLI — **Claude Code** by default, or [**Pi**](https://pi.dev) — as a background daemon: it executes tasks on a schedule, relays chat on Telegram, Discord, and Slack, transcribes voice messages, and ships a real-time web dashboard. It's the open-source alternative to OpenClaw that's built into the coding-agent subscription you already pay for. _(Formerly known as clawdcode.)_
 
 > Note: Please don't use Errandd for hacking any bank system or doing any illegal activities. Thank you.
 
@@ -51,129 +51,48 @@ Errandd turns your Claude Code into a personal assistant that never sleeps. It r
 claude plugin marketplace add moazbuilds/errandd
 claude plugin install errandd
 ```
+
 Then open a Claude Code session and run:
+
 ```
 /errandd:start
 ```
+
 The setup wizard walks you through model, heartbeat, Telegram, Discord, Slack, and security, then your daemon is live with a web dashboard.
-
-## Configuration & environment overrides
-
-`.claude/errandd/settings.json` is the source of truth for all Errandd config. Every field can be overridden by a `ERRANDD_*` environment variable — env always wins over the file. The bare token names `TELEGRAM_TOKEN`, `DISCORD_TOKEN`, `SLACK_BOT_TOKEN`, and `SLACK_APP_TOKEN` still work as aliases for their `ERRANDD_*` counterparts.
-
-Nested arrays and objects (heartbeat exclude windows, agentic modes, allowed user IDs, plugins) are file-only; there are no env vars for those.
-
-See `.env.example` for the full variable list with defaults and descriptions.
-
-**Jobs repo:** set `jobsRepo.url` (or `ERRANDD_JOBSREPO_URL`) to a git URL and Errandd will clone it on start and pull it on the configured interval (`jobsRepo.intervalSeconds` / `ERRANDD_JOBSREPO_INTERVAL`, default 300 s). That repo becomes the jobs directory — a clean way to manage your task queue in version control.
 
 ## Pluggable runtimes
 
-Errandd no longer hard-wires itself to a single coding-agent CLI. The exec runtime — the process that actually runs your prompts — sits behind one interface and is chosen once at startup:
+Errandd doesn't hard-wire itself to a single coding-agent CLI. The exec runtime — the process that actually runs your prompts — sits behind one interface and is chosen once at startup:
 
-- **Claude Code** (`claude`) — the default, and byte-identical to how Errandd has always run. Full session resume, context-token reporting (which drives size-based auto-compaction), jobs-repo plugins/skills, and MCP server management all work as before.
-- **Pi** ([`pi`](https://pi.dev)) — an alternate coding-agent CLI. Errandd drives it with `--mode json -p` (NDJSON events), resumes via `--session <id>`, and reads live-context size from each message's `usage`, so auto-compaction works the same as it does for Claude. Pi documents *"No MCP"* by design, so MCP registration is inert; jobs-repo plugin flags are Claude-shaped and aren't forwarded. The daemon degrades gracefully via capability flags rather than emitting flags Pi doesn't understand.
+- **Claude Code** (`claude`) — the default, byte-identical to how Errandd has always run. Session resume, context-token reporting (which drives size-based auto-compaction), jobs-repo plugins/skills, and MCP server management all work as before.
+- **Pi** ([`pi`](https://pi.dev), experimental) — an alternate coding-agent CLI. Errandd drives it with `--mode json -p`, resumes via `--session <id>`, and reads token usage from each message, so auto-compaction works the same as it does for Claude. Pi documents *"No MCP"* by design, so MCP registration is inert, and jobs-repo plugin flags (which are Claude-shaped) aren't forwarded — features a runtime can't back switch off gracefully instead of breaking.
 
-Both CLIs ship in the Docker image, so **switching runtime is a redeploy, not a rebuild**:
+Select the runtime with the `runtime` field in `.claude/errandd/settings.json` or the `ERRANDD_RUNTIME` env var (env wins over the file, like every other setting). Valid values are `claude` (default) and `pi`; an unknown value logs a warning and falls back to Claude Code.
 
-```bash
-ERRANDD_RUNTIME=pi bun run src/index.ts start     # local
-helm upgrade errandd charts/errandd --set runtime=pi
+```json
+{ "runtime": "pi" }
 ```
 
-Locally, `mise install` provides a pinned `pi`. The runtime adapters are covered two ways: a conformance matrix that asserts both runtimes normalize to *identical* events, and an opt-in suite that drives the real binaries:
+```bash
+ERRANDD_RUNTIME=pi
+```
+
+Both binaries ship in the Docker image, so **switching runtime is a redeploy/restart, not a rebuild**:
+
+```bash
+ERRANDD_RUNTIME=pi docker run ... errandd            # Docker
+helm upgrade errandd charts/errandd --set runtime=pi  # Helm
+```
+
+Locally, `mise install` provides a pinned `pi` alongside the rest of the tooling.
+
+> Pi's version is **pinned to 0.80.6** (in both `mise.toml` and the `Dockerfile`) because it's a wire-format dependency: the stream parser is written against the JSON event schema pi 0.80.6 emits. Bump it deliberately and re-run the e2e suite, which fails if the wire moved.
+
+The runtime adapters are covered two ways: a conformance matrix that asserts both runtimes normalize to *identical* events, and an opt-in suite that drives the real binaries:
 
 ```bash
 ERRANDD_E2E=1 bun test src/__tests__/runtime-e2e.test.ts
 ```
-
-> Pi's version is **pinned** (mise.toml + Dockerfile) because it's a wire-format dependency: the stream parser is written against the JSON event schema pi 0.80.6 emits. Bump it deliberately and re-run the e2e suite, which fails if the wire moved.
-
-Select the runtime with either the `runtime` field in `.claude/errandd/settings.json` or the `ERRANDD_RUNTIME` env var (env wins, like every other setting). Valid values are `claude` (default) and `pi`; an unknown value logs a warning and falls back to Claude Code.
-
-```json
-{ "runtime": "claude" }
-```
-
-```bash
-ERRANDD_RUNTIME=pi   # opt into the Pi runtime
-```
-
-Each runtime advertises what it can do through capability flags — `supportsResume`, `reportsContextTokens`, `supportsPlugins`, `supportsMcpCli` — and the runner consults those instead of assuming Claude semantics, so a feature a runtime can't back simply switches off rather than breaks. Claude Code reports all four as `true`; Pi reports all four as `false`. The Pi binary is resolved as `pi` on your `PATH`, overridable via the `PI_EXECUTABLE` env var.
-
-## Run with Docker
-
-```bash
-docker build -t errandd .
-docker run -p 4632:4632 -v $PWD/.claude:/app/.claude --env-file .env errandd
-```
-
-Config is supplied via `ERRANDD_*` env vars — copy `.env.example` to `.env` and fill in your values, then pass it with `--env-file .env`.
-
-State (jobs, logs, generated tokens) persists in the mounted `.claude` volume. Claude authentication comes from one of:
-- the mounted `.claude` volume if it already contains credentials from a local `claude` login, or
-- a `CLAUDE_CODE_OAUTH_TOKEN` env var obtained by running `claude setup-token` and pasting the result.
-
-### Contributor Note: Plugin Version Metadata
-
-If you change shipped plugin files under `src/`, `commands/`, `prompts/`, or `.claude-plugin/`, the plugin metadata version may also need to be bumped so Claude Code and marketplace consumers detect the update correctly.
-
-Helpers:
-
-```bash
-bun run bump:plugin-version
-bun run bump:marketplace-version
-```
-
-Docs-only and other non-shipped changes do not require these bumps.
-
-## Upgrading
-
-### v1.0.26 — Allowlist behavior change (Telegram & Discord)
-
-Prior to this release, an empty `allowedUserIds` list meant **allow everyone**. That was a potential security vulnerability; any Telegram or Discord user could drive the daemon.
-
-**New behavior:** an empty list means **block everyone**. The daemon will refuse to start if a bot token is configured without at least one allowed user ID.
-
-**Migration:** add your user ID(s) to `settings.json` before upgrading:
-
-```json
-"telegram": { "allowedUserIds": [123456789] },
-"discord":  { "allowedUserIds": ["987654321012345678"] }
-```
-
-Run `errandd config` for guided setup if you're unsure of your user ID.
-
-### v1.1.0 — Web UI bearer token gate
-
-All `/api/*` routes (except `/api/health`) now require an `Authorization: Bearer <token>` header. The token is auto-generated on first start and written to `.claude/errandd/web.token`. The daemon also prints the full URL with the token embedded when the web UI starts.
-
-**Migration:** update any scripts that call `/api/state` or other API routes to pass the token:
-
-```
-Authorization: Bearer <contents of .claude/errandd/web.token>
-```
-
-Existing `/api/inject` users who configured `settings.apiToken` are unaffected; that fallback still works.
-
-### v1.1.0 — Discord text-attachment truncation limit reduced
-
-Text attachments sent to the Discord bot are now truncated at **2,048 bytes** (previously 51,200). Payloads over that limit have `…[truncated]` appended silently; there is no config knob to restore the old limit.
-
-**Migration:** if you rely on passing large text files through Discord attachments, switch to gists or another file-sharing mechanism and paste the URL instead.
-
----
-
-## What Would Be Built Next?
-
-> **Mega Post:** Help shape the next Errandd features.
-> Vote, suggest ideas, and discuss priorities in **[this post](https://github.com/moazbuilds/errandd/issues/14)**.
-
-<p align="center">
-  <a href="https://github.com/moazbuilds/errandd/issues/14">
-    <img src="https://img.shields.io/badge/Roadmap-Mega%20Post-blue?style=for-the-badge&logo=github" alt="Roadmap Mega Post" />
-  </a>
-</p>
 
 ## Features
 
@@ -188,7 +107,7 @@ Text attachments sent to the Discord bot are now truncated at **2,048 bytes** (p
 - **Time Awareness:** Message time prefixes help the agent understand delays and daily patterns.
 
 ### Multi-Session Threads (Discord)
-- **Independent Thread Sessions:** Each Discord thread gets its own Claude CLI session, fully isolated from the main channel.
+- **Independent Thread Sessions:** Each Discord thread gets its own agent session, fully isolated from the main channel.
 - **Parallel Processing:** Thread conversations run concurrently — messages in different threads don't block each other.
 - **Auto-Create:** First message in a new thread automatically bootstraps a fresh session. No setup needed.
 - **Session Cleanup:** Thread sessions are automatically cleaned up when threads are deleted or archived.
@@ -202,24 +121,124 @@ See [docs/MULTI_SESSION.md](docs/MULTI_SESSION.md) for technical details.
 - **Security Levels:** Four access levels from read-only to full system access.
 - **Model Selection:** Switch models based on your workload.
 
+## AG-UI endpoint
+
+`POST /api/agui` runs the selected runtime and streams the turn as [AG-UI](https://ag-ui.com) events over SSE: `RUN_STARTED` → `TEXT_MESSAGE_*` / `TOOL_CALL_*` → `RUN_FINISHED` (or `RUN_ERROR` on failure). It's runtime-agnostic — the same endpoint works whether `ERRANDD_RUNTIME` is `claude` or `pi`.
+
+The body is either an AG-UI `RunAgentInput` (`{ "messages": [...] }`, last user turn is the prompt) or a plain `{ "prompt": "..." }`. Like the rest of the API, it requires the web auth token (`Authorization: Bearer <token>` or `?token=`):
+
+```bash
+curl -N -X POST http://localhost:4632/api/agui \
+  -H "Authorization: Bearer $(cat .claude/errandd/web.token)" \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "summarize the failed runs from today"}'
+```
+
+## Configuration & environment overrides
+
+`.claude/errandd/settings.json` is the source of truth for all Errandd config. Every field can be overridden by an `ERRANDD_*` environment variable — env always wins over the file. See `.env.example` for the full list with defaults and descriptions.
+
+| Variable | Overrides |
+| --- | --- |
+| `ERRANDD_RUNTIME` | Exec runtime: `claude` (default) or `pi` |
+| `ERRANDD_MODEL` / `ERRANDD_API` | Primary model and API |
+| `ERRANDD_FALLBACK_MODEL` / `ERRANDD_FALLBACK_API` | Fallback model and API |
+| `ERRANDD_TIMEZONE` | Timezone (also re-derives the cron offset) |
+| `ERRANDD_API_TOKEN` | Static API token for `/api/inject` |
+| `ERRANDD_WEB_ENABLED` / `ERRANDD_WEB_HOST` / `ERRANDD_WEB_PORT` | Web dashboard |
+| `ERRANDD_HEARTBEAT_ENABLED` / `ERRANDD_HEARTBEAT_INTERVAL` | Heartbeat |
+| `ERRANDD_SECURITY_LEVEL` | Security level |
+| `ERRANDD_TELEGRAM_TOKEN` | Telegram bot token (alias: `TELEGRAM_TOKEN`) |
+| `ERRANDD_DISCORD_TOKEN` | Discord bot token (alias: `DISCORD_TOKEN`) |
+| `ERRANDD_SLACK_BOT_TOKEN` / `ERRANDD_SLACK_APP_TOKEN` | Slack tokens (aliases: `SLACK_BOT_TOKEN`, `SLACK_APP_TOKEN`) |
+| `ERRANDD_STT_BASE_URL` / `ERRANDD_STT_MODEL` | Voice transcription backend |
+| `ERRANDD_JOBSREPO_URL` / `ERRANDD_JOBSREPO_BRANCH` / `ERRANDD_JOBSREPO_INTERVAL` | Jobs repo (see below) |
+| `ERRANDD_JOBSREPOS` | Comma-separated git URLs replacing the whole jobs-repo list |
+
+Nested arrays and objects (heartbeat exclude windows, agentic modes, allowed user IDs, plugins) are file-only; there are no env vars for those.
+
+**Jobs repo:** set `jobsRepo.url` (or `ERRANDD_JOBSREPO_URL`) to a git URL and Errandd will clone it on start and pull it on the configured interval (`jobsRepo.intervalSeconds` / `ERRANDD_JOBSREPO_INTERVAL`, default 300 s). That repo becomes the jobs directory — a clean way to manage your task queue in version control.
+
+## Deployment
+
+### Docker
+
+```bash
+docker build -t errandd .
+docker run -p 4632:4632 -v $PWD/.claude:/app/.claude --env-file .env errandd
+```
+
+- **Both runtimes are baked in** — `claude` and `pi@0.80.6` — with `ENV ERRANDD_RUNTIME=claude` as the default. Switch with `-e ERRANDD_RUNTIME=pi`; no rebuild needed.
+- **State persists in the `/app/.claude` volume** (jobs, logs, generated tokens). The image symlinks `~/.claude` → `/app/.claude` and `~/.pi` → `/app/.claude/pi`, so both runtimes' session transcripts survive restarts and `--resume`/`--session` keep working. Mount a *persistent* (named/host) volume — an anonymous volume resets per container.
+- **Health:** a `HEALTHCHECK` polls `/readyz` (503 until startup finishes, 200 when ready). Orchestrators that don't read Docker healthchecks should point their own readiness probe at `/readyz`; liveness goes to `/healthz`.
+
+Config is supplied via `ERRANDD_*` env vars — copy `.env.example` to `.env` and fill in your values. Claude authentication comes from one of:
+- the mounted `.claude` volume, if it already contains credentials from a local `claude` login, or
+- a `CLAUDE_CODE_OAUTH_TOKEN` env var obtained by running `claude setup-token` and pasting the result.
+
+### Helm
+
+A chart ships at [`charts/errandd`](charts/errandd):
+
+```bash
+helm install errandd charts/errandd
+helm upgrade errandd charts/errandd --set runtime=pi   # switch runtime, same image
+```
+
+Key values (`charts/errandd/values.yaml`): `runtime` (`claude`/`pi`), `persistence.*` for the `/app/.claude` PVC, `secrets.anthropicApiKey` / `secrets.webToken`, `ingress.*`, and an `env:` map for arbitrary `ERRANDD_*` overrides. The daemon is single-instance and stateful — the chart keeps `replicaCount: 1` with a `Recreate` strategy.
+
+### Local development
+
+```bash
+mise install     # bun, node, biome, hk — and the pinned pi runtime
+mise run setup   # bun install + install the hk git hooks
+bun run start    # run the daemon
+```
+
 ## Web UI
 
 The web dashboard is a React + TypeScript app (`web/`) built with Bun's built-in bundler and served by the daemon from `dist/web/`.
 
-**Build:** `bun run build:web` → outputs `dist/web/{index.html,app.js,app.css}`.
+**Build:** `bun run build:web` — **Dev (watch mode):** `bun run dev:web`.
 
-**Dev (watch mode):** `bun run dev:web` → rebuilds on file changes for fast iteration.
+All `/api/*` routes (except health) are gated by the web auth token, auto-generated on first start and written to `.claude/errandd/web.token`. The daemon prints the full URL with the token embedded when the web UI starts.
 
-**Served at:** `/` — the daemon serves `index.html` there; `/app.js` and `/app.css` are served directly. All `/api/*` routes are unchanged and token-gated as before.
+## Upgrading
 
-**Stack:** React 18, CSS Modules + tokens.css, Radix UI primitives (Dialog/Popover/Tooltip/Toast), hash routing, plain fetch + typed wrappers. Biome (strict) + ESLint (strict React rules) enforced via hk pre-commit hooks.
+### v1.0.26 — Allowlist behavior change (Telegram & Discord)
+
+An empty `allowedUserIds` list now means **block everyone** (it previously meant allow everyone — a security hole). The daemon refuses to start if a bot token is configured without at least one allowed user ID. Add your user ID(s) to `settings.json` before upgrading:
+
+```json
+"telegram": { "allowedUserIds": [123456789] },
+"discord":  { "allowedUserIds": ["987654321012345678"] }
+```
+
+### v1.1.0 — Web UI bearer token gate
+
+All `/api/*` routes (except `/api/health`) require `Authorization: Bearer <token>`, read from `.claude/errandd/web.token`. Update any scripts that call the API to pass it. Existing `/api/inject` users who configured `settings.apiToken` are unaffected; that fallback still works.
+
+### v1.1.0 — Discord text-attachment truncation limit reduced
+
+Text attachments sent to the Discord bot are truncated at **2,048 bytes** (previously 51,200), with `…[truncated]` appended. If you rely on passing large text files through Discord, switch to gists and paste the URL instead.
+
+## What Would Be Built Next?
+
+> **Mega Post:** Help shape the next Errandd features.
+> Vote, suggest ideas, and discuss priorities in **[this post](https://github.com/moazbuilds/errandd/issues/14)**.
+
+<p align="center">
+  <a href="https://github.com/moazbuilds/errandd/issues/14">
+    <img src="https://img.shields.io/badge/Roadmap-Mega%20Post-blue?style=for-the-badge&logo=github" alt="Roadmap Mega Post" />
+  </a>
+</p>
 
 ## FAQ
 
 <details open>
   <summary><strong>Can Errandd do &lt;something&gt;?</strong></summary>
   <p>
-    If Claude Code can do it, Errandd can do it too. Errandd adds cron jobs,
+    If your coding-agent CLI can do it, Errandd can do it too. Errandd adds cron jobs,
     heartbeats, and Telegram/Discord/Slack bridges on top. You can also give your Errandd new
     skills and teach it custom workflows.
   </p>
@@ -241,13 +260,6 @@ The web dashboard is a React + TypeScript app (`web/`) built with Bun's built-in
   </p>
 </details>
 
-<details open>
-  <summary><strong>Are you ready to change this project name?</strong></summary>
-  <p>
-    If it bothers Anthropic, I might rename it to OpenClawd. Not sure yet.
-  </p>
-</details>
-
 ## Screenshots
 
 ### Claude Code Folder-Based Status Bar
@@ -261,7 +273,23 @@ _Caption: The Errandd web dashboard — jobs, runs, and live logs at a glance._
 <!-- SCREENSHOT: dashboard job detail -->
 _Caption: A single run's detail view — streamed output, tool calls, and session info._
 
-## Contributors
+## Contributing
+
+First clone:
+
+```bash
+mise install     # pinned toolchain, including pi 0.80.6
+mise run setup   # bun install + hk git hooks (pre-commit: eslint + typecheck; pre-push: tests + web build)
+```
+
+**Before opening any PR**, bump the plugin metadata — both are required CI guards:
+
+```bash
+bun run bump:plugin-version
+bun run bump:marketplace-version
+```
+
+The `plugin-version-guard` and `marketplace-version-guard` checks fail if `.claude-plugin/plugin.json` or `.claude-plugin/marketplace.json` still carry the same version as the merge base — commit the bumps alongside your changes and push before creating the PR.
 
 Thanks for helping make Errandd better.
 

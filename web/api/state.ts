@@ -82,6 +82,10 @@ export interface StateResponse {
   runtime: {
     git: RuntimeGit;
     version: string | null;
+    /** Active exec runtime id: "claude" | "pi". */
+    id?: string;
+    /** The binary the daemon spawns (e.g. "pi", or a full path). */
+    executable?: string;
   };
 }
 
