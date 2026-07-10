@@ -72,9 +72,9 @@ See `.env.example` for the full variable list with defaults and descriptions.
 Errandd no longer hard-wires itself to a single coding-agent CLI. The exec runtime — the process that actually runs your prompts — sits behind one interface and is chosen once at startup:
 
 - **Claude Code** (`claude`) — the default, and byte-identical to how Errandd has always run. Full session resume, context-token reporting (which drives size-based auto-compaction), jobs-repo plugins/skills, and MCP server management all work as before.
-- **Pi** (`pi`) — an alternate coding-agent CLI, **experimental**. Pi runs prompts statelessly (no `--resume`), so per-run session recovery, auto-compaction, plugin/skill loading, and MCP registration are turned **off** for that runtime; the daemon degrades gracefully instead of emitting flags Pi doesn't understand.
+- **Pi** ([`pi`](https://pi.dev)) — an alternate coding-agent CLI, **experimental**. Errandd drives it with `--mode json` (NDJSON events) and resumes via `--session <id>`. Pi reports no token usage, so size-based auto-compaction is off (Pi self-compacts); it documents *"No MCP"* by design, so MCP registration is inert; and jobs-repo plugin flags are Claude-shaped, so they aren't forwarded. The daemon degrades gracefully via capability flags instead of emitting flags Pi doesn't understand.
 
-> **Pi support is provisional.** Its argv flags and stream format are modeled from Pi's documented message model, not yet validated against a released `pi` binary — the stream parser has its own unit check, but the CLI surface may need adjusting once the real executable is available. Point `PI_EXECUTABLE` at your binary to try it. Claude Code is unaffected either way.
+> **Pi support is experimental.** Its argv and event schema are implemented against Pi's documented CLI and JSON-mode reference, and covered by unit tests — but not yet exercised end-to-end against a running `pi` binary. Point `PI_EXECUTABLE` at yours to try it, and please report anything that drifts. Claude Code is unaffected either way.
 
 Select the runtime with either the `runtime` field in `.claude/errandd/settings.json` or the `ERRANDD_RUNTIME` env var (env wins, like every other setting). Valid values are `claude` (default) and `pi`; an unknown value logs a warning and falls back to Claude Code.
 
