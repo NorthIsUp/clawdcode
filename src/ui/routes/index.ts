@@ -1,3 +1,4 @@
+import * as agui from "./agui";
 import * as chat from "./chat";
 import * as hooks from "./hooks";
 import * as jobs from "./jobs";
@@ -147,6 +148,7 @@ export const ROUTES: readonly Route[] = [
   { method: "POST", path: "/api/inject", handler: chat.inject },
   { method: "POST", path: "/api/chat/reset", handler: chat.chatReset },
   { method: "POST", path: "/api/chat", handler: chat.chat },
+  { method: "POST", path: "/api/agui", handler: agui.aguiRun },
   { method: "GET", path: "/api/slash", handler: chat.slash },
   { method: "GET", path: "/api/mcp", handler: mcp.mcpList },
   { method: "POST", path: "/api/mcp", handler: mcp.mcpAdd },

@@ -74,7 +74,7 @@ export function RoutinesView(_props: MainPaneProps) {
   return (
     <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
       <header className="shrink-0 px-4 py-3 border-b border-base-300 flex items-center gap-3">
-        <h1 className="text-lg font-semibold tracking-tight">Routines</h1>
+        <h1 className="text-lg font-semibold tracking-tight">Errands</h1>
         {repos.data && repos.data.length > 1 && (
           <div role="tablist" className="flex flex-wrap gap-1 ml-2">
             {repos.data.map((r) => (

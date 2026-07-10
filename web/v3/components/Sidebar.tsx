@@ -180,7 +180,7 @@ export function Sidebar({
           🦞
         </span>
         <span className="font-serif text-2xl leading-none tracking-tight">
-          errandd<span className="text-primary">code</span>
+          errand<span className="text-primary">d</span>
         </span>
         <ThemePicker />
         <span

@@ -13,8 +13,8 @@ export const BOTTOM_NAV: {
   Icon: ComponentType<{ className?: string }>;
 }[] = [
   { view: "chat", label: "Chat", Icon: MessagesSquare },
-  { view: "deliveries", label: "Deliveries", Icon: Webhook },
-  { view: "routines", label: "Routines", Icon: Workflow },
+  { view: "deliveries", label: "Hooks", Icon: Webhook },
+  { view: "routines", label: "Errands", Icon: Workflow },
   { view: "settings", label: "Settings", Icon: Cog },
   { view: "about", label: "About", Icon: CircleHelp },
 ];
