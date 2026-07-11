@@ -9,6 +9,7 @@
  */
 import { Database } from "bun:sqlite";
 import { join } from "node:path";
+import { asDeliverySource } from "../../shared/deliverySources";
 import type {
   DeliveryBase,
   DeliveryField,
@@ -16,6 +17,7 @@ import type {
   DeliveryRoutine,
   DeliverySource,
 } from "../../shared/deliveryTypes";
+import { sourceForEvent } from "./sources";
 
 export type {
   DeliveryBase,
@@ -32,19 +34,11 @@ export interface Delivery extends DeliveryBase {
   payload?: unknown;
 }
 
-/** Map an event name to its provider. `sentry:…` / `datadog:…` carry a
- *  prefix; everything else is a GitHub event. */
+/** Map an event name to its provider by consulting the SOURCE registry — the
+ *  single source of truth for event→source ownership (each `SourcePlugin`
+ *  declares `ownsEvent`). GitHub is the fallback for unprefixed events. */
 export function deliverySourceFromEvent(event: string): DeliverySource {
-  if (event.startsWith("sentry:")) {
-    return "sentry";
-  }
-  if (event.startsWith("datadog:")) {
-    return "datadog";
-  }
-  if (event.startsWith("linear:") || event === "linear") {
-    return "linear";
-  }
-  return "github";
+  return sourceForEvent(event).id;
 }
 
 const MAX_DELIVERIES = 10_000;
@@ -121,7 +115,10 @@ function rowToDelivery(r: DRow): Delivery {
     status: r.status as Delivery["status"],
     matched: [],
     payloadSnippet: r.payload_snippet,
-    source: (r.source as DeliverySource | null) ?? undefined,
+    // Tolerate unknown historical/plugin source strings: asDeliverySource is a
+    // total coercion (core ids pass through; anything else brands into the open
+    // plugin tier) — a row written before a source existed never crashes a read.
+    source: r.source == null ? undefined : asDeliverySource(r.source),
     pk: r.pk ?? undefined,
     keys: parse<DeliveryKeys>(r.keys),
     fields: parse<DeliveryField[]>(r.fields),

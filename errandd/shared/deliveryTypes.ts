@@ -8,7 +8,22 @@
  * the wire/web shape is `DeliveryBase` as-is.
  */
 
-export type DeliverySource = "github" | "sentry" | "datadog" | "linear";
+// DeliverySource is a two-tier identity space (closed core union + open,
+// branded plugin tier). It lives in the pure, browser-safe deliverySources
+// module; imported for local use in DeliveryBase and re-exported here so
+// existing `../../shared/deliveryTypes` importers keep working unchanged.
+import type { DeliverySource } from "./deliverySources";
+
+export {
+  asDeliverySource,
+  brandPluginSourceId,
+  CORE_DELIVERY_SOURCES,
+  type CoreDeliverySource,
+  type DeliverySource,
+  isCoreDeliverySource,
+  isValidPluginSourceId,
+  type PluginDeliverySource,
+} from "./deliverySources";
 
 export interface DeliveryField {
   label: string;

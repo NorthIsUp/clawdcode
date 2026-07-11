@@ -5,7 +5,7 @@ import {
   recentDeliveries,
   subscribeDeliveries,
 } from "../../hooks/deliveries";
-import { getWebhookSecret } from "../../hooks/receiver";
+import { getSources } from "../../hooks/sources";
 import { json } from "../http";
 import { queueMessageForWire, type RouteHandler } from "./types";
 
@@ -120,62 +120,29 @@ export const triggers: RouteHandler = ({ opts }) => {
 };
 
 /** GET /api/hooks/receiver — per-provider webhook receiver status + secrets. */
-export const receiver: RouteHandler = async ({ url }) => {
+export const receiver: RouteHandler = ({ url }) => {
   // The UI is gated by the bearer token so callers already have full
   // daemon access — same threat model as the web token itself.
   // Returning the raw secret enables a "click to reveal" affordance.
-  const secret = getWebhookSecret();
   const last = recentDeliveries()[0] ?? null;
-  const { getSentrySecret } = await import("../../hooks/sentry");
-  const { getDatadogSecret, RECOMMENDED_DATADOG_PAYLOAD } = await import("../../hooks/datadog");
-  const { getLinearSecret, getLinearBotMention } = await import("../../hooks/linear");
-  const sentrySecret = getSentrySecret();
-  const datadogSecret = getDatadogSecret();
-  const linearSecret = getLinearSecret();
+  // Build the per-provider status map from the SOURCE registry — every source
+  // (core or plugin) supplies its own `providerStatus`; provider-specific extras
+  // (Datadog token URL / payload template, Linear @mention) ride in `extra`.
+  const providers: Record<string, Record<string, unknown>> = {};
+  for (const source of getSources()) {
+    const status = source.providerStatus(url.origin);
+    const { extra, ...rest } = status;
+    providers[source.id] = { ...rest, ...(extra ?? {}) };
+  }
+  const github = providers.github ?? {};
   return json({
     // Back-compat top-level fields describe the GitHub receiver.
-    configured: secret.length > 0,
-    secret,
+    configured: github.configured ?? false,
+    secret: github.secret ?? "",
     url: `${url.origin}/api/webhooks/github`,
     lastEventAt: last?.receivedAt ?? null,
     lastEvent: last?.event ?? null,
     // Per-provider receiver status for the multi-provider UI.
-    providers: {
-      github: {
-        configured: secret.length > 0,
-        secret,
-        url: `${url.origin}/api/webhooks/github`,
-        secretEnv: "ERRANDD_GITHUB_WEBHOOK_SECRET",
-      },
-      sentry: {
-        configured: sentrySecret.length > 0,
-        secret: sentrySecret,
-        url: `${url.origin}/api/webhooks/sentry`,
-        secretEnv: "ERRANDD_SENTRY_CLIENT_SECRET",
-      },
-      datadog: {
-        configured: datadogSecret.length > 0,
-        secret: datadogSecret,
-        url: `${url.origin}/api/webhooks/datadog`,
-        secretEnv: "ERRANDD_DATADOG_WEBHOOK_SECRET",
-        // Datadog auth rides as ?token= or X-Errandd-Token, and the
-        // payload is user-defined — surface both the token-in-URL form
-        // and the recommended payload template for copy-paste.
-        tokenUrl: datadogSecret
-          ? `${url.origin}/api/webhooks/datadog?token=${encodeURIComponent(datadogSecret)}`
-          : `${url.origin}/api/webhooks/datadog`,
-        recommendedPayload: RECOMMENDED_DATADOG_PAYLOAD,
-      },
-      linear: {
-        configured: linearSecret.length > 0,
-        secret: linearSecret,
-        url: `${url.origin}/api/webhooks/linear`,
-        // Linear provides the signing secret when you create the webhook.
-        secretEnv: "ERRANDD_LINEAR_WEBHOOK_SECRET",
-        // The @mention gate (default-on) looks for this handle in ticket/comment text.
-        botMention: getLinearBotMention(),
-        botMentionEnv: "ERRANDD_LINEAR_BOT_MENTION",
-      },
-    },
+    providers,
   });
 };

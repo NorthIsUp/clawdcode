@@ -7,6 +7,7 @@
 import { extractSentryTitle, findLinearId, sentryDeliveryPk } from "../../shared/hookPayload";
 import type { DeliveryField, DeliveryKeys } from "./deliveries";
 import { readDatadogPayload, readLinearPayload, readPrPayload, readSentryPayload } from "./match";
+import { sourceForEvent } from "./sources";
 
 /** Like `readPath` from shared/hookPayload, but additionally stringifies a
  *  numeric/boolean leaf — the deliveries table reads PR numbers, counts, and
@@ -64,62 +65,77 @@ function shortSha(sha: string | null): string | null {
   return sha ? sha.slice(0, 7) : null;
 }
 
-/** Provider-specific extraction of the headline fields for a delivery. */
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: one branch per provider/event shape — flattening into helpers just scatters the field order.
+/**
+ * Provider-specific extraction of the headline fields for a delivery. Dispatches
+ * to the owning source's `extractFields` via the registry — no per-source
+ * branch here. The per-source implementations live below (and are wired into
+ * each `SourcePlugin`).
+ */
 export function extractHookFields(event: string, payload: unknown): DeliveryField[] {
+  return sourceForEvent(event).extractFields(event, payload);
+}
+
+/** Sentry (`sentry:*`) headline fields. */
+export function sentryExtractFields(_event: string, payload: unknown): DeliveryField[] {
+  const out: DeliveryField[] = [];
+  const sp = readSentryPayload(payload);
+  if (sp) {
+    // shortId (CLARA-BACKEND-T1) is the human ticket id — surface it first.
+    push(out, "shortId", sp.shortId);
+    push(out, "project", sp.project);
+    push(out, "level", sp.level);
+    // environment + host explain why an event was/wasn't filtered.
+    push(out, "environment", sp.environment);
+    push(out, "host", sp.serverName);
+    push(out, "action", sp.action);
+  }
+  // Title chain spans resource shapes (issue/event/error) — prod traffic is
+  // mostly `sentry:error` events, which carry data.error.title, not
+  // data.issue.title; reading only the latter left rows labeled `issue <id>`.
+  push(out, "issue", extractSentryTitle(payload));
+  return out;
+}
+
+/** Datadog (`datadog:*`) headline fields. */
+export function datadogExtractFields(_event: string, payload: unknown): DeliveryField[] {
+  const out: DeliveryField[] = [];
+  const dp = readDatadogPayload(payload);
+  if (dp) {
+    push(out, "monitor", dp.monitor);
+    push(out, "priority", dp.priority);
+    push(out, "type", dp.type);
+    if (dp.tags.length > 0) {
+      push(out, "tags", dp.tags.join(", "));
+    }
+  }
+  push(out, "title", read(payload, ["title"]));
+  return out;
+}
+
+/** Linear (`linear:*`) headline fields. */
+export function linearExtractFields(_event: string, payload: unknown): DeliveryField[] {
+  const out: DeliveryField[] = [];
+  const lp = readLinearPayload(payload);
+  // identifier (ENG-123) first — it's the headline id; then the why-it-fired
+  // facts mirroring the sentry/datadog branch style.
+  push(out, "identifier", lp.identifier);
+  push(out, "title", lp.title);
+  push(out, "state", lp.state);
+  push(out, "priority", lp.priorityLabel);
+  push(out, "assignee", lp.assignee);
+  push(out, "team", lp.team);
+  push(out, "action", lp.action);
+  if (lp.labels.length > 0) {
+    push(out, "labels", lp.labels.join(", "));
+  }
+  return out;
+}
+
+/** GitHub headline fields (one branch per event shape). */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: one branch per github event shape — flattening into helpers just scatters the field order.
+export function githubExtractFields(event: string, payload: unknown): DeliveryField[] {
   const out: DeliveryField[] = [];
 
-  if (event.startsWith("sentry:")) {
-    const sp = readSentryPayload(payload);
-    if (sp) {
-      // shortId (CLARA-BACKEND-T1) is the human ticket id — surface it first.
-      push(out, "shortId", sp.shortId);
-      push(out, "project", sp.project);
-      push(out, "level", sp.level);
-      // environment + host explain why an event was/wasn't filtered.
-      push(out, "environment", sp.environment);
-      push(out, "host", sp.serverName);
-      push(out, "action", sp.action);
-    }
-    // Title chain spans resource shapes (issue/event/error) — prod traffic is
-    // mostly `sentry:error` events, which carry data.error.title, not
-    // data.issue.title; reading only the latter left rows labeled `issue <id>`.
-    push(out, "issue", extractSentryTitle(payload));
-    return out;
-  }
-
-  if (event.startsWith("datadog:")) {
-    const dp = readDatadogPayload(payload);
-    if (dp) {
-      push(out, "monitor", dp.monitor);
-      push(out, "priority", dp.priority);
-      push(out, "type", dp.type);
-      if (dp.tags.length > 0) {
-        push(out, "tags", dp.tags.join(", "));
-      }
-    }
-    push(out, "title", read(payload, ["title"]));
-    return out;
-  }
-
-  if (event.startsWith("linear:") || event === "linear") {
-    const lp = readLinearPayload(payload);
-    // identifier (ENG-123) first — it's the headline id; then the why-it-fired
-    // facts mirroring the sentry/datadog branch style.
-    push(out, "identifier", lp.identifier);
-    push(out, "title", lp.title);
-    push(out, "state", lp.state);
-    push(out, "priority", lp.priorityLabel);
-    push(out, "assignee", lp.assignee);
-    push(out, "team", lp.team);
-    push(out, "action", lp.action);
-    if (lp.labels.length > 0) {
-      push(out, "labels", lp.labels.join(", "));
-    }
-    return out;
-  }
-
-  // GitHub
   if (event === "pull_request") {
     const pr = readPrPayload(payload);
     const num = read(payload, ["pull_request", "number"]);
@@ -217,27 +233,36 @@ function linearTaskId(payload: unknown): string | null {
  *  column. GitHub: PR number (or the head/ref branch); Sentry: the issue/error
  *  id; Datadog: best-effort monitor/aggregation id (TBD). */
 export function extractHookPk(event: string, payload: unknown): string {
-  if (event.startsWith("sentry:")) {
-    // Prefer the ISSUE id over per-event ids — the issue is the subject
-    // (threads coalesce on `sentry-issue-<id>`, and the UI organizes by it).
-    // Event ids are a last resort for payloads that carry nothing else. The
-    // canonical path ordering lives in shared/hookPayload (sentryDeliveryPk).
-    return sentryDeliveryPk(payload);
-  }
-  if (event.startsWith("datadog:")) {
-    // Keying TBD — fall back to the monitor / aggregation id for now.
-    return (
-      read(payload, ["monitor_id"]) ??
-      read(payload, ["alert_id"]) ??
-      read(payload, ["aggreg_key"]) ??
-      read(payload, ["id"]) ??
-      ""
-    );
-  }
-  if (event.startsWith("linear:") || event === "linear") {
-    // The issue identifier (ENG-123) is the subject — threads coalesce on it.
-    return readLinearPayload(payload).identifier;
-  }
+  return sourceForEvent(event).extractPk(event, payload);
+}
+
+/** Sentry delivery pk — the ISSUE id (threads coalesce on `sentry-issue-<id>`). */
+export function sentryExtractPk(_event: string, payload: unknown): string {
+  // Prefer the ISSUE id over per-event ids — the issue is the subject
+  // (threads coalesce on `sentry-issue-<id>`, and the UI organizes by it).
+  // Event ids are a last resort for payloads that carry nothing else. The
+  // canonical path ordering lives in shared/hookPayload (sentryDeliveryPk).
+  return sentryDeliveryPk(payload);
+}
+
+/** Datadog delivery pk — monitor / aggregation id (keying TBD). */
+export function datadogExtractPk(_event: string, payload: unknown): string {
+  return (
+    read(payload, ["monitor_id"]) ??
+    read(payload, ["alert_id"]) ??
+    read(payload, ["aggreg_key"]) ??
+    read(payload, ["id"]) ??
+    ""
+  );
+}
+
+/** Linear delivery pk — the issue identifier (ENG-123), the thread subject. */
+export function linearExtractPk(_event: string, payload: unknown): string {
+  return readLinearPayload(payload).identifier;
+}
+
+/** GitHub delivery pk. */
+export function githubExtractPk(event: string, payload: unknown): string {
   // check_run / check_suite: PR number from the check's pull_requests, else the
   // head branch, else the short head SHA (often the only handle a check has).
   if (CHECK_EVENTS.has(event)) {
@@ -269,39 +294,48 @@ function stripRefsHeads(ref: string | null): string | null {
 /** The two headline "keys" shown as their own columns. GitHub: the action and
  *  the PR#/branch. Sentry: level + action. Datadog: priority + alert type. */
 export function extractHookKeys(event: string, payload: unknown): DeliveryKeys {
-  if (event.startsWith("sentry:")) {
-    const sp = readSentryPayload(payload);
-    return {
-      key1Label: "level",
-      key1: sp?.level ?? "",
-      key2Label: "action",
-      key2: sp?.action ?? "",
-    };
-  }
-  if (event.startsWith("datadog:")) {
-    const dp = readDatadogPayload(payload);
-    return {
-      key1Label: "priority",
-      key1: dp?.priority ?? "",
-      key2Label: "type",
-      key2: dp?.type ?? "",
-    };
-  }
-  if (event.startsWith("linear:") || event === "linear") {
-    const lp = readLinearPayload(payload);
-    return {
-      key1Label: "action",
-      key1: lp.action,
-      key2Label: "id",
-      key2: lp.identifier,
-    };
-  }
-  // GitHub: the action (opened / synchronize / created / …) and the
-  // PR#/branch (reuses the pk derivation).
+  return sourceForEvent(event).extractKeys(event, payload);
+}
+
+/** Sentry key columns: level + action. */
+export function sentryExtractKeys(_event: string, payload: unknown): DeliveryKeys {
+  const sp = readSentryPayload(payload);
+  return {
+    key1Label: "level",
+    key1: sp?.level ?? "",
+    key2Label: "action",
+    key2: sp?.action ?? "",
+  };
+}
+
+/** Datadog key columns: priority + alert type. */
+export function datadogExtractKeys(_event: string, payload: unknown): DeliveryKeys {
+  const dp = readDatadogPayload(payload);
+  return {
+    key1Label: "priority",
+    key1: dp?.priority ?? "",
+    key2Label: "type",
+    key2: dp?.type ?? "",
+  };
+}
+
+/** Linear key columns: action + identifier. */
+export function linearExtractKeys(_event: string, payload: unknown): DeliveryKeys {
+  const lp = readLinearPayload(payload);
+  return {
+    key1Label: "action",
+    key1: lp.action,
+    key2Label: "id",
+    key2: lp.identifier,
+  };
+}
+
+/** GitHub key columns: the action and the PR#/branch (reuses the pk derivation). */
+export function githubExtractKeys(event: string, payload: unknown): DeliveryKeys {
   return {
     key1Label: "action",
     key1: read(payload, ["action"]) ?? "",
     key2Label: "pr/branch",
-    key2: extractHookPk(event, payload),
+    key2: githubExtractPk(event, payload),
   };
 }
