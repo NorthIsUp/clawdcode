@@ -489,6 +489,15 @@ describe("claw:ignore label pauses all hooks for a PR", () => {
     expect(reasons.some((r) => r.startsWith("ignore"))).toBe(true);
   });
 
+  test("the new errandd:ignore prefix is observed too", async () => {
+    const pr = ignoredPr();
+    pr.pull_request.labels = [{ name: "needs-review" }, { name: "errandd:ignore" }];
+    const job = makeJob("pr-review", [{ prs: true }]);
+    expect(await firedJobs("pull_request", pr, [job])).not.toContain("pr-review");
+    const reasons = await skipReasons("pull_request", pr, [job]);
+    expect(reasons.some((r) => r.startsWith("ignore"))).toBe(true);
+  });
+
   test("ignored PR also skips comment hooks (label read from issue.labels)", async () => {
     const job = makeJob("pr-comments", [{ comments: true }]);
     const body = {
