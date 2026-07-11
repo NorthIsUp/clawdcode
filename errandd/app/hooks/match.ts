@@ -187,18 +187,20 @@ function matchRepo(rule: string | string[], repo: string): boolean {
   return list.some((pat) => matchesGlob(pat.toLowerCase(), repo.toLowerCase()));
 }
 
-/** A PR-level "don't touch this" label: when a PR carries `claw:ignore`, every
+/** PR-level "don't touch this" labels: when a PR carries any of these, every
  *  hook (PR events + comments on it) is skipped, independent of routine config.
- *  A human flips this to make the bot leave a specific PR alone. */
-export const CLAW_IGNORE_LABEL = "claw:ignore";
+ *  A human flips one to make the bot leave a specific PR alone. Observed under
+ *  BOTH the current `errandd:` prefix and the legacy `claw:` prefix so the
+ *  rename never strands a PR someone already marked. Lower-case for comparison. */
+export const IGNORE_LABELS = ["errandd:ignore", "claw:ignore"] as const;
 
 /** Skip reason emitted when a PR is ignored — shared so the skip session can be
  *  marked `[skip:ignore]` distinctly from other skips. */
-export const CLAW_IGNORE_SKIP_REASON = "ignore — PR has the `claw:ignore` label";
+export const CLAW_IGNORE_SKIP_REASON = "ignore — PR carries an `errandd:ignore`/`claw:ignore` label";
 
-/** True when the delivery's PR carries the `claw:ignore` label. Reads from
- *  `pull_request.labels` (PR + review events) or `issue.labels` (issue_comment
- *  on a PR), case-insensitively. */
+/** True when the delivery's PR carries an ignore label (`errandd:ignore` or the
+ *  legacy `claw:ignore`). Reads from `pull_request.labels` (PR + review events)
+ *  or `issue.labels` (issue_comment on a PR), case-insensitively. */
 export function hasClawIgnoreLabel(event: string, payload: unknown): boolean {
   if (typeof payload !== "object" || payload === null) {
     return false;
@@ -214,7 +216,7 @@ export function hasClawIgnoreLabel(event: string, payload: unknown): boolean {
   }
   return labels.some((l) => {
     const name = typeof l === "object" && l !== null ? (l as Record<string, unknown>).name : null;
-    return typeof name === "string" && name.toLowerCase() === CLAW_IGNORE_LABEL;
+    return typeof name === "string" && (IGNORE_LABELS as readonly string[]).includes(name.toLowerCase());
   });
 }
 
