@@ -2,7 +2,8 @@ import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { isReady } from "../health";
-import { handleWebhook } from "../hooks/receiver";
+import { dispatchInbound } from "../hooks/receiver";
+import { getSources } from "../hooks/sources";
 import { attachAuthCookie, authenticate, checkToken } from "./auth";
 import { json } from "./http";
 import { dispatch } from "./routes";
@@ -323,77 +324,28 @@ export function startWebUi(opts: StartWebUiOptions): WebServerHandle {
         return json({ ok: true, now: Date.now() });
       }
 
-      // GitHub webhook is pre-auth — it carries its own HMAC signature
-      // (X-Hub-Signature-256) rather than a bearer token. Verification lives
-      // inside handleWebhook; an unsigned/invalid request returns 401 there.
-      // Canonical path is /api/webhooks/github; /api/github/webhook is kept as
-      // a deprecated alias so an in-flight URL cutover (funnel + GitHub config)
-      // never has a window where deliveries 404.
-      if (
-        (url.pathname === "/api/webhooks/github" || url.pathname === "/api/github/webhook") &&
-        req.method === "POST"
-      ) {
-        const result = await handleWebhook(req, {
-          getJobs: () => opts.getSnapshot().jobs,
-          ...(opts.onHookFire ? { onHookFire: opts.onHookFire } : {}),
-          ...(opts.onHookSkip ? { onHookSkip: opts.onHookSkip } : {}),
-          ...(opts.hasActiveThread ? { hasActiveThread: opts.hasActiveThread } : {}),
-        });
-        return new Response(JSON.stringify(result.body), {
-          status: result.status,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-
-      // Sentry / Datadog webhooks — pre-auth like the GitHub one, each
-      // carries its own verification (HMAC for Sentry, shared token for
-      // Datadog) inside the handler.
-      if (
-        (url.pathname === "/api/webhooks/sentry" || url.pathname === "/api/sentry/webhook") &&
-        req.method === "POST"
-      ) {
-        const { handleSentryWebhook } = await import("../hooks/sentry");
-        const result = await handleSentryWebhook(req, {
-          getJobs: () => opts.getSnapshot().jobs,
-          ...(opts.onHookFire ? { onHookFire: opts.onHookFire } : {}),
-        });
-        return new Response(JSON.stringify(result.body), {
-          status: result.status,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-      if (
-        (url.pathname === "/api/webhooks/datadog" || url.pathname === "/api/datadog/webhook") &&
-        req.method === "POST"
-      ) {
-        const { handleDatadogWebhook } = await import("../hooks/datadog");
-        const result = await handleDatadogWebhook(req, {
-          getJobs: () => opts.getSnapshot().jobs,
-          ...(opts.onHookFire ? { onHookFire: opts.onHookFire } : {}),
-        });
-        return new Response(JSON.stringify(result.body), {
-          status: result.status,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-      // Linear webhook — a first-class provider alongside Sentry/Datadog/GitHub:
-      // pre-auth, verifies its own Linear-Signature HMAC inside the handler,
-      // extracts state/priority/assignee/labels/url, matches the structured
-      // `on.linear` rule (type/team/action/priority/state/labels + @mention gate),
-      // and enriches deliveries. See src/hooks/linear.ts.
-      if (
-        (url.pathname === "/api/webhooks/linear" || url.pathname === "/api/linear/webhook") &&
-        req.method === "POST"
-      ) {
-        const { handleLinearWebhook } = await import("../hooks/linear");
-        const result = await handleLinearWebhook(req, {
-          getJobs: () => opts.getSnapshot().jobs,
-          ...(opts.onHookFire ? { onHookFire: opts.onHookFire } : {}),
-        });
-        return new Response(JSON.stringify(result.body), {
-          status: result.status,
-          headers: { "Content-Type": "application/json" },
-        });
+      // Inbound webhooks are pre-auth — each SOURCE carries its own verification
+      // (HMAC or shared token) inside `dispatchInbound`, not a bearer token. The
+      // registry drives routing: every source is mounted at its `routePath` plus
+      // a deprecated `aliasPath` (e.g. /api/github/webhook) so an in-flight URL
+      // cutover never has a window where deliveries 404. No per-provider branch.
+      // Every source receives the full dep set; sources ignore deps they don't
+      // use (only GitHub reads onHookSkip / hasActiveThread today).
+      if (req.method === "POST") {
+        for (const source of getSources()) {
+          if (url.pathname === source.routePath || url.pathname === source.aliasPath) {
+            const result = await dispatchInbound(source, req, {
+              getJobs: () => opts.getSnapshot().jobs,
+              ...(opts.onHookFire ? { onHookFire: opts.onHookFire } : {}),
+              ...(opts.onHookSkip ? { onHookSkip: opts.onHookSkip } : {}),
+              ...(opts.hasActiveThread ? { hasActiveThread: opts.hasActiveThread } : {}),
+            });
+            return new Response(JSON.stringify(result.body), {
+              status: result.status,
+              headers: { "Content-Type": "application/json" },
+            });
+          }
+        }
       }
 
       // Task 1.1: Require bearer token for all /api/* routes. Accepts the

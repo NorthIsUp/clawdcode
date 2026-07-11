@@ -1,8 +1,10 @@
 import type { Delivery, DeliveryRoutine } from "./deliveries";
 import { recordDelivery } from "./deliveries";
+import { datadogExtractFields, datadogExtractKeys, datadogExtractPk } from "./evaluate";
 import { datadogRuleSkipReason, matchDatadogRule, readDatadogPayload } from "./match";
 import type { ReceiverResult, WebhookDeps } from "./receiver";
-import { defaultDatadogRule } from "./schema";
+import { defaultDatadogRule, parseDatadogTrigger } from "./schema";
+import type { ProviderStatus, SourcePlugin } from "./sources";
 import { handleSignedWebhook, type WebhookSpec } from "./webhookEnvelope";
 
 /**
@@ -49,10 +51,8 @@ export const RECOMMENDED_DATADOG_PAYLOAD = {
   date: "$DATE",
 } as const;
 
-export function handleDatadogWebhook(
-  req: Request,
-  deps: WebhookDeps = {},
-): Promise<ReceiverResult> {
+/** Build the per-request Datadog webhook spec (reads the token fresh from env). */
+function buildDatadogSpec(): WebhookSpec {
   const spec: WebhookSpec = {
     source: "datadog",
     // Datadog payloads are not HMAC-signed — shared-token auth (header or
@@ -81,8 +81,50 @@ export function handleDatadogWebhook(
       matchDatadog(payload, identity.event, identity.id, delivery, d),
     recordAttempt: (_req, body, status) => recordDatadogAttempt(body, status),
   };
-  return handleSignedWebhook(req, deps, spec);
+  return spec;
 }
+
+/** Datadog webhook receiver — back-compat wrapper over the shared envelope. */
+export function handleDatadogWebhook(
+  req: Request,
+  deps: WebhookDeps = {},
+): Promise<ReceiverResult> {
+  return handleSignedWebhook(req, deps, buildDatadogSpec());
+}
+
+/** Per-provider receiver status for the Settings UI. Datadog auth rides as
+ *  `?token=` or `X-Errandd-Token`, and the payload is user-defined — surface
+ *  the token-in-URL form and the recommended payload template as extras. */
+function datadogProviderStatus(origin: string): ProviderStatus {
+  const secret = getDatadogSecret();
+  return {
+    configured: secret.length > 0,
+    secret,
+    url: `${origin}/api/webhooks/datadog`,
+    secretEnv: "ERRANDD_DATADOG_WEBHOOK_SECRET",
+    extra: {
+      tokenUrl: secret
+        ? `${origin}/api/webhooks/datadog?token=${encodeURIComponent(secret)}`
+        : `${origin}/api/webhooks/datadog`,
+      recommendedPayload: RECOMMENDED_DATADOG_PAYLOAD,
+    },
+  };
+}
+
+/** The Datadog inbound SOURCE plugin. */
+export const datadogSource: SourcePlugin = {
+  id: "datadog",
+  routePath: "/api/webhooks/datadog",
+  aliasPath: "/api/datadog/webhook",
+  webhookSpec: buildDatadogSpec,
+  ownsEvent: (event: string) => event.startsWith("datadog:"),
+  extractFields: datadogExtractFields,
+  extractKeys: datadogExtractKeys,
+  extractPk: datadogExtractPk,
+  configKeys: ["datadog"],
+  parseRule: parseDatadogTrigger,
+  providerStatus: datadogProviderStatus,
+};
 
 /** Per-job Datadog match pass. Mirrors the other receivers: a `true` rule
  *  resolves to the priority-floor default, matched jobs fire (and land in

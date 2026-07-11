@@ -17,6 +17,8 @@
  *  - `draft` defaults to false (skip drafts).
  */
 
+import { sourceForConfigKey, type TriggerBuilder } from "./sources";
+
 export interface PrRule {
   repo: string | string[];
   user: string[]; // required, but we'll surface a clearer error if missing
@@ -243,7 +245,6 @@ export interface ParsedTriggers {
  * multi-key items, unknown trigger keys) so typos surface instead of
  * silently never firing.
  */
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: one branch per supported trigger key.
 export function parseTriggers(
   rawOn: unknown,
   topLevelSkipSelf: unknown,
@@ -262,15 +263,23 @@ export function parseTriggers(
   const rawOnList: unknown[] = rawOn;
 
   const schedules: string[] = [];
-  const prRules: PrRule[] = [];
-  let comments: boolean | CommentRule = false;
-  let reviews: boolean | ReviewRule = false;
-  let sentry: boolean | SentryRule = false;
-  let datadog: boolean | DatadogRule = false;
-  let linear: boolean | LinearRule = false;
-  let checks: boolean | ChecksRule = false;
-  let issues: boolean | IssuesRule = false;
-  let sawEventTrigger = false;
+  // The mutable accumulator each source's `parseRule` writes into. `schedule`
+  // is not a source (it's the cron modifier) and is handled inline; every event
+  // trigger key is routed to its owning SourcePlugin via the registry — no
+  // per-source branch lives here.
+  const b: TriggerBuilder = {
+    prRules: [],
+    comments: false,
+    reviews: false,
+    sentry: false,
+    datadog: false,
+    linear: false,
+    checks: false,
+    issues: false,
+    prDefaults,
+    index: 0,
+    sawEventTrigger: false,
+  };
 
   for (let i = 0; i < rawOnList.length; i++) {
     const item = rawOnList[i];
@@ -285,76 +294,97 @@ export function parseTriggers(
     }
     const key = keys[0];
     const val = (item as Record<string, unknown>)[key];
-    switch (key) {
-      case "schedule": {
-        if (val !== null && val !== undefined && typeof val !== "string") {
-          throw new Error(`on[${i}].schedule: must be a cron string (got ${typeName(val)})`);
-        }
-        const cron = (val ?? "").toString().trim();
-        if (cron) schedules.push(cron);
-        break;
+    b.index = i;
+    if (key === "schedule") {
+      if (val !== null && val !== undefined && typeof val !== "string") {
+        throw new Error(`on[${i}].schedule: must be a cron string (got ${typeName(val)})`);
       }
-      case "prs":
-        sawEventTrigger = true;
-        if (val === true || val === "true") {
-          prRules.push(fullyOpenPrRule());
-        } else {
-          throw new Error(`on[${i}].prs: only \`true\` is supported (use \`pr:\` for filters)`);
-        }
-        break;
-      case "pr":
-        sawEventTrigger = true;
-        try {
-          prRules.push(normalizePrRule(val, prDefaults));
-        } catch (e) {
-          throw new Error(`on[${i}].pr: ${e instanceof Error ? e.message : String(e)}`, { cause: e });
-        }
-        break;
-      case "comments":
-        sawEventTrigger = true;
-        comments = parseComments(val);
-        break;
-      case "reviews":
-        sawEventTrigger = true;
-        reviews = parseReviews(val);
-        break;
-      case "sentry":
-        sawEventTrigger = true;
-        sentry = parseSentry(val);
-        break;
-      case "datadog":
-        sawEventTrigger = true;
-        datadog = parseDatadog(val);
-        break;
-      case "linear":
-        sawEventTrigger = true;
-        linear = parseLinear(val);
-        break;
-      case "checks":
-        sawEventTrigger = true;
-        checks = parseChecks(val);
-        break;
-      case "issues":
-        sawEventTrigger = true;
-        issues = parseIssues(val);
-        break;
-      default:
-        throw new Error(`on[${i}]: unknown trigger \`${key}\``);
+      const cron = (val ?? "").toString().trim();
+      if (cron) {
+        schedules.push(cron);
+      }
+      continue;
     }
+    const source = sourceForConfigKey(key);
+    if (!source?.parseRule) {
+      throw new Error(`on[${i}]: unknown trigger \`${key}\``);
+    }
+    source.parseRule(key, val, b);
   }
 
   let hookConfig: HookConfig | null = null;
-  if (sawEventTrigger) {
-    hookConfig = { pr: prRules, skipSelf };
-    if (comments !== false) hookConfig.comments = comments;
-    if (reviews !== false) hookConfig.reviews = reviews;
-    if (sentry !== false) hookConfig.sentry = sentry;
-    if (datadog !== false) hookConfig.datadog = datadog;
-    if (linear !== false) hookConfig.linear = linear;
-    if (checks !== false) hookConfig.checks = checks;
-    if (issues !== false) hookConfig.issues = issues;
+  if (b.sawEventTrigger) {
+    hookConfig = { pr: b.prRules, skipSelf };
+    if (b.comments !== false) hookConfig.comments = b.comments;
+    if (b.reviews !== false) hookConfig.reviews = b.reviews;
+    if (b.sentry !== false) hookConfig.sentry = b.sentry;
+    if (b.datadog !== false) hookConfig.datadog = b.datadog;
+    if (b.linear !== false) hookConfig.linear = b.linear;
+    if (b.checks !== false) hookConfig.checks = b.checks;
+    if (b.issues !== false) hookConfig.issues = b.issues;
   }
   return { schedules, hookConfig };
+}
+
+// ── Per-source trigger parsers ───────────────────────────────────────────────
+// Each SourcePlugin wires one of these as its `parseRule`. They own the private
+// per-key parse helpers below and mutate the shared TriggerBuilder — the schema
+// is the natural home for them (it holds the rule types + defaults), while the
+// registry decides which key routes to which source.
+
+/** GitHub triggers: prs / pr / comments / reviews / checks / issues. */
+export function parseGithubTrigger(key: string, val: unknown, b: TriggerBuilder): void {
+  b.sawEventTrigger = true;
+  switch (key) {
+    case "prs":
+      if (val === true || val === "true") {
+        b.prRules.push(fullyOpenPrRule());
+      } else {
+        throw new Error(`on[${b.index}].prs: only \`true\` is supported (use \`pr:\` for filters)`);
+      }
+      break;
+    case "pr":
+      try {
+        b.prRules.push(normalizePrRule(val, b.prDefaults));
+      } catch (e) {
+        throw new Error(`on[${b.index}].pr: ${e instanceof Error ? e.message : String(e)}`, {
+          cause: e,
+        });
+      }
+      break;
+    case "comments":
+      b.comments = parseComments(val);
+      break;
+    case "reviews":
+      b.reviews = parseReviews(val);
+      break;
+    case "checks":
+      b.checks = parseChecks(val);
+      break;
+    case "issues":
+      b.issues = parseIssues(val);
+      break;
+    default:
+      throw new Error(`on[${b.index}]: unknown github trigger \`${key}\``);
+  }
+}
+
+/** Sentry trigger. */
+export function parseSentryTrigger(_key: string, val: unknown, b: TriggerBuilder): void {
+  b.sawEventTrigger = true;
+  b.sentry = parseSentry(val);
+}
+
+/** Datadog trigger. */
+export function parseDatadogTrigger(_key: string, val: unknown, b: TriggerBuilder): void {
+  b.sawEventTrigger = true;
+  b.datadog = parseDatadog(val);
+}
+
+/** Linear trigger. */
+export function parseLinearTrigger(_key: string, val: unknown, b: TriggerBuilder): void {
+  b.sawEventTrigger = true;
+  b.linear = parseLinear(val);
 }
 
 /** Default project allowlist for Sentry triggers: production projects only.

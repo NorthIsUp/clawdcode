@@ -19,6 +19,7 @@ import { join, isAbsolute, resolve } from "path";
 import { existsSync } from "fs";
 import { ts } from "./logTime";
 import { registerRuntime, resetRuntimeCache, type RuntimeFactory } from "./runtime/registry";
+import { registerSource, type SourcePlugin } from "./hooks/sources";
 
 // ── Event types ──────────────────────────────────────────────────────────────
 
@@ -67,6 +68,13 @@ export interface PluginApi {
    *  / ERRANDD_RUNTIME equals `id`. Registration invalidates the cached runtime
    *  singleton, so it takes effect regardless of load order (see registry.ts). */
   registerRuntime(id: string, factory: RuntimeFactory): void;
+  /** Register an inbound webhook SOURCE plugin, routed into the shared source
+   *  registry (see app/hooks/sources.ts). The source's id is validated + branded
+   *  into the open plugin tier (a core-id collision or malformed id throws). Once
+   *  registered it is mounted at its `routePath`, drives the generic inbound
+   *  dispatcher, and appears in receiver status — the same lifecycle as the four
+   *  core providers. Mirrors {@link registerRuntime}. */
+  registerSource(source: SourcePlugin): void;
   runtime: {
     channel: Record<string, Record<string, (...args: unknown[]) => unknown>>;
   };
@@ -215,6 +223,10 @@ export class PluginManager {
         // first resolve still takes effect (registry ordering contract).
         resetRuntimeCache();
         console.log(`[${ts()}] [plugins] ${pluginId} registered runtime: ${id}`);
+      },
+      registerSource: (source: SourcePlugin) => {
+        registerSource(source);
+        console.log(`[${ts()}] [plugins] ${pluginId} registered source: ${source.id}`);
       },
       runtime: {
         channel: this.channelRuntime,

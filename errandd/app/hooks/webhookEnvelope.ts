@@ -91,6 +91,15 @@ export interface WebhookSpec {
    *  to `extractHookPk(event, payload)`. */
   derivePk?: (event: string, payload: unknown) => string;
   /**
+   * Optional early-drop, evaluated AFTER identity derivation but BEFORE the
+   * delivery is recorded. Returning a `ReceiverResult` short-circuits the
+   * pipeline (no ring entry, no match) — GitHub uses it to shed non-terminal
+   * CI-check noise (`check_run`/`workflow_run` with `action !== "completed"`)
+   * that can never match a rule, before it floods the ring + SSE fan-out.
+   * Returning `null`/omitting proceeds normally.
+   */
+  preRecord?: (identity: DeliveryIdentity, payload: unknown) => ReceiverResult | null;
+  /**
    * Who records the delivery evaluation (`attachDeliveryPayload` +
    * `setDeliveryEvaluation`):
    *   - `"envelope"` (default): the envelope records it unconditionally after
@@ -192,6 +201,11 @@ export async function handleSignedWebhook(
   }
 
   const identity = spec.deriveIdentity(req, payload);
+
+  const dropped = spec.preRecord?.(identity, payload);
+  if (dropped) {
+    return dropped;
+  }
 
   const delivery: Delivery = {
     id: identity.id,

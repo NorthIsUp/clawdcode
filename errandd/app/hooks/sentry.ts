@@ -1,9 +1,15 @@
 import { type Delivery, type DeliveryRoutine, recordDelivery } from "./deliveries";
-import { extractHookPk } from "./evaluate";
+import {
+  extractHookPk,
+  sentryExtractFields,
+  sentryExtractKeys,
+  sentryExtractPk,
+} from "./evaluate";
 import { matchSentryRule, readSentryPayload, sentryRuleSkipReason } from "./match";
 import type { ReceiverResult, WebhookDeps } from "./receiver";
-import { defaultSentryRule, type SentryRule } from "./schema";
+import { defaultSentryRule, parseSentryTrigger, type SentryRule } from "./schema";
 import { markIssueSeen } from "./sentrySeen";
+import type { ProviderStatus, SourcePlugin } from "./sources";
 import { handleSignedWebhook, type WebhookSpec } from "./webhookEnvelope";
 
 /**
@@ -39,10 +45,8 @@ function resourceOf(event: string): string {
   return event.slice("sentry:".length) || "event";
 }
 
-export function handleSentryWebhook(
-  req: Request,
-  deps: WebhookDeps = {},
-): Promise<ReceiverResult> {
+/** Build the per-request Sentry webhook spec (reads the secret fresh from env). */
+function buildSentrySpec(): WebhookSpec {
   const spec: WebhookSpec = {
     source: "sentry",
     auth: { kind: "hmac", header: "sentry-hook-signature", secret: getSentrySecret() },
@@ -73,8 +77,42 @@ export function handleSentryWebhook(
       matchSentry(payload, identity.event, identity.id, delivery, d),
     recordAttempt: (req2, body, status) => recordSentryAttempt(req2, body, status),
   };
-  return handleSignedWebhook(req, deps, spec);
+  return spec;
 }
+
+/** Sentry webhook receiver — back-compat wrapper over the shared envelope. */
+export function handleSentryWebhook(
+  req: Request,
+  deps: WebhookDeps = {},
+): Promise<ReceiverResult> {
+  return handleSignedWebhook(req, deps, buildSentrySpec());
+}
+
+/** Per-provider receiver status for the Settings UI. */
+function sentryProviderStatus(origin: string): ProviderStatus {
+  const secret = getSentrySecret();
+  return {
+    configured: secret.length > 0,
+    secret,
+    url: `${origin}/api/webhooks/sentry`,
+    secretEnv: "ERRANDD_SENTRY_CLIENT_SECRET",
+  };
+}
+
+/** The Sentry inbound SOURCE plugin. */
+export const sentrySource: SourcePlugin = {
+  id: "sentry",
+  routePath: "/api/webhooks/sentry",
+  aliasPath: "/api/sentry/webhook",
+  webhookSpec: buildSentrySpec,
+  ownsEvent: (event: string) => event.startsWith("sentry:"),
+  extractFields: sentryExtractFields,
+  extractKeys: sentryExtractKeys,
+  extractPk: sentryExtractPk,
+  configKeys: ["sentry"],
+  parseRule: parseSentryTrigger,
+  providerStatus: sentryProviderStatus,
+};
 
 /**
  * Per-job Sentry match pass + the stateful first-seen / debounce gate.

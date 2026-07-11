@@ -1,9 +1,15 @@
 import { type LinearPayload, readLinearPayload } from "../../shared/hookPayload";
 import { type Delivery, type DeliveryRoutine, recordDelivery } from "./deliveries";
-import { extractHookPk } from "./evaluate";
+import {
+  extractHookPk,
+  linearExtractFields,
+  linearExtractKeys,
+  linearExtractPk,
+} from "./evaluate";
 import { linearRuleSkipReason, matchLinearRule } from "./match";
 import type { ReceiverResult, WebhookDeps } from "./receiver";
-import { defaultLinearRule } from "./schema";
+import { defaultLinearRule, parseLinearTrigger } from "./schema";
+import type { ProviderStatus, SourcePlugin } from "./sources";
 import { handleSignedWebhook, type WebhookSpec } from "./webhookEnvelope";
 
 /**
@@ -36,10 +42,8 @@ export function getLinearBotMention(): string {
   return process.env.ERRANDD_LINEAR_BOT_MENTION ?? "@errandd";
 }
 
-export function handleLinearWebhook(
-  req: Request,
-  deps: WebhookDeps = {},
-): Promise<ReceiverResult> {
+/** Build the per-request Linear webhook spec (reads the secret fresh from env). */
+function buildLinearSpec(): WebhookSpec {
   const spec: WebhookSpec = {
     source: "linear",
     auth: { kind: "hmac", header: "linear-signature", secret: getLinearSecret() },
@@ -68,8 +72,47 @@ export function handleLinearWebhook(
     derivePk: (event, payload) => readLinearPayload(payload).identifier || extractHookPk(event, payload),
     recordAttempt: (req2, body, status) => recordLinearAttempt(req2, body, status),
   };
-  return handleSignedWebhook(req, deps, spec);
+  return spec;
 }
+
+/** Linear webhook receiver — back-compat wrapper over the shared envelope. */
+export function handleLinearWebhook(
+  req: Request,
+  deps: WebhookDeps = {},
+): Promise<ReceiverResult> {
+  return handleSignedWebhook(req, deps, buildLinearSpec());
+}
+
+/** Per-provider receiver status for the Settings UI. Surfaces the @mention gate
+ *  handle (default-on) as an extra alongside the signing secret. */
+function linearProviderStatus(origin: string): ProviderStatus {
+  const secret = getLinearSecret();
+  return {
+    configured: secret.length > 0,
+    secret,
+    url: `${origin}/api/webhooks/linear`,
+    secretEnv: "ERRANDD_LINEAR_WEBHOOK_SECRET",
+    extra: {
+      botMention: getLinearBotMention(),
+      botMentionEnv: "ERRANDD_LINEAR_BOT_MENTION",
+    },
+  };
+}
+
+/** The Linear inbound SOURCE plugin. */
+export const linearSource: SourcePlugin = {
+  id: "linear",
+  routePath: "/api/webhooks/linear",
+  aliasPath: "/api/linear/webhook",
+  webhookSpec: buildLinearSpec,
+  ownsEvent: (event: string) => event.startsWith("linear:") || event === "linear",
+  extractFields: linearExtractFields,
+  extractKeys: linearExtractKeys,
+  extractPk: linearExtractPk,
+  configKeys: ["linear"],
+  parseRule: parseLinearTrigger,
+  providerStatus: linearProviderStatus,
+};
 
 /** Per-job Linear match pass. The @mention gate lives inside `matchLinearRule`
  *  (it reads `lp.mentioned`, which the receiver sets from the bot handle). */
