@@ -270,7 +270,3 @@ bun run bump:marketplace-version
 ```
 
 The `plugin-version-guard` and `marketplace-version-guard` checks fail if `.claude-plugin/plugin.json` or `.claude-plugin/marketplace.json` still carry the merge-base version — commit the bumps alongside your changes and push before creating the PR.
-
-<a href="https://github.com/NorthIsUp/errandd/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=NorthIsUp/errandd" />
-</a>
