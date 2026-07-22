@@ -52,6 +52,7 @@ function errText(err: unknown): string {
 // to a section instead of opening a separate sub-page.
 const SECTIONS = [
   { id: "model", label: "Default model" },
+  { id: "output-style", label: "Output style" },
   { id: "sources", label: "Sources" },
   { id: "hooks", label: "Webhook receiver" },
   { id: "git", label: "Git identity" },
@@ -105,6 +106,9 @@ export function SettingsSection({ hideAppearance = false }: { hideAppearance?: b
 
       <SettingsSubsection id="model" label="Default model">
         <ModelPanel />
+      </SettingsSubsection>
+      <SettingsSubsection id="output-style" label="Output style">
+        <OutputStylePanel />
       </SettingsSubsection>
       <SettingsSubsection id="sources" label="Sources">
         <ReposPanel />
@@ -1098,6 +1102,107 @@ function ModelPanel() {
           )}
         </div>
       </div>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Output style — Claude Code's built-in prompt personas. Written to settings
+// as `outputStyle` and injected into every spawn via `--settings`. Empty =
+// the CLI default. "custom" lets you name any style installed under
+// ~/.claude/output-styles/.
+// ---------------------------------------------------------------------------
+
+const OUTPUT_STYLES = [
+  { value: "", label: "Default", help: "Claude Code's normal concise engineering voice." },
+  {
+    value: "Explanatory",
+    label: "Explanatory",
+    help: "Adds educational insights about implementation and codebase choices.",
+  },
+  {
+    value: "Learning",
+    label: "Learning",
+    help: "Interactive learning mode — asks you to fill in small pieces as it goes.",
+  },
+] as const;
+
+function OutputStylePanel() {
+  const state = useAsync<StateResponse>(() => getState());
+  const [style, setStyle] = useState("");
+  const [advanced, setAdvanced] = useState(false);
+  const [seenState, setSeenState] = useState<unknown>(null);
+
+  if (state.data && state.data !== seenState) {
+    setSeenState(state.data);
+    const saved = state.data.outputStyle ?? "";
+    setStyle(saved);
+    // Open the raw field when the saved value isn't one of the built-ins.
+    if (saved && !OUTPUT_STYLES.some((s) => s.value === saved)) {
+      setAdvanced(true);
+    }
+  }
+
+  const { status, error: err } = useAutosave(
+    { outputStyle: style },
+    async (next) => {
+      await updateSettings(next);
+      state.reload();
+    },
+    { enabled: state.data !== null },
+  );
+
+  const isBuiltin = OUTPUT_STYLES.some((s) => s.value === style);
+  return (
+    <Card actions={<SaveStatus status={status} />}>
+      {state.loading && <Loader />}
+      {state.error ? <ErrorBanner error={state.error} /> : null}
+      {err ? <ErrorBanner error={err} /> : null}
+      <p className="text-xs text-base-content/60 mb-3">
+        Applied to every spawned run (chat, jobs, heartbeat) via{" "}
+        <code className="font-mono">--settings</code>. Claude backend only.
+      </p>
+      <div role="radiogroup" className="join">
+        {OUTPUT_STYLES.map((s) => (
+          <button
+            key={s.value || "default"}
+            type="button"
+            role="radio"
+            aria-checked={style === s.value}
+            onClick={() => setStyle(s.value)}
+            className={`btn btn-sm join-item ${style === s.value ? "btn-primary" : ""}`}
+            title={s.help}
+          >
+            {s.label}
+          </button>
+        ))}
+        <button
+          type="button"
+          role="radio"
+          aria-checked={!isBuiltin}
+          onClick={() => setAdvanced(true)}
+          className={`btn btn-sm join-item ${!isBuiltin ? "btn-primary" : ""}`}
+          title="Name a custom output style"
+        >
+          Custom
+        </button>
+      </div>
+      <p className="text-xs text-base-content/60 mt-2">
+        {OUTPUT_STYLES.find((s) => s.value === style)?.help ??
+          "Custom style — must exist under ~/.claude/output-styles/."}
+      </p>
+      {(advanced || !isBuiltin) && (
+        <label className="flex flex-col gap-1.5 mt-3">
+          <span className="text-xs font-medium text-base-content/70">Custom style name</span>
+          <input
+            type="text"
+            className="input border-base-300 input-sm w-full font-mono"
+            value={isBuiltin ? "" : style}
+            onChange={(e) => setStyle(e.target.value)}
+            placeholder="my-terse-style"
+          />
+        </label>
+      )}
     </Card>
   );
 }

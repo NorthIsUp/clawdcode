@@ -112,6 +112,7 @@ export function getAgentsDir(): string {
 const DEFAULT_SETTINGS: Settings = {
   model: "",
   api: "",
+  outputStyle: "",
   fallback: {
     model: "",
     api: "",
@@ -252,6 +253,10 @@ export interface TimeoutsConfig {
 export interface Settings {
   model: string;
   api: string;
+  /** Claude Code output style applied to every spawned run via `--settings`.
+   *  Built-ins: "Explanatory" / "Learning" (or a custom style name). Empty =
+   *  inherit the CLI default. Only meaningful for the `claude` backend. */
+  outputStyle: string;
   fallback: ModelConfig;
   agentic: AgenticConfig;
   timezone: string;
@@ -524,6 +529,7 @@ function parseSettings(
   return {
     model: typeof raw.model === "string" ? raw.model.trim() : "",
     api: typeof raw.api === "string" ? raw.api.trim() : "",
+    outputStyle: typeof raw.outputStyle === "string" ? raw.outputStyle.trim() : "",
     fallback: {
       model: typeof fallback.model === "string" ? fallback.model.trim() : "",
       api: typeof fallback.api === "string" ? fallback.api.trim() : "",
