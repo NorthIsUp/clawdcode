@@ -33,7 +33,24 @@ export const ENV_OVERRIDES: EnvOverride[] = [
   { env: "ERRANDD_JOBSREPO_URL", path: ["jobsRepo", "url"], kind: "string" },
   { env: "ERRANDD_JOBSREPO_BRANCH", path: ["jobsRepo", "branch"], kind: "string" },
   { env: "ERRANDD_JOBSREPO_INTERVAL", path: ["jobsRepo", "intervalSeconds"], kind: "number" },
+  // Git identity is set via env in containerized / GitOps deployments, where
+  // settings.json is read-only. When either is present the identity is
+  // "managed" — the Settings UI renders it read-only and refuses writes.
+  { env: "ERRANDD_GIT_NAME", path: ["git", "name"], kind: "string" },
+  { env: "ERRANDD_GIT_EMAIL", path: ["git", "email"], kind: "string" },
 ];
+
+/**
+ * True when the git identity is sourced from the environment (GitOps-managed)
+ * rather than the writable settings file. In this case the daemon rejects
+ * writes to `git` and the UI shows a read-only "Configured via GitOps" state.
+ */
+export function isGitIdentityManaged(): boolean {
+  return Boolean(
+    (process.env.ERRANDD_GIT_NAME ?? "").trim() ||
+      (process.env.ERRANDD_GIT_EMAIL ?? "").trim(),
+  );
+}
 
 function coerce(kind: Kind, raw: string): string | number | boolean | string[] | undefined {
   if (kind === "string") return raw;

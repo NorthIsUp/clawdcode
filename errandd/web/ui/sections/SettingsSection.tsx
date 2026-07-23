@@ -8,6 +8,7 @@ import {
   uninstallPlugin,
   updatePlugin,
 } from "../../api/claudePlugins";
+import { ApiError } from "../../api/client";
 import { listRepos, type RepoStatus, syncRepo } from "../../api/repos";
 import { applyUpdate, checkForUpdate, type UpdateCheck } from "../../api/runtime";
 import {
@@ -985,6 +986,9 @@ function GitIdentityPanel() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [seenState, setSeenState] = useState<unknown>(null);
+  // Set if a save comes back 403 even though the server didn't flag `managed`
+  // (defensive — keeps the UI correct if the state flag is ever missing).
+  const [forbidden, setForbidden] = useState(false);
 
   if (state.data && state.data !== seenState) {
     setSeenState(state.data);
@@ -992,20 +996,32 @@ function GitIdentityPanel() {
     setEmail(state.data.git?.email ?? "");
   }
 
+  // GitOps-managed: identity comes from the environment, not the writable
+  // settings file. Render read-only and don't autosave (the server 403s).
+  const managed = Boolean(state.data?.git?.managed) || forbidden;
+
   const { status, error: err } = useAutosave(
     { name, email },
     async (next) => {
-      await updateSettings({ git: next });
-      state.reload();
+      try {
+        await updateSettings({ git: next });
+        state.reload();
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 403) {
+          setForbidden(true);
+          return; // treat as "managed via GitOps", not an error
+        }
+        throw e;
+      }
     },
-    { enabled: state.data !== null },
+    { enabled: state.data !== null && !managed },
   );
 
   return (
-    <Card actions={<SaveStatus status={status} />}>
+    <Card actions={managed ? undefined : <SaveStatus status={status} />}>
       {state.loading && <Loader />}
       {state.error ? <ErrorBanner error={state.error} /> : null}
-      {err ? <ErrorBanner error={err} /> : null}
+      {!managed && err ? <ErrorBanner error={err} /> : null}
       <p className="text-xs text-base-content/60 mb-2">
         Used as <code className="font-mono">user.name</code> and{" "}
         <code className="font-mono">user.email</code> when errandd commits to a jobs repo.
@@ -1020,6 +1036,8 @@ function GitIdentityPanel() {
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Errandd Bot"
+            readOnly={managed}
+            disabled={managed}
           />
         </label>
         <label className="flex flex-col gap-1.5">
@@ -1030,9 +1048,14 @@ function GitIdentityPanel() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="bot@example.com"
+            readOnly={managed}
+            disabled={managed}
           />
         </label>
       </div>
+      {managed && (
+        <p className="text-xs text-base-content/50 mt-3">Configured via GitOps</p>
+      )}
     </Card>
   );
 }
