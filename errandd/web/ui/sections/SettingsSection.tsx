@@ -8,6 +8,7 @@ import {
   uninstallPlugin,
   updatePlugin,
 } from "../../api/claudePlugins";
+import { ApiError } from "../../api/client";
 import { listRepos, type RepoStatus, syncRepo } from "../../api/repos";
 import { applyUpdate, checkForUpdate, type UpdateCheck } from "../../api/runtime";
 import {
@@ -277,6 +278,31 @@ function SettingsSubsection({
 // Repos
 // ---------------------------------------------------------------------------
 
+/** A labelled band grouping one or more cards under the "Sources" section.
+ *  Gives the page real hierarchy: the Sources heading owns the segments
+ *  ("Jobs repos", "Claude Code plugins", "Pi plugins"), and each segment owns
+ *  its cards. Purely presentational — reuses the existing type + spacing
+ *  tokens so it matches the rest of Settings. */
+function SourceGroup({
+  title,
+  hint,
+  children,
+}: {
+  title: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="px-1">
+        <h3 className="text-sm font-semibold text-base-content/80">{title}</h3>
+        {hint && <p className="text-xs text-base-content/60">{hint}</p>}
+      </div>
+      {children}
+    </div>
+  );
+}
+
 interface RepoUrlEntry {
   id: number;
   url: string;
@@ -400,124 +426,159 @@ function ReposPanel() {
   const runtimeLabel = runtimeId.charAt(0).toUpperCase() + runtimeId.slice(1);
   const runtimeExe = state.data?.runtime.executable ?? runtimeId;
 
+  // Plugin management is split by the daemon's active runtime mode: Claude Code
+  // exposes a marketplace + installed-plugin CLI, so it gets the full plugin
+  // segment; Pi has no marketplace (supportsPlugins:false) and no plugin
+  // enumeration yet, so its segment is informational only. `isClaude` also
+  // covers the pre-load default (runtimeId falls back to "claude").
+  const isClaude = runtimeId === "claude";
+  const isPi = runtimeId === "pi";
+
   return (
-    <div className="space-y-3">
+    <div className="space-y-6">
       {state.error ? <ErrorBanner error={state.error} /> : null}
       {err ? <ErrorBanner error={err} /> : null}
       {syncAllError ? <ErrorBanner error={syncAllError} /> : null}
 
-      <Card
-        title="Git repos"
-        actions={
-          <>
-            <SaveStatus status={status} />
-            {hasRepos && (
-              <button
-                type="button"
-                className="btn btn-sm"
-                onClick={() => void syncAll()}
-                disabled={syncingAll}
-                title="Pull + push every configured source"
-              >
-                <RefreshCw size={14} className={syncingAll ? "animate-spin" : ""} />
-                {syncingAll ? "Syncing all…" : "Sync all"}
-              </button>
-            )}
-            <button type="button" className="btn btn-sm btn-primary" onClick={addGit}>
-              <Plus size={16} /> Add repo
-            </button>
-          </>
-        }
+      <SourceGroup
+        title="Jobs repos"
+        hint="Git repositories the daemon clones and pulls scheduled jobs from."
       >
-        {state.loading && <Loader />}
-        {gitEntries.length === 0 && <Empty>No git repos configured.</Empty>}
-        <div className="space-y-2">
-          {gitEntries.map((entry) => (
-            <InputWithAction
-              key={entry.id}
-              value={entry.url}
-              onChange={(v) => update(entry.id, v)}
-              placeholder="git@github.com:org/repo.git"
-              aria={`Repo ${entry.i + 1} URL`}
-              type="url"
-              mono
-              action={{
-                icon: <Trash2 size={16} />,
-                onClick: () => remove(entry.id),
-                aria: `Remove repo ${entry.i + 1}`,
-                title: "Remove",
-              }}
-            />
-          ))}
-        </div>
-        {gitStatus.length > 0 && (
-          <div className="mt-4 pt-4 border-t border-base-300">
-            <h4 className="text-sm font-semibold mb-2">Current status</h4>
-            <ul className="text-sm space-y-1">
-              {gitStatus.map((r) => (
-                <RepoStatusRow key={r.slug} repo={r} onChanged={() => repos.reload()} />
-              ))}
-            </ul>
-          </div>
-        )}
-      </Card>
-
-      {supportsPlugins ? (
         <Card
-          title="Claude plugins"
           actions={
-            <button type="button" className="btn btn-sm btn-primary" onClick={addPlugin}>
-              <Plus size={16} /> Add plugin
-            </button>
+            <>
+              <SaveStatus status={status} />
+              {hasRepos && (
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() => void syncAll()}
+                  disabled={syncingAll}
+                  title="Pull + push every configured source"
+                >
+                  <RefreshCw size={14} className={syncingAll ? "animate-spin" : ""} />
+                  {syncingAll ? "Syncing all…" : "Sync all"}
+                </button>
+              )}
+              <button type="button" className="btn btn-sm btn-primary" onClick={addGit}>
+                <Plus size={16} /> Add repo
+              </button>
+            </>
           }
         >
-          {pluginEntries.length === 0 && (
-            <Empty>
-              No claude plugins configured. Add by <code className="font-mono">org/repo</code> (a
-              marketplace's GitHub repo).
-            </Empty>
-          )}
+          {state.loading && <Loader />}
+          {gitEntries.length === 0 && <Empty>No jobs repos configured.</Empty>}
           <div className="space-y-2">
-            {pluginEntries.map((entry) => (
+            {gitEntries.map((entry) => (
               <InputWithAction
                 key={entry.id}
                 value={entry.url}
                 onChange={(v) => update(entry.id, v)}
-                placeholder="NorthIsUp/skillz"
-                aria={`Plugin ${entry.i + 1} ref`}
+                placeholder="git@github.com:org/repo.git"
+                aria={`Repo ${entry.i + 1} URL`}
+                type="url"
                 mono
                 action={{
                   icon: <Trash2 size={16} />,
                   onClick: () => remove(entry.id),
-                  aria: `Remove plugin ${entry.i + 1}`,
+                  aria: `Remove repo ${entry.i + 1}`,
                   title: "Remove",
                 }}
               />
             ))}
           </div>
-          {pluginStatus.length > 0 && (
+          {gitStatus.length > 0 && (
             <div className="mt-4 pt-4 border-t border-base-300">
               <h4 className="text-sm font-semibold mb-2">Current status</h4>
               <ul className="text-sm space-y-1">
-                {pluginStatus.map((r) => (
+                {gitStatus.map((r) => (
                   <RepoStatusRow key={r.slug} repo={r} onChanged={() => repos.reload()} />
                 ))}
               </ul>
             </div>
           )}
         </Card>
-      ) : (
-        <Card title={`${runtimeLabel} extensions`}>
-          <Empty>
-            {runtimeLabel} manages extensions and skills through its own CLI (
-            <code className="font-mono">{runtimeExe} install …</code>), not a plugin marketplace.
-            They can&apos;t be configured here.
-          </Empty>
-        </Card>
+      </SourceGroup>
+
+      {isClaude && supportsPlugins && (
+        <SourceGroup
+          title="Claude Code plugins"
+          hint="Marketplace plugins available to Claude Code jobs — add by org/repo."
+        >
+          <Card
+            title="Marketplace sources"
+            actions={
+              <button type="button" className="btn btn-sm btn-primary" onClick={addPlugin}>
+                <Plus size={16} /> Add plugin
+              </button>
+            }
+          >
+            {pluginEntries.length === 0 && (
+              <Empty>
+                No plugin sources configured. Add by <code className="font-mono">org/repo</code> (a
+                marketplace's GitHub repo).
+              </Empty>
+            )}
+            <div className="space-y-2">
+              {pluginEntries.map((entry) => (
+                <InputWithAction
+                  key={entry.id}
+                  value={entry.url}
+                  onChange={(v) => update(entry.id, v)}
+                  placeholder="NorthIsUp/skillz"
+                  aria={`Plugin ${entry.i + 1} ref`}
+                  mono
+                  action={{
+                    icon: <Trash2 size={16} />,
+                    onClick: () => remove(entry.id),
+                    aria: `Remove plugin ${entry.i + 1}`,
+                    title: "Remove",
+                  }}
+                />
+              ))}
+            </div>
+            {pluginStatus.length > 0 && (
+              <div className="mt-4 pt-4 border-t border-base-300">
+                <h4 className="text-sm font-semibold mb-2">Current status</h4>
+                <ul className="text-sm space-y-1">
+                  {pluginStatus.map((r) => (
+                    <RepoStatusRow key={r.slug} repo={r} onChanged={() => repos.reload()} />
+                  ))}
+                </ul>
+              </div>
+            )}
+          </Card>
+
+          <InstalledPluginsCard runtimeVersion={state.data?.runtime.version ?? null} />
+        </SourceGroup>
       )}
 
-      {supportsPlugins && (
-        <InstalledPluginsCard runtimeVersion={state.data?.runtime.version ?? null} />
+      {isPi && (
+        <SourceGroup
+          title="Pi plugins"
+          hint={`The daemon is running under ${runtimeLabel} (${runtimeExe}).`}
+        >
+          <Card>
+            <Empty>
+              {runtimeLabel} manages extensions and skills through its own CLI (
+              <code className="font-mono">{runtimeExe} install …</code>), not a plugin marketplace,
+              and doesn&apos;t yet report installed extensions to the dashboard. They can&apos;t be
+              configured here.
+            </Empty>
+          </Card>
+        </SourceGroup>
+      )}
+
+      {!isClaude && !isPi && (
+        <SourceGroup title={`${runtimeLabel} extensions`}>
+          <Card>
+            <Empty>
+              {runtimeLabel} manages extensions and skills through its own CLI (
+              <code className="font-mono">{runtimeExe} install …</code>), not a plugin marketplace.
+              They can&apos;t be configured here.
+            </Empty>
+          </Card>
+        </SourceGroup>
       )}
     </div>
   );
@@ -862,11 +923,21 @@ function HeartbeatPanel() {
 // Default model
 // ---------------------------------------------------------------------------
 
-/** Known model families. Claude Code accepts these short aliases directly
- *  (verified by the agentic modes in src/config.ts), and they auto-track
- *  the latest version so users don't have to pin SKUs. */
-const MODEL_FAMILIES = ["opus", "sonnet", "haiku"] as const;
+/** Known model families. Claude Code accepts opus/sonnet/haiku as short
+ *  aliases directly (verified by the agentic modes in src/config.ts), and
+ *  they auto-track the latest version so users don't have to pin SKUs. */
+const MODEL_FAMILIES = ["opus", "sonnet", "haiku", "fable"] as const;
 type ModelFamily = (typeof MODEL_FAMILIES)[number];
+
+/** The value each family button writes. opus/sonnet/haiku are known-good CLI
+ *  aliases; fable is new, so we pin the full model id rather than assume the
+ *  CLI registers a "fable" alias. detectFamily still maps it back for the UI. */
+const FAMILY_VALUE: Record<ModelFamily, string> = {
+  opus: "opus",
+  sonnet: "sonnet",
+  haiku: "haiku",
+  fable: "claude-fable-5",
+};
 
 /** Match a saved model value to a family if it's a known alias or contains
  *  one (e.g. `claude-opus-4-7` → `opus`). Otherwise null = custom. */
@@ -888,12 +959,14 @@ function ModelPanel() {
   const state = useAsync<StateResponse>(() => getState());
   const [model, setModel] = useState("");
   const [fallback, setFallback] = useState("");
+  const [ultracode, setUltracode] = useState(false);
   const [advanced, setAdvanced] = useState(false);
   const [seenState, setSeenState] = useState<unknown>(null);
 
   if (state.data && state.data !== seenState) {
     setSeenState(state.data);
     setModel(state.data.model ?? "");
+    setUltracode(state.data.ultracode ?? false);
     const f = state.data.fallback;
     setFallback(typeof f === "string" ? f : (f?.model ?? ""));
     // Open the advanced field automatically if either saved value isn't a
@@ -909,7 +982,7 @@ function ModelPanel() {
   }
 
   const { status, error: err } = useAutosave(
-    { model, fallback },
+    { model, fallback, ultracode },
     async (next) => {
       await updateSettings(next);
       state.reload();
@@ -935,6 +1008,23 @@ function ModelPanel() {
           value={fallback}
           onChange={setFallback}
         />
+
+        <label className="flex items-start gap-2.5 cursor-pointer">
+          <input
+            type="checkbox"
+            className="toggle toggle-sm mt-0.5"
+            checked={ultracode}
+            onChange={(e) => setUltracode(e.target.checked)}
+          />
+          <span className="flex flex-col gap-0.5">
+            <span className="text-sm font-medium text-base-content">ultracode mode</span>
+            <span className="text-[11px] text-base-content/60">
+              Prepend the <code className="font-mono">ultracode</code> keyword to every spawned
+              session, opting runs into multi-agent orchestration. Powerful but token-heavy —
+              off by default.
+            </span>
+          </span>
+        </label>
 
         <div>
           <button
@@ -985,6 +1075,9 @@ function GitIdentityPanel() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [seenState, setSeenState] = useState<unknown>(null);
+  // Set if a save comes back 403 even though the server didn't flag `managed`
+  // (defensive — keeps the UI correct if the state flag is ever missing).
+  const [forbidden, setForbidden] = useState(false);
 
   if (state.data && state.data !== seenState) {
     setSeenState(state.data);
@@ -992,20 +1085,32 @@ function GitIdentityPanel() {
     setEmail(state.data.git?.email ?? "");
   }
 
+  // GitOps-managed: identity comes from the environment, not the writable
+  // settings file. Render read-only and don't autosave (the server 403s).
+  const managed = Boolean(state.data?.git?.managed) || forbidden;
+
   const { status, error: err } = useAutosave(
     { name, email },
     async (next) => {
-      await updateSettings({ git: next });
-      state.reload();
+      try {
+        await updateSettings({ git: next });
+        state.reload();
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 403) {
+          setForbidden(true);
+          return; // treat as "managed via GitOps", not an error
+        }
+        throw e;
+      }
     },
-    { enabled: state.data !== null },
+    { enabled: state.data !== null && !managed },
   );
 
   return (
-    <Card actions={<SaveStatus status={status} />}>
+    <Card actions={managed ? undefined : <SaveStatus status={status} />}>
       {state.loading && <Loader />}
       {state.error ? <ErrorBanner error={state.error} /> : null}
-      {err ? <ErrorBanner error={err} /> : null}
+      {!managed && err ? <ErrorBanner error={err} /> : null}
       <p className="text-xs text-base-content/60 mb-2">
         Used as <code className="font-mono">user.name</code> and{" "}
         <code className="font-mono">user.email</code> when errandd commits to a jobs repo.
@@ -1020,6 +1125,8 @@ function GitIdentityPanel() {
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Errandd Bot"
+            readOnly={managed}
+            disabled={managed}
           />
         </label>
         <label className="flex flex-col gap-1.5">
@@ -1030,9 +1137,14 @@ function GitIdentityPanel() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="bot@example.com"
+            readOnly={managed}
+            disabled={managed}
           />
         </label>
       </div>
+      {managed && (
+        <p className="text-xs text-base-content/50 mt-3">Configured via GitOps</p>
+      )}
     </Card>
   );
 }
@@ -1071,7 +1183,7 @@ function FamilyRow({
             type="button"
             role="radio"
             aria-checked={family === f}
-            onClick={() => onChange(f)}
+            onClick={() => onChange(FAMILY_VALUE[f])}
             className={`btn btn-sm join-item capitalize ${family === f ? "btn-primary" : ""}`}
           >
             {f}

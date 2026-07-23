@@ -5,6 +5,7 @@ import { SESSION_FILE, SETTINGS_FILE, STATE_FILE } from "../constants";
 import type { WebSnapshot } from "../types";
 import { getRuntimeGit, getRuntimeVersion } from "../../runtime";
 import { getRuntime } from "../../runtime/select";
+import { isGitIdentityManaged } from "../../env-overrides";
 
 export function sanitizeSettings(snapshot: WebSnapshot["settings"]) {
   return {
@@ -21,7 +22,7 @@ export function sanitizeSettings(snapshot: WebSnapshot["settings"]) {
       allowedUserCount: snapshot.discord.allowedUserIds.length,
     },
     web: snapshot.web,
-    git: snapshot.git,
+    git: { ...snapshot.git, managed: isGitIdentityManaged() },
   };
 }
 
@@ -44,6 +45,7 @@ export async function buildState(snapshot: WebSnapshot, opts: BuildStateOptions 
     },
     model: snapshot.settings.model,
     fallback: snapshot.settings.fallback,
+    ultracode: snapshot.settings.ultracode,
     jobsRepo: snapshot.settings.jobsRepo,           // back-compat
     jobsRepos: snapshot.settings.jobsRepos ?? [],   // new multi-repo field
     timezone: snapshot.settings.timezone,
@@ -80,7 +82,7 @@ export async function buildState(snapshot: WebSnapshot, opts: BuildStateOptions 
         }
       : null,
     web: snapshot.settings.web,
-    git: snapshot.settings.git,
+    git: { ...snapshot.settings.git, managed: isGitIdentityManaged() },
     tailnet: opts.tailnet
       ? {
           login: opts.tailnet.login,

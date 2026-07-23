@@ -55,6 +55,9 @@ export interface StateResponse {
   daemon: DaemonInfo;
   model: string;
   fallback: { model: string; api: string } | string;
+  /** When true, spawned sessions run in Claude Code's multi-agent
+   *  orchestration ("ultracode") mode. */
+  ultracode: boolean;
   jobsRepo: JobsRepoConfig | null; // back-compat
   jobsRepos: JobsRepoConfig[];
   timezone: string;
@@ -70,7 +73,9 @@ export interface StateResponse {
     lastUsedAt: string;
   } | null;
   web: Record<string, unknown>;
-  git: { name: string; email: string };
+  /** `managed` is true when the identity is set via env (GitOps) rather than
+   *  the writable settings file — the UI then renders it read-only. */
+  git: { name: string; email: string; managed?: boolean };
   /** Populated when the request came in over a trusted Tailscale proxy
    *  (daemon launched with `--web-trust-tailnet`) and carried the
    *  `Tailscale-User-Login` header. Null in the token/cookie path. */
