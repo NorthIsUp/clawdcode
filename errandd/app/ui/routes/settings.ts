@@ -1,4 +1,5 @@
 import { json } from "../http";
+import { isGitIdentityManaged } from "../../env-overrides";
 import { readHeartbeatSettings, updateHeartbeatSettings } from "../services/settings";
 import { buildTechnicalInfo, sanitizeSettings } from "../services/state";
 import { getSessionUsage } from "../services/usage";
@@ -12,6 +13,15 @@ export const settingsGet: RouteHandler = ({ opts }) =>
 export const settingsPut: RouteHandler = async ({ req }) => {
   try {
     const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+    // Git identity is GitOps-managed (sourced from env) — it lives outside the
+    // writable settings file, so refuse the write with 403. The UI reads the
+    // `git.managed` flag from /api/state and renders a read-only card instead.
+    if ("git" in body && body.git !== undefined && isGitIdentityManaged()) {
+      return json(
+        { ok: false, managed: true, error: "Git identity is managed via GitOps" },
+        403,
+      );
+    }
     const { readFile, writeFile } = await import("node:fs/promises");
     const { SETTINGS_FILE } = await import("../constants");
     const raw = await readFile(SETTINGS_FILE, "utf-8").catch(() => "{}");
