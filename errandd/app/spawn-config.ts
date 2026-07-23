@@ -184,9 +184,16 @@ export function buildSecurityArgs(security: SecurityConfig): string[] {
 
   // Output style — claude-only (other runtimes have no equivalent). Merged in
   // as inline extra settings so it rides along on every claude spawn site.
-  const settings = getSettings();
-  if (settings.runtime === "claude") {
-    args.push(...outputStyleArgs(settings.outputStyle));
+  // Read defensively: getSettings() throws before loadSettings() (e.g. in
+  // argv-contract unit tests that build args without a loaded config) — in
+  // that case there's no style to apply, which is the correct default.
+  try {
+    const settings = getSettings();
+    if (settings.runtime === "claude") {
+      args.push(...outputStyleArgs(settings.outputStyle));
+    }
+  } catch {
+    // settings not loaded — no output style
   }
 
   return args;
