@@ -30,6 +30,11 @@ function resolvePrDefaults(): { repo: string[]; user: string[] } {
 export interface Job {
   /** Scheduler key. For standalone jobs this is the file stem. For agent-scoped jobs this is "agent/label". */
   name: string;
+  /** Absolute directory the routine file was loaded from — its origin
+   *  repo/plugin/agent dir. Used to resolve `@`-imports whose leading segment
+   *  is NOT a known repo/plugin: those resolve relative to THIS dir (the
+   *  "current repo"). See app/atImports.ts. */
+  sourceDir?: string;
   /** Cron expressions from the routine's `- schedule:` triggers. The job
    *  fires when ANY of them is due. Empty for event-only routines. */
   schedules: string[];
@@ -285,6 +290,7 @@ export async function loadJobs(): Promise<Job[]> {
       const content = await Bun.file(join(dir, file)).text();
       const job = parseJobFile(name, content);
       if (!job) continue;
+      job.sourceDir = dir; // origin dir for @-import current-repo resolution
       seen.add(name);
       if (job.enabled === false) continue; // frontmatter `enabled: false`
       if (disabled.has(routineKey(slug, name))) continue; // Errands overlay
@@ -316,6 +322,7 @@ export async function loadJobs(): Promise<Job[]> {
       if (!job) continue;
       job.agent = agentName;
       job.label = labelFromFile;
+      job.sourceDir = agentJobsDir; // origin dir for @-import current-repo resolution
       if (job.enabled === false) continue;
       if (disabled.has(routineKey("", jobName))) continue;
       jobs.push(job);

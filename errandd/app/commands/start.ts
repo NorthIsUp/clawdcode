@@ -40,6 +40,7 @@ import {
 import { writeStaticSkipSession } from "../hooks/skip";
 import type { Job } from "../jobs";
 import { buildJobThreadId, clearJobSchedule, loadJobs, snapshotJobFrontmatter } from "../jobs";
+import { buildImportRegistry, expandAtImports } from "../atImports";
 import { ensureAllRepos, pullRepo } from "../jobsRepo";
 import { migrateTriggers } from "../migrateTriggers";
 import { checkExistingDaemon, cleanupPidFile, writePidFile } from "../pid";
@@ -1683,6 +1684,12 @@ export async function start(args: string[] = []) {
     return snapshotJobFrontmatter(job.name).then((restoreFrontmatter) =>
       resolvePrompt(job.prompt)
         .then(async (prompt) => {
+          // Expand errandd `@`-imports (`@repo/f.md`, `@plugin/f.md`, or a
+          // current-repo-relative `@path/f.md`) into concrete absolute paths so
+          // Claude Code's own `@file` include mechanism inlines them. Single
+          // chokepoint for BOTH cron and hook runs (both reach runJob).
+          const importRegistry = await buildImportRegistry();
+          prompt = expandAtImports(prompt, job.sourceDir, importRegistry);
           const clock = buildClockPromptPrefix(new Date(), currentSettings.timezoneOffsetMinutes);
           const fullPrompt = `${clock}\n${prompt}`;
           // Optional cheap pre-filter: a routine gates its own (expensive) run
