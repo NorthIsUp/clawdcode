@@ -31,6 +31,7 @@ import {
   readReviewPayload,
   reviewRuleSkipReason,
 } from "./match";
+import { recordPrStateFromWebhook } from "../pr-state";
 import type { ReceiverResult, WebhookDeps } from "./receiver";
 import {
   defaultChecksRule,
@@ -208,6 +209,10 @@ export async function dispatchHook(
   const IGNORE_REASON = CLAW_IGNORE_SKIP_REASON;
 
   if (event === "pull_request") {
+    // Capture live PR git-state (open/merged/closed/conflicted) for the sidebar
+    // BEFORE routine matching, so state is tracked even for PRs no routine
+    // subscribes to. Best-effort; never throws on an odd payload.
+    recordPrStateFromWebhook(payload);
     const pr = readPrPayload(payload);
     if (pr) {
       for (const job of jobs) {

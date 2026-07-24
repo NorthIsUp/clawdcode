@@ -1,20 +1,26 @@
 import { useEffect, useState } from "react";
 import { apiJSON } from "../../api/client";
-import type { PolledPR } from "../lib/tree";
+import type { PolledPR, PrStateInfo } from "../lib/tree";
 
 export type { PolledPR };
+
+/** Per-PR git-state keyed by `repo#num`, accumulated from GitHub webhooks. */
+export type PrStateMap = Record<string, PrStateInfo>;
 
 interface OpenPRsState {
   prs: PolledPR[];
   fetchedAt: number;
+  states: PrStateMap;
 }
 
 interface OpenPRsResponse {
   prs: PolledPR[];
   fetchedAt: number;
+  /** Absent on older daemons — normalized to `{}` below. */
+  states?: PrStateMap;
 }
 
-const EMPTY: OpenPRsState = { prs: [], fetchedAt: 0 };
+const EMPTY: OpenPRsState = { prs: [], fetchedAt: 0, states: {} };
 const POLL_MS = 3 * 60 * 1000;
 
 /**
@@ -33,7 +39,7 @@ export function useOpenPRs(): OpenPRsState {
       try {
         const data = await apiJSON<OpenPRsResponse>("/api/prs/open");
         if (!cancelled) {
-          setState(data);
+          setState({ prs: data.prs, fetchedAt: data.fetchedAt, states: data.states ?? {} });
         }
       } catch {
         // Transient failure or daemon without the endpoint → leave current state
