@@ -81,6 +81,19 @@ cause, and open a Linear ticket with a proposed fix when it's actionable.
 
 `on:` is a list of single-key triggers: `schedule` (a cron string), `prs`, `pr` (with filters), `comments`, `reviews`, `sentry`, `datadog`, `linear`, `checks`, `issues`. Cron schedules are timezone-aware (`ERRANDD_TIMEZONE`). Full trigger syntax lives in [`errandd/docs/PR_HOOKS_SPEC.md`](errandd/docs/PR_HOOKS_SPEC.md).
 
+### Sharing content between routines (`@`-imports)
+
+Pull shared instructions into a routine with an `@`-import — the file's contents are inlined when the routine runs:
+
+```markdown
+@shared/pr-preamble.md      ← relative to your jobs repo root
+@./notes.md                 ← relative to this routine file's directory
+@../common/style.md         ← walk up from this routine file
+@some-plugin/prompts/x.md   ← inside a named jobs repo or installed plugin
+```
+
+The leading segment is resolved as a **known jobs-repo slug or plugin name** first; otherwise it's a path within your **current repo**. `@./` and `@../` are relative to the referencing file. Prefer these over hard-coded daemon paths like `@~/.claude/errandd/jobs/...` — those still work for backcompat but leak internal layout.
+
 ## Quick start
 
 ```bash
