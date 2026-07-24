@@ -1,8 +1,8 @@
-import { Bug, CalendarClock, ChevronLeft, ChevronRight, Clock, GitPullRequest, Siren, Ticket } from "lucide-react";
+import { Bug, CalendarClock, ChevronLeft, ChevronRight, Clock, GitMerge, GitPullRequest, GitPullRequestClosed, Siren, Ticket, TriangleAlert } from "lucide-react";
 import { useMemo, type ComponentType } from "react";
 import { fmtLocalHM } from "../lib/queuedUntil";
 import { COUNT_STOPS, DAYS_STOPS, pageItems } from "../lib/paging";
-import { mergePolledPRs, type PolledPR, type ThreadRef, type TreeItem, type TreeSection, type TreeSource } from "../lib/tree";
+import { mergePolledPRs, type PolledPR, type PrGitState, type ThreadRef, type TreeItem, type TreeSection, type TreeSource } from "../lib/tree";
 import { useOpenPRs } from "../hooks/useOpenPRs";
 import { useSectionView } from "../hooks/useSectionView";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "./ui/collapsible";
@@ -26,6 +26,38 @@ const SECTION_ICON: Record<TreeSource, ComponentType<{ className?: string }>> = 
   linear: Ticket,
   github: GitPullRequest,
 };
+
+/**
+ * Per-PR git-state icon (open / merged / closed / conflicted). Colors use
+ * daisyUI tokens where they map cleanly (success/error/warning); merged uses
+ * GitHub's merge-purple since no daisy token is purple. `unknown` is the
+ * fail-safe fallback — a neutral, faint pull-request outline — so an
+ * unclassified or absent state renders quietly instead of crashing the row.
+ */
+const PR_STATE_META: Record<
+  PrGitState,
+  { Icon: ComponentType<{ className?: string }>; className: string; label: string }
+> = {
+  open: { Icon: GitPullRequest, className: "text-success", label: "Open" },
+  merged: { Icon: GitMerge, className: "text-[#8957e5]", label: "Merged" },
+  closed: { Icon: GitPullRequestClosed, className: "text-error", label: "Closed" },
+  conflicted: { Icon: TriangleAlert, className: "text-warning", label: "Merge conflict" },
+  unknown: { Icon: GitPullRequest, className: "text-base-content/35", label: "Unknown state" },
+};
+
+function PrStateIcon({ state }: { state: PrGitState | undefined }) {
+  const meta = PR_STATE_META[state ?? "unknown"];
+  const Icon = meta.Icon;
+  return (
+    <span
+      title={`PR state: ${meta.label}`}
+      aria-label={`PR state: ${meta.label}`}
+      className="flex shrink-0 items-center"
+    >
+      <Icon className={cn("size-3.5", meta.className)} />
+    </span>
+  );
+}
 
 export type SortMode = "recent" | "num";
 
@@ -71,6 +103,22 @@ export function SectionTree({
   // Fetch all open PRs from the reconciliation poller (one fetch loop for all sections).
   const openPRs = useOpenPRs();
 
+  // Per-PR git-state overlay keyed by `repo#num`. Every polled PR is open by
+  // definition (the poller lists `--state open`), so seed those to "open"; then
+  // overlay the authoritative webhook-derived states (merged/closed/conflicted,
+  // or an explicit "open") so they win. Queue-only items (e.g. a merged PR no
+  // longer polled) rely entirely on the webhook state; absent ⇒ neutral icon.
+  const stateByKey = useMemo(() => {
+    const map: Record<string, PrGitState> = {};
+    for (const pr of openPRs.prs) {
+      map[`${pr.repo}#${pr.number}`] = "open";
+    }
+    for (const [key, info] of Object.entries(openPRs.states)) {
+      map[key] = info.state;
+    }
+    return map;
+  }, [openPRs.prs, openPRs.states]);
+
   return (
     <div className="flex flex-col">
       {sections.map((section) => {
@@ -89,6 +137,7 @@ export function SectionTree({
             onSortChange={onSortChange}
             deferredByThread={deferredByThread}
             openPRsPrs={openPRs.prs}
+            stateByKey={stateByKey}
           />
         );
       })}
@@ -149,6 +198,7 @@ function SectionBlock({
   onSortChange,
   deferredByThread,
   openPRsPrs,
+  stateByKey,
 }: {
   section: TreeSection;
   open: boolean;
@@ -161,6 +211,7 @@ function SectionBlock({
   onSortChange: (mode: SortMode) => void;
   deferredByThread: Map<string, number> | undefined;
   openPRsPrs: PolledPR[];
+  stateByKey: Record<string, PrGitState>;
 }) {
   const Icon = SECTION_ICON[section.source];
   const isGithub = section.source === "github";
@@ -246,6 +297,7 @@ function SectionBlock({
                   openMap={openMap}
                   onToggleNode={onToggleNode}
                   deferredByThread={deferredByThread}
+                  stateByKey={stateByKey}
                 />
               );
             })}
@@ -428,6 +480,7 @@ function RepoGroup({
   openMap,
   onToggleNode,
   deferredByThread,
+  stateByKey,
 }: {
   repo: string;
   items: TreeItem[];
@@ -438,6 +491,7 @@ function RepoGroup({
   openMap: Record<string, boolean>;
   onToggleNode: (key: string) => void;
   deferredByThread: Map<string, number> | undefined;
+  stateByKey: Record<string, PrGitState>;
 }) {
   return (
     <Collapsible open={open}>
@@ -463,6 +517,7 @@ function RepoGroup({
               activeThreadId={activeThreadId}
               onSelectThread={onSelectThread}
               deferredByThread={deferredByThread}
+              prState={stateByKey[item.key]}
             />
           );
         })}
@@ -478,6 +533,7 @@ function ItemBlock({
   activeThreadId,
   onSelectThread,
   deferredByThread,
+  prState,
 }: {
   item: TreeItem;
   open: boolean;
@@ -485,6 +541,8 @@ function ItemBlock({
   activeThreadId: string | null;
   onSelectThread: (threadId: string) => void;
   deferredByThread: Map<string, number> | undefined;
+  /** GitHub PR items only: the git-state icon shown before the title. */
+  prState?: PrGitState | undefined;
 }) {
   // Item-level (PR/subject) deferred badge: earliest resume time across this
   // item's threads, so a rate-limited PR reads "queued · HH:MM" at the item row
@@ -537,6 +595,7 @@ function ItemBlock({
         className="group flex w-full items-center gap-1.5 px-3 py-1 pl-7 text-left text-sm hover:bg-base-200/60"
       >
         <ChevronRight className="size-3 shrink-0 text-base-content/40 transition-transform group-data-[state=open]:rotate-90" />
+        {item.num != null && <PrStateIcon state={prState} />}
         <span className="flex-1 truncate font-medium text-base-content/90" title={item.title}>
           {item.title}
         </span>

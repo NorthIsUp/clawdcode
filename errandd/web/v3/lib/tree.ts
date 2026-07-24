@@ -1,4 +1,7 @@
+import type { PrGitState, PrStateInfo } from "../../../shared/prState";
 import type { QueueMessage, QueueOutcomeResult, QueueStatus } from "../../api/hooks";
+
+export type { PrGitState, PrStateInfo };
 
 /**
  * The sidebar hook tree (spec §4), built entirely client-side from the durable
