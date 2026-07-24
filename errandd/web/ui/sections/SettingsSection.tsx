@@ -597,21 +597,21 @@ function ReposPanel() {
 }
 
 // ---------------------------------------------------------------------------
-// Installed plugins (read-only listing of `claude plugin list --json`)
+// Installed plugins — a marketplace → plugins tree
 // ---------------------------------------------------------------------------
+//
+// Installed plugins are grouped BY MARKETPLACE (the `<plugin>@<marketplace>`
+// id's second half). Each marketplace is a collapsible parent; its plugins are
+// indented children. Marketplaces with a single installed plugin collapse into
+// one "single-plugin marketplaces" group. errandd (this daemon) floats to the
+// very top. A `●` marks default-suite members (replacing the old "default"
+// badge). Per-plugin toggle / refresh / uninstall stay on each child row.
 
-/** Lists every plugin installed under the current Claude user/project scope,
- *  plus a synthetic "self" row for errandd (which lives on disk as a git
- *  checkout, not as an installed plugin, so it doesn't show up in
- *  `claude plugin list`). Each row offers enable/disable + update + uninstall
- *  except for errandd, where uninstall is suppressed — see
- *  `isSelfPluginId` in `src/ui/services/claudePlugins.ts` for the matching
- *  belt-and-suspenders backend check. */
-/** The curated "Default plugins" suite errandd installs + enables at boot
- *  (see errandd/plugins.json). Matched by plugin NAME (the part before `@`) so
- *  it's marketplace-agnostic. Each is default-ON; the toggle below still uses
- *  the same native `claude plugin enable|disable` path as every other plugin —
- *  this only groups + labels them so an operator can see the suite at a glance. */
+/** The curated default suite errandd installs by default (see
+ *  errandd/plugins.json). Matched by plugin NAME (before `@`) so it's
+ *  marketplace-agnostic. In the tree these get a subtle `●` marker. Note:
+ *  install ≠ enable — preflight only ENABLES a smaller allowlist on first
+ *  boot (see app/preflight.ts DEFAULT_ENABLED); the rest install disabled. */
 const DEFAULT_SUITE = new Set([
   "ralph-loop",
   "hookify",
@@ -631,8 +631,29 @@ function pluginName(id: string): string {
   return id.split("@", 1)[0] ?? id;
 }
 
+/** Marketplace half of a `<plugin>@<marketplace>` id — the id itself when
+ *  there's no `@` (e.g. the synthetic "errandd" self row). */
+function pluginMarketplace(id: string): string {
+  const at = id.indexOf("@");
+  return at >= 0 ? id.slice(at + 1) : id;
+}
+
 function isDefaultSuite(id: string): boolean {
   return DEFAULT_SUITE.has(pluginName(id));
+}
+
+function isSelfPlugin(id: string): boolean {
+  return pluginName(id) === "errandd";
+}
+
+/** What a plugin (child) row shows beyond the bare name. In a uniform
+ *  marketplace group the version/scope live on the parent, so children
+ *  suppress them; the single-plugin group has no marketplace parent, so its
+ *  children show everything incl. the `@marketplace` suffix. */
+interface RowDisplay {
+  showVersion: boolean;
+  showScope: boolean;
+  showMarketplace: boolean;
 }
 
 function InstalledPluginsCard({ runtimeVersion }: { runtimeVersion: string | null }) {
@@ -655,15 +676,42 @@ function InstalledPluginsCard({ runtimeVersion }: { runtimeVersion: string | nul
         ...installed,
       ];
 
-  // Partition into the curated default suite vs. everything else, so the
-  // Default-plugins group renders first under its own label.
-  const suite = rows.filter((p) => isDefaultSuite(p.id));
-  const others = rows.filter((p) => !isDefaultSuite(p.id));
+  // Duplicate-name safety net: plugin names shared by ≥2 ENABLED rows (e.g.
+  // ralph-loop installed from two marketplaces). Those rows get a warning pill.
+  const enabledByName = new Map<string, number>();
+  for (const p of rows) {
+    if (!p.enabled) continue;
+    const n = pluginName(p.id);
+    enabledByName.set(n, (enabledByName.get(n) ?? 0) + 1);
+  }
+  const dupNames = new Set(
+    [...enabledByName.entries()].filter(([, n]) => n >= 2).map(([name]) => name),
+  );
+
+  // errandd floats to the top; everything else groups by marketplace.
+  const selfRows = rows.filter((p) => isSelfPlugin(p.id));
+  const rest = rows.filter((p) => !isSelfPlugin(p.id));
+
+  const byMarket = new Map<string, InstalledPlugin[]>();
+  for (const p of rest) {
+    const mkt = pluginMarketplace(p.id);
+    const list = byMarket.get(mkt);
+    if (list) {
+      list.push(p);
+    } else {
+      byMarket.set(mkt, [p]);
+    }
+  }
+  const multi = [...byMarket.entries()]
+    .filter(([, ps]) => ps.length >= 2)
+    .sort(([a], [b]) => a.localeCompare(b));
+  const single = [...byMarket.entries()]
+    .filter(([, ps]) => ps.length === 1)
+    .flatMap(([, ps]) => ps)
+    .sort((a, b) => a.id.localeCompare(b.id));
 
   const reload = () => plugins.reload();
-  const renderRow = (p: InstalledPlugin) => (
-    <InstalledPluginRow key={`${p.id}-${p.scope}`} plugin={p} onChanged={reload} />
-  );
+  const isDup = (p: InstalledPlugin) => p.enabled && dupNames.has(pluginName(p.id));
 
   return (
     <Card
@@ -683,86 +731,154 @@ function InstalledPluginsCard({ runtimeVersion }: { runtimeVersion: string | nul
       {plugins.loading && !plugins.data && <Loader />}
       {plugins.error ? <ErrorBanner error={plugins.error} /> : null}
       {!plugins.loading && rows.length === 0 && <Empty>No plugins installed.</Empty>}
-      {suite.length > 0 && (
-        <div className="mb-3">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-xs font-semibold uppercase tracking-wide text-base-content/70">
-              Default plugins
-            </span>
-            <span className="badge badge-ghost badge-xs">suite</span>
-          </div>
-          <p className="text-xs text-base-content/60 mb-1">
-            Curated set errandd installs by default (a smaller allowlist is enabled on first boot;
-            the rest install disabled). Toggle any with the same native enable/disable as below — your
-            choice sticks across reboots; a routine can also override per-run via{" "}
+
+      {rows.length > 0 && (
+        <>
+          <p className="text-xs text-base-content/60 mb-2">
+            Grouped by marketplace. <span className="text-base-content/50">●</span> marks the default
+            suite errandd installs; the toggle governs the whole plugin and your choice sticks across
+            reboots. A routine can override per-run via{" "}
             <code className="font-mono">enable:</code> / <code className="font-mono">disable:</code>{" "}
             frontmatter.
           </p>
-          <ul className="text-sm space-y-1">{suite.map(renderRow)}</ul>
-        </div>
-      )}
-      {others.length > 0 && (
-        <ul className="text-sm space-y-1">{others.map(renderRow)}</ul>
+          <div className="text-sm space-y-3">
+            {selfRows.length > 0 && (
+              <ul className="space-y-1">
+                {selfRows.map((p) => (
+                  <InstalledPluginRow
+                    key={`${p.id}-${p.scope}`}
+                    plugin={p}
+                    onChanged={reload}
+                    isDup={isDup(p)}
+                    display={{ showVersion: true, showScope: true, showMarketplace: false }}
+                  />
+                ))}
+              </ul>
+            )}
+
+            {multi.map(([mkt, ps]) => (
+              <MarketplaceGroup
+                key={mkt}
+                marketplace={mkt}
+                plugins={ps}
+                onChanged={reload}
+                isDup={isDup}
+              />
+            ))}
+
+            {single.length > 0 && (
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-wide text-base-content/70">
+                  single-plugin marketplaces
+                </div>
+                <ul className="mt-1 ml-3 space-y-1 border-l border-base-300 pl-3">
+                  {single.map((p) => (
+                    <InstalledPluginRow
+                      key={`${p.id}-${p.scope}`}
+                      plugin={p}
+                      onChanged={reload}
+                      isDup={isDup(p)}
+                      display={{ showVersion: true, showScope: true, showMarketplace: true }}
+                    />
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </>
       )}
     </Card>
   );
 }
 
-function isSelfPlugin(id: string): boolean {
-  const name = id.split("@", 1)[0];
-  return name === "errandd";
-}
+/** A marketplace with ≥2 installed plugins: a collapsible parent row (name +
+ *  uniform version/scope when the children agree) over its indented plugin
+ *  children. */
+function MarketplaceGroup({
+  marketplace,
+  plugins,
+  onChanged,
+  isDup,
+}: {
+  marketplace: string;
+  plugins: InstalledPlugin[];
+  onChanged: () => void;
+  isDup: (p: InstalledPlugin) => boolean;
+}) {
+  const [expanded, setExpanded] = useState(true);
+  const panelId = `mkt-${marketplace}`.replace(/[^a-zA-Z0-9_-]/g, "-");
+  const first = plugins[0];
+  const uniformVersion = first && plugins.every((p) => p.version === first.version)
+    ? first.version
+    : null;
+  const uniformScope = first && plugins.every((p) => p.scope === first.scope) ? first.scope : null;
+  const display: RowDisplay = {
+    showVersion: uniformVersion === null,
+    showScope: uniformScope === null,
+    showMarketplace: false,
+  };
+  const sorted = [...plugins].sort((a, b) => pluginName(a.id).localeCompare(pluginName(b.id)));
 
-/** A plugin's skills / commands / agents flattened into display-only child
- *  nodes, each carrying its addressable `<plugin>/<name>` id — the same token
- *  a routine's `disable: ['caveman/caveman']` frontmatter uses. Claude Code
- *  has no native per-skill enable/disable, so these rows never toggle; the
- *  parent plugin's switch governs the whole set. */
-interface PluginChild {
-  kind: "skill" | "command" | "agent";
-  name: string;
-  id: string;
-}
-function pluginChildren(plugin: InstalledPlugin): PluginChild[] {
-  const base = pluginName(plugin.id);
-  const mk = (kind: PluginChild["kind"], names: string[] | undefined): PluginChild[] =>
-    (names ?? []).map((name) => ({ kind, name, id: `${base}/${name}` }));
-  return [
-    ...mk("skill", plugin.skills),
-    ...mk("command", plugin.commands),
-    ...mk("agent", plugin.agents),
-  ];
-}
-
-/** "7 skills · 3 commands · 2 agents", dropping any zero group. */
-function childSummary(plugin: InstalledPlugin): string {
   return (
-    [
-      { label: "skills", n: plugin.skills?.length ?? 0 },
-      { label: "commands", n: plugin.commands?.length ?? 0 },
-      { label: "agents", n: plugin.agents?.length ?? 0 },
-    ]
-      .filter((g) => g.n > 0)
-      .map((g) => `${g.n} ${g.label}`)
-      .join(" · ")
+    <div>
+      <div className="flex items-center gap-2 flex-wrap">
+        <button
+          type="button"
+          className="btn btn-ghost btn-xs btn-square"
+          onClick={() => setExpanded((e) => !e)}
+          aria-expanded={expanded}
+          aria-controls={panelId}
+          aria-label={`${expanded ? "Collapse" : "Expand"} ${marketplace}`}
+          title={expanded ? "Collapse" : "Expand"}
+        >
+          <ChevronRight
+            size={14}
+            className={`transition-transform ${expanded ? "rotate-90" : ""}`}
+          />
+        </button>
+        <span className="font-mono font-medium">{marketplace}</span>
+        {uniformVersion && (
+          <span className="text-base-content/60 text-xs">v{uniformVersion}</span>
+        )}
+        {uniformScope && <span className="badge badge-ghost badge-xs">{uniformScope}</span>}
+        <span className="text-xs text-base-content/50">{plugins.length} plugins</span>
+      </div>
+      {expanded && (
+        <ul id={panelId} className="mt-1 ml-3 space-y-1 border-l border-base-300 pl-3">
+          {sorted.map((p) => (
+            <InstalledPluginRow
+              key={`${p.id}-${p.scope}`}
+              plugin={p}
+              onChanged={onChanged}
+              isDup={isDup(p)}
+              display={display}
+            />
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 
+/** One plugin (leaf) row: `●` default marker, name, optional version/scope/
+ *  marketplace, warning + failed pills, and the toggle / refresh / uninstall
+ *  controls. errandd suppresses the toggle + uninstall (see isSelfPlugin). */
 function InstalledPluginRow({
   plugin,
   onChanged,
+  isDup,
+  display,
 }: {
   plugin: InstalledPlugin;
   onChanged: () => void;
+  isDup: boolean;
+  display: RowDisplay;
 }) {
   const [busy, setBusy] = useState<null | "update" | "uninstall" | "toggle">(null);
   const [err, setErr] = useState<unknown>(null);
-  const [expanded, setExpanded] = useState(false);
   const self = isSelfPlugin(plugin.id);
-  const children = pluginChildren(plugin);
-  const hasChildren = children.length > 0;
-  // Sanitise the id/scope into a DOM-id-safe token for aria-controls.
-  const panelId = `plugin-children-${plugin.id}-${plugin.scope}`.replace(/[^a-zA-Z0-9_-]/g, "-");
+  const name = pluginName(plugin.id);
+  const isDefault = isDefaultSuite(plugin.id) && !self;
 
   async function run(kind: "update" | "uninstall" | "toggle") {
     setBusy(kind);
@@ -787,97 +903,79 @@ function InstalledPluginRow({
     }
   }
 
-  const summary = childSummary(plugin);
-
   return (
-    <li>
-      <div className="flex items-center gap-2 flex-wrap">
-        {hasChildren ? (
-          <button
-            type="button"
-            className="btn btn-ghost btn-xs btn-square"
-            onClick={() => setExpanded((e) => !e)}
-            aria-expanded={expanded}
-            aria-controls={panelId}
-            aria-label={`${expanded ? "Collapse" : "Expand"} ${plugin.id}`}
-            title={expanded ? "Collapse" : "Expand"}
-          >
-            <ChevronRight
-              size={14}
-              className={`transition-transform ${expanded ? "rotate-90" : ""}`}
-            />
-          </button>
-        ) : (
-          // Spacer keeps childless rows aligned with the expandable ones.
-          <span className="inline-block w-6 shrink-0" aria-hidden="true" />
-        )}
-        <span className="font-mono">{plugin.id}</span>
-        <span className="text-base-content/60 text-xs">v{plugin.version || "?"}</span>
-        <span className="badge badge-ghost badge-xs">{plugin.scope}</span>
-        {self && <span className="badge badge-info badge-xs">this daemon</span>}
-        {isDefaultSuite(plugin.id) && !self && (
-          <span className="badge badge-success badge-xs" title="Part of the default plugin suite">
-            default
-          </span>
-        )}
-        {summary && <span className="text-xs text-base-content/50">{summary}</span>}
-        {err ? (
-          <span
-            className="badge badge-error badge-xs"
-            title={errText(err)}
-          >
-            failed
-          </span>
+    <li className="flex items-center gap-2 flex-wrap">
+      {/* ● default-suite marker (subtle) — fixed width so names stay aligned. */}
+      <span
+        className="inline-block w-3 shrink-0 text-center text-base-content/50"
+        title={isDefault ? "Default suite member" : undefined}
+      >
+        {isDefault ? (
+          <>
+            <span aria-hidden="true">●</span>
+            <span className="sr-only">default suite member</span>
+          </>
         ) : null}
-        <div className="ml-auto flex items-center gap-1.5">
-          {!self && (
-            <input
-              type="checkbox"
-              className="toggle toggle-primary toggle-sm"
-              checked={plugin.enabled}
-              disabled={busy !== null}
-              onChange={() => void run("toggle")}
-              aria-label={`${plugin.enabled ? "Disable" : "Enable"} ${plugin.id}`}
-              title={plugin.enabled ? "Disable" : "Enable"}
-            />
-          )}
+      </span>
+      <span className="font-mono">{name}</span>
+      {display.showMarketplace && !self && (
+        <span className="font-mono text-xs text-base-content/50">
+          @{pluginMarketplace(plugin.id)}
+        </span>
+      )}
+      {display.showVersion && (
+        <span className="text-base-content/60 text-xs">v{plugin.version || "?"}</span>
+      )}
+      {display.showScope && <span className="badge badge-ghost badge-xs">{plugin.scope}</span>}
+      {self && <span className="badge badge-info badge-xs">this daemon</span>}
+      {isDup && (
+        <span
+          className="badge badge-warning badge-xs"
+          title="Another enabled plugin shares this name (installed from more than one marketplace)"
+        >
+          ⚠ duplicate name
+        </span>
+      )}
+      {err ? (
+        <span className="badge badge-error badge-xs" title={errText(err)}>
+          failed
+        </span>
+      ) : null}
+      <div className="ml-auto flex items-center gap-1.5">
+        {!self && (
+          <input
+            type="checkbox"
+            className="toggle toggle-primary toggle-sm"
+            checked={plugin.enabled}
+            disabled={busy !== null}
+            onChange={() => void run("toggle")}
+            aria-label={`${plugin.enabled ? "Disable" : "Enable"} ${plugin.id}`}
+            title={plugin.enabled ? "Disable" : "Enable"}
+          />
+        )}
+        <button
+          type="button"
+          className="btn btn-ghost btn-xs btn-square"
+          onClick={() => void run("update")}
+          disabled={busy !== null || self}
+          aria-label={`Update ${plugin.id}`}
+          title={self ? "Update errandd from the About page" : "Update"}
+        >
+          <RefreshCw size={14} className={busy === "update" ? "animate-spin" : ""} />
+        </button>
+        {!self && (
           <button
             type="button"
-            className="btn btn-ghost btn-xs btn-square"
-            onClick={() => void run("update")}
-            disabled={busy !== null || self}
-            aria-label={`Update ${plugin.id}`}
-            title={self ? "Update errandd from the About page" : "Update"}
+            className="btn btn-ghost btn-xs text-error"
+            onClick={() => void run("uninstall")}
+            disabled={busy !== null}
+            aria-label={`Uninstall ${plugin.id}`}
+            title="Uninstall"
           >
-            <RefreshCw size={14} className={busy === "update" ? "animate-spin" : ""} />
+            <Trash2 size={14} />
           </button>
-          {!self && (
-            <button
-              type="button"
-              className="btn btn-ghost btn-xs text-error"
-              onClick={() => void run("uninstall")}
-              disabled={busy !== null}
-              aria-label={`Uninstall ${plugin.id}`}
-              title="Uninstall"
-            >
-              <Trash2 size={14} />
-            </button>
-          )}
-        </div>
+        )}
       </div>
-      {hasChildren && expanded && (
-        <ul id={panelId} className="mt-1 ml-3 space-y-0.5 border-l border-base-300 pl-3">
-          {children.map((c) => (
-            <li key={`${c.kind}-${c.id}`} className="flex items-center gap-2 py-0.5 text-xs">
-              <span className="badge badge-ghost badge-xs shrink-0">{c.kind}</span>
-              <span className="text-base-content/80">{c.name}</span>
-              <span className="font-mono text-base-content/50 truncate" title={c.id}>
-                {c.id}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
     </li>
   );
 }

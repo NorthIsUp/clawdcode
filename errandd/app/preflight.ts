@@ -158,7 +158,7 @@ function isCached(pluginKey: string): boolean {
  *  toggled it via the dashboard), so we leave it untouched. Idempotent:
  *  re-running preflight never clobbers a user's toggle, and defaults stay
  *  sticky across reboots. Returns whether the plugin ends up enabled. */
-function applyDefaultEnablement(pluginKey: string, projectPath: string): boolean {
+export function applyDefaultEnablement(pluginKey: string, projectPath: string): boolean {
   const projSettings = join(projectPath, ".claude", "settings.json");
   const settings = readJSON<Record<string, unknown>>(projSettings, {});
   if (!settings.enabledPlugins) settings.enabledPlugins = {};
@@ -202,6 +202,7 @@ function installMarketplacePlugins(
   repoUrl: string,
   projectPath: string,
   pkgMgr: string,
+  claimedBy: Map<string, string>,
   pluginNames?: string[],
 ): { installed: number; skipped: number } {
   let installed = 0;
@@ -238,11 +239,31 @@ function installMarketplacePlugins(
       targets = marketplace.plugins;
     }
 
+    // Dedupe by plugin NAME across all sources: install a given plugin name
+    // only once. The first source to claim a name keeps it; later sources
+    // skip. Because preflight processes cherryPick BEFORE the install-all
+    // `marketplaces[]` (see preflight()), an explicit cherry-pick wins over an
+    // install-all source for the same name (e.g. ralph-loop is kept from
+    // claude-plugins-official, skipped from cursor-plugins-claude). Deterministic
+    // (manifest order) and idempotent (claimedBy is per-run; isCached handles
+    // across-run skips).
+    const deduped: MarketplacePlugin[] = [];
+    for (const def of targets) {
+      const owner = claimedBy.get(def.name);
+      if (owner && owner !== marketplaceName) {
+        console.log(`  skip dupe: ${def.name} (already from ${owner})`);
+        skipped++;
+        continue;
+      }
+      claimedBy.set(def.name, marketplaceName);
+      deduped.push(def);
+    }
+
     // Partition: already-installed / needs-install. Cached plugins just get
     // their default enablement applied (writes only if the key is absent, so
     // a user's dashboard toggle is never clobbered).
     const needed: MarketplacePlugin[] = [];
-    for (const def of targets) {
+    for (const def of deduped) {
       const pluginKey = `${def.name}@${marketplaceName}`;
       if (isCached(pluginKey)) {
         applyDefaultEnablement(pluginKey, projectPath);
@@ -354,16 +375,22 @@ export function preflight(projectPath: string): void {
   let installed = 0;
   let skipped = 0;
 
-  // Marketplaces: install every plugin each repo declares.
-  for (const repoUrl of MANIFEST.marketplaces) {
-    const r = installMarketplacePlugins(repoUrl, projectPath, pkgMgr);
+  // Tracks which marketplace first claimed each plugin NAME, shared across
+  // both loops so a name installs only once. Cherry-picks run FIRST so an
+  // explicit pick wins over an install-all source for the same name.
+  const claimedBy = new Map<string, string>();
+
+  // Cherry-pick: install only the named subset from each repo.
+  for (const entry of MANIFEST.cherryPick) {
+    const r = installMarketplacePlugins(entry.repo, projectPath, pkgMgr, claimedBy, entry.plugins);
     installed += r.installed;
     skipped += r.skipped;
   }
 
-  // Cherry-pick: install only the named subset from each repo.
-  for (const entry of MANIFEST.cherryPick) {
-    const r = installMarketplacePlugins(entry.repo, projectPath, pkgMgr, entry.plugins);
+  // Marketplaces: install every plugin each repo declares (minus any name a
+  // cherry-pick or earlier marketplace already claimed).
+  for (const repoUrl of MANIFEST.marketplaces) {
+    const r = installMarketplacePlugins(repoUrl, projectPath, pkgMgr, claimedBy);
     installed += r.installed;
     skipped += r.skipped;
   }
