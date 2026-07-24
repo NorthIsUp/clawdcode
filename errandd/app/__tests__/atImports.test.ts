@@ -79,6 +79,40 @@ describe("expandAtImports", () => {
     }
   });
 
+  test("@./file.md → relative to the referencing file's directory", async () => {
+    const { root, cur, registry } = await fixture();
+    try {
+      const out = expandAtImports("preamble @./top.md end", cur, registry);
+      expect(out).toBe(`preamble @${join(cur, "top.md")} end`);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("@../path/file.md → relative to the referencing file's directory (can escape root)", async () => {
+    const { root, cur, registry } = await fixture();
+    try {
+      // cur is <root>/repos/cur; repoA is <root>/repos/repoA, so
+      // @../repoA/shared/helper.md from cur reaches repoA's file.
+      const out = expandAtImports("@../repoA/shared/helper.md", cur, registry);
+      const repoA = registry.names.get("repoA")!;
+      expect(out).toBe(`@${join(repoA, "shared", "helper.md")}`);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("@./ never hits the known-name registry", async () => {
+    const { root, cur, registry } = await fixture();
+    try {
+      // `@./lib/local.md` resolves against cur, not any repo named "." (none).
+      const out = expandAtImports("@./lib/local.md", cur, registry);
+      expect(out).toBe(`@${join(cur, "lib", "local.md")}`);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   test("backcompat: @~/... and @/abs/... are left untouched", async () => {
     const { root, cur, registry } = await fixture();
     try {

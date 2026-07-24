@@ -6,23 +6,28 @@ import { discoverPlugins } from "./jobsRepoPlugins";
 /**
  * errandd `@`-imports for routine/job MD files.
  *
- * A routine prompt can reference shared MD files with three forms:
+ * A routine prompt can reference shared MD files with these forms — none of
+ * which force the author to know the daemon's internal path layout:
  *   - `@<repo>/<path>/<file>.md`   — <repo> is a known jobsRepo slug or plugin
  *     name → resolve <path>/<file>.md WITHIN that repo/plugin's dir.
  *   - `@<plugin>/<name>/<file>.md` — same "leading segment is a known name"
  *     shape (plugin names are registered alongside repo slugs).
  *   - `@<path>/<file>.md`          — leading segment is NOT a known name →
- *     resolve relative to the CURRENT repo/plugin (the dir the referencing
- *     routine file lives in, i.e. the job's `sourceDir`).
+ *     resolve relative to the CURRENT repo/plugin ROOT (the job's `sourceDir`).
+ *   - `@./<file>.md`, `@../<path>/<file>.md` — resolve relative to the
+ *     REFERENCING FILE's own directory. Since routine files load flat from
+ *     `sourceDir`, that directory IS `sourceDir`, so `@../shared/x.md` from a
+ *     routine reaches `<sourceDir>/../shared/x.md`.
  *
  * We REWRITE each resolvable ref to a concrete absolute path (`@/abs/.../file.md`)
  * and let Claude Code's own `@file` include mechanism do the actual inlining —
  * the least-surprising option, and the same mechanism the legacy
  * `@~/.claude/errandd/jobs/*.md` symlink scheme already relies on.
  *
- * Backcompat: `@~/...` and `@/abs/...` are left untouched (the CLI already
- * resolves them). A ref that doesn't resolve to an existing file is left
- * untouched too — a typo'd include must never crash a routine.
+ * Backcompat ONLY: `@~/...` and `@/abs/...` are left untouched (the CLI already
+ * resolves them), but they leak the daemon's path layout — prefer the
+ * namespaced/relative forms above. A ref that doesn't resolve to an existing
+ * file is left untouched too — a typo'd include must never crash a routine.
  */
 
 /**
@@ -83,14 +88,20 @@ export function expandAtImports(
 
     const parts = ref.split("/").filter(Boolean);
     const first = parts[0] ?? "";
+    // `@./x` and `@../x` are explicit relative refs — resolve against the
+    // referencing file's dir (= sourceDir), never against the known-name
+    // registry (a `.`/`..` segment can't be a repo/plugin name anyway).
+    const isRelative = first === "." || first === "..";
 
     let resolved: string | undefined;
-    const knownBase = registry.names.get(first);
+    const knownBase = isRelative ? undefined : registry.names.get(first);
     if (knownBase && parts.length > 1) {
       // `@<repo>/<rest>.md` → resolve <rest> within the named repo/plugin dir.
       resolved = join(knownBase, ...parts.slice(1));
     } else if (sourceDir) {
-      // No known leading name → relative to the current repo/plugin.
+      // Either an explicit `@./`|`@../` relative ref (against the referencing
+      // file's dir) or a bare `@<path>.md` (against the current repo root) —
+      // both anchor on sourceDir; `join` normalizes any `.`/`..` segments.
       resolved = join(sourceDir, ...parts);
     }
 
