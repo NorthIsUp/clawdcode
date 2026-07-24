@@ -609,6 +609,10 @@ const DEFAULT_SUITE = new Set([
   "plugin-dev",
   "caveman",
   "ponytail",
+  "superpowers",
+  "context7",
+  "daisyui",
+  "skillz",
 ]);
 
 function pluginName(id: string): string {
