@@ -27,7 +27,7 @@ import {
   updateHeartbeatSettings,
   updateSettings,
 } from "../../api/settings";
-import type { StateResponse } from "../../api/state";
+import type { McpStatus, StateResponse } from "../../api/state";
 import { getState } from "../../api/state";
 import { Card } from "../components/Card";
 import { InputWithAction } from "../components/InputWithAction";
@@ -1357,6 +1357,36 @@ function ModelPanel() {
   );
 }
 
+/** Colored health dot for an MCP server row. Maps status → daisyUI semantic
+ *  color (success/warning/error, neutral for unknown). `title` carries the
+ *  reason on hover for accessibility. */
+function McpStatusDot({ status, issue }: { status: McpStatus; issue?: string | undefined }) {
+  const color =
+    status === "ok"
+      ? "bg-success"
+      : status === "warn"
+        ? "bg-warning"
+        : status === "error"
+          ? "bg-error"
+          : "bg-base-300";
+  const label =
+    status === "ok"
+      ? "connected"
+      : status === "error"
+        ? issue ?? "unreachable"
+        : status === "warn"
+          ? issue ?? "degraded"
+          : issue ?? "unknown";
+  return (
+    <span
+      className={`inline-block size-2 shrink-0 rounded-full ${color}`}
+      role="img"
+      aria-label={`status: ${label}`}
+      title={label}
+    />
+  );
+}
+
 /** Read-only list of the MCP servers registered with the runtime's `claude
  *  mcp` CLI. No add/edit/remove — registration is managed out-of-band (the
  *  daemon's start script). */
@@ -1375,7 +1405,13 @@ function McpServersPanel() {
         <ul className="divide-y divide-base-200">
           {servers.map((s) => (
             <li key={s.name} className="flex items-center justify-between gap-3 py-2 first:pt-0 last:pb-0">
-              <span className="font-mono text-sm text-base-content truncate">{s.name}</span>
+              <span className="flex items-center gap-2 min-w-0">
+                <McpStatusDot status={s.status} issue={s.issue} />
+                <span className="font-mono text-sm text-base-content truncate">{s.name}</span>
+                {s.issue ? (
+                  <span className="text-xs text-base-content/60 shrink-0">{s.issue}</span>
+                ) : null}
+              </span>
               <span className="badge badge-ghost badge-sm shrink-0 uppercase">{s.transport}</span>
             </li>
           ))}

@@ -80,6 +80,18 @@ export interface McpServer {
   headers?: string[];
 }
 
+/**
+ * Health status for a registered server, derived from the status suffix
+ * `claude mcp list` prints per line (it connects to each server and reports
+ * ✔ Connected / ✘ Failed to connect / ! Needs authentication / ⏸ Pending
+ * approval). Maps to a green/yellow/red dot in the UI:
+ *   - ok      → connected (green)
+ *   - warn    → actionable but not down: needs auth, pending approval (yellow)
+ *   - error   → unreachable / failed to connect / timeout (red)
+ *   - unknown → no status reported / unrecognized text (neutral)
+ */
+export type McpStatus = "ok" | "warn" | "error" | "unknown";
+
 /** Lightweight view of a registered server for the read-only Settings card —
  *  name + transport only, no per-server `mcp get` scope resolution (which would
  *  cost one extra subprocess per server). */
@@ -88,6 +100,40 @@ export interface McpServerSummary {
   transport: "stdio" | "http" | "sse";
   /** For stdio: the command + args string. For http/sse: the URL. */
   target: string;
+  /** Connection health from the `claude mcp list` status suffix. */
+  status: McpStatus;
+  /** Short human-readable reason when not ok (e.g. "needs auth",
+   *  "unreachable", "timeout", "pending approval"). Absent when ok. */
+  issue?: string;
+}
+
+/**
+ * Classify the trailing status text of a `claude mcp list` line into a
+ * status + optional issue label. Prefers the leading glyph Claude Code emits
+ * (unambiguous across locales) and falls back to keyword matching so a CLI
+ * wording change still degrades gracefully rather than reporting "unknown".
+ */
+export function classifyMcpStatus(raw: string): { status: McpStatus; issue?: string } {
+  const s = raw.trim();
+  if (!s) return { status: "unknown" };
+  const lower = s.toLowerCase();
+  // Connected / healthy — check first so "connect" in error text can't steal it.
+  if (s.includes("✔") || /\bconnected\b/.test(lower)) return { status: "ok" };
+  // Needs authentication → actionable, not down.
+  if (s.includes("!") || /needs? auth|authenticat|\blogin\b/.test(lower)) {
+    return { status: "warn", issue: "needs auth" };
+  }
+  // Pending approval (unapproved .mcp.json server) → actionable.
+  if (s.includes("⏸") || lower.includes("pending")) {
+    return { status: "warn", issue: "pending approval" };
+  }
+  // Failed to connect / unreachable / timeout → down.
+  if (s.includes("✘") || /fail|unreachable|\berror\b|timed?\s*out|timeout/.test(lower)) {
+    const issue = /timed?\s*out|timeout/.test(lower) ? "timeout" : "unreachable";
+    return { status: "error", issue };
+  }
+  // Unrecognized status text — surface it verbatim in a neutral state.
+  return { status: "unknown", issue: s };
 }
 
 // ---------------------------------------------------------------------------
@@ -135,8 +181,8 @@ async function spawnMcp(
  * We infer transport from whether the target looks like a URL and whether
  * the line contains "(HTTP)" or "(SSE)".
  */
-function parseMcpListOutput(text: string): { name: string; transport: "stdio" | "http" | "sse"; target: string }[] {
-  const results: { name: string; transport: "stdio" | "http" | "sse"; target: string }[] = [];
+export function parseMcpListOutput(text: string): McpServerSummary[] {
+  const results: McpServerSummary[] = [];
   const lines = text.split(/\r?\n/);
   for (const raw of lines) {
     const line = raw.trim();
@@ -148,9 +194,14 @@ function parseMcpListOutput(text: string): { name: string; transport: "stdio" | 
     if (colonSpaceIdx === -1) continue;
     const name = line.slice(0, colonSpaceIdx).trim();
     let rest = line.slice(colonSpaceIdx + 2).trim();
-    // Strip trailing " - <status>" (last " - " occurrence)
+    // Split off trailing " - <status>" (last " - " occurrence) and classify it.
+    let statusText = "";
     const dashStatusIdx = rest.lastIndexOf(" - ");
-    if (dashStatusIdx !== -1) rest = rest.slice(0, dashStatusIdx).trim();
+    if (dashStatusIdx !== -1) {
+      statusText = rest.slice(dashStatusIdx + 3).trim();
+      rest = rest.slice(0, dashStatusIdx).trim();
+    }
+    const { status, issue } = classifyMcpStatus(statusText);
     // Detect transport
     let transport: "stdio" | "http" | "sse" = "stdio";
     let target = rest;
@@ -164,7 +215,7 @@ function parseMcpListOutput(text: string): { name: string; transport: "stdio" | 
       transport = "http";
       target = rest;
     }
-    if (name) results.push({ name, transport, target });
+    if (name) results.push({ name, transport, target, status, ...(issue ? { issue } : {}) });
   }
   return results;
 }

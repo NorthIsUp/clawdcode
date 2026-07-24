@@ -51,12 +51,21 @@ export interface SecuritySettings {
   level: string;
 }
 
+/** Connection health of a registered MCP server (from `claude mcp list`):
+ *  ok = connected (green), warn = needs auth / pending (yellow),
+ *  error = unreachable / timeout (red), unknown = no status (neutral). */
+export type McpStatus = "ok" | "warn" | "error" | "unknown";
+
 /** A registered MCP server, surfaced read-only in Settings. */
 export interface McpServerSummary {
   name: string;
   transport: "stdio" | "http" | "sse";
   /** For stdio: the command + args string. For http/sse: the URL. */
   target: string;
+  /** Connection health from `claude mcp list`. */
+  status: McpStatus;
+  /** Short reason when not ok (e.g. "needs auth", "unreachable"). */
+  issue?: string;
 }
 
 export interface StateResponse {
