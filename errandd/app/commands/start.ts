@@ -5,6 +5,7 @@ import { buildHookEssentials, renderHookEssentialsMarkdown } from "../../shared/
 import {
   type HeartbeatConfig,
   initConfig,
+  isPluginAutoUpdateDue,
   loadSettings,
   reloadSettings,
   resolvePrompt,
@@ -77,6 +78,8 @@ import {
 import { type StateData, writeState } from "../statusline";
 import { buildClockPromptPrefix, getDayAndMinuteAtOffset } from "../timezone";
 import { getOrCreateWebToken } from "../ui/auth";
+import { updateAllPlugins } from "../ui/services/claudePlugins";
+import { getRuntime } from "../runtime/select";
 import { startWebUi, type WebServerHandle } from "../web";
 import { handleWizardInput, hasActiveWizard, isWizardTrigger } from "./plugin-wizard";
 
@@ -1506,6 +1509,47 @@ export async function start(args: string[] = []) {
           }
         })();
       }
+    }, 60_000),
+  );
+
+  // --- Plugin auto-update: refresh the managed Claude Code plugins on a schedule ---
+  // Mirrors the jobs-repo sync tick above: a 60s tick re-reads
+  // `currentSettings.pluginAutoUpdate` fresh (so it reacts to hot-reloaded
+  // config) and, once the configured interval has elapsed (default 3h), runs
+  // `claude plugin update` for every installed plugin — the same operation as
+  // the dashboard "Update all" button. Guarded so cycles never overlap, and an
+  // update failure only logs (never crashes the daemon). Seeded to boot time so
+  // a restart doesn't fire an immediate cycle; disabled ⇒ the tick is a no-op.
+  let lastPluginAutoUpdateAt = Date.now();
+  let pluginAutoUpdateRunning = false;
+  intervals.push(
+    setInterval(() => {
+      if (pluginAutoUpdateRunning) return;
+      const now = Date.now();
+      if (!isPluginAutoUpdateDue(currentSettings.pluginAutoUpdate, lastPluginAutoUpdateAt, now)) {
+        return;
+      }
+      // Only meaningful when the active runtime exposes the `claude plugin` CLI.
+      if (!getRuntime().capabilities.supportsPlugins) return;
+      pluginAutoUpdateRunning = true;
+      lastPluginAutoUpdateAt = now;
+      void (async () => {
+        try {
+          const { results } = await updateAllPlugins();
+          const failed = results.filter((r) => !r.result.ok);
+          console.log(
+            `[${ts()}] plugin auto-update: ${results.length - failed.length}/${results.length} updated` +
+              (failed.length ? ` (${failed.length} failed)` : ""),
+          );
+          for (const f of failed) {
+            console.warn(`[${ts()}] plugin auto-update[${f.id}]: ${f.result.error ?? "update failed"}`);
+          }
+        } catch (e) {
+          console.warn(`[${ts()}] plugin auto-update error: ${String(e)}`);
+        } finally {
+          pluginAutoUpdateRunning = false;
+        }
+      })();
     }, 60_000),
   );
 

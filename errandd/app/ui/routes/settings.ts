@@ -27,7 +27,7 @@ export const settingsPut: RouteHandler = async ({ req }) => {
     const raw = await readFile(SETTINGS_FILE, "utf-8").catch(() => "{}");
     const data = JSON.parse(raw) as Record<string, unknown>;
     // Allow shallow-merge of these top-level keys
-    const allowed = ["model", "fallback", "security", "timezone", "jobsRepo", "git", "ultracode"] as const;
+    const allowed = ["model", "fallback", "security", "timezone", "jobsRepo", "git", "ultracode", "pluginAutoUpdate"] as const;
     for (const key of allowed) {
       if (key in body && body[key] !== undefined) {
         if (typeof body[key] === "object" && body[key] !== null && !Array.isArray(body[key])) {

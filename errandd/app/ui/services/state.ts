@@ -52,6 +52,7 @@ export async function buildState(snapshot: WebSnapshot, opts: BuildStateOptions 
     model: snapshot.settings.model,
     fallback: snapshot.settings.fallback,
     ultracode: snapshot.settings.ultracode,
+    pluginAutoUpdate: snapshot.settings.pluginAutoUpdate,
     mcpServers,
     jobsRepo: snapshot.settings.jobsRepo,           // back-compat
     jobsRepos: snapshot.settings.jobsRepos ?? [],   // new multi-repo field
