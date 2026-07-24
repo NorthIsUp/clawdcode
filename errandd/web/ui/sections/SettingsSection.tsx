@@ -563,6 +563,8 @@ function ReposPanel() {
             )}
           </Card>
 
+          <PluginAutoUpdateCard />
+
           <InstalledPluginsCard runtimeVersion={state.data?.runtime.version ?? null} />
         </SourceGroup>
       )}
@@ -595,6 +597,71 @@ function ReposPanel() {
         </SourceGroup>
       )}
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Plugin auto-update — periodic `claude plugin update` of managed plugins
+// ---------------------------------------------------------------------------
+
+/** On/off + interval control for the daemon's periodic plugin auto-update.
+ *  Mirrors the ModelPanel autosave pattern: reads the current config from
+ *  /api/state and PUTs `{ pluginAutoUpdate }` on change. */
+function PluginAutoUpdateCard() {
+  const state = useAsync<StateResponse>(() => getState());
+  const [enabled, setEnabled] = useState(true);
+  const [intervalHours, setIntervalHours] = useState(3);
+  const [seenState, setSeenState] = useState<unknown>(null);
+
+  if (state.data && state.data !== seenState) {
+    setSeenState(state.data);
+    setEnabled(state.data.pluginAutoUpdate?.enabled ?? true);
+    setIntervalHours(state.data.pluginAutoUpdate?.intervalHours ?? 3);
+  }
+
+  const { status, error: err } = useAutosave(
+    { enabled, intervalHours },
+    async (next) => {
+      await updateSettings({ pluginAutoUpdate: next });
+      state.reload();
+    },
+    { enabled: state.data !== null },
+  );
+
+  return (
+    <Card title="Auto-update" actions={<SaveStatus status={status} />}>
+      {state.error ? <ErrorBanner error={state.error} /> : null}
+      {err ? <ErrorBanner error={err} /> : null}
+      <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
+        <label className="flex items-center gap-3 cursor-pointer">
+          <input
+            type="checkbox"
+            className="toggle toggle-primary"
+            checked={enabled}
+            onChange={(e) => setEnabled(e.target.checked)}
+          />
+          <span className="font-medium">Enabled</span>
+        </label>
+
+        <label className="flex flex-col gap-1.5">
+          <span className="text-xs font-medium text-base-content/70">Every (hours)</span>
+          <input
+            type="number"
+            min={1}
+            step={1}
+            className="input border-base-300 w-32"
+            value={intervalHours}
+            disabled={!enabled}
+            onChange={(e) => setIntervalHours(Math.max(1, Number(e.target.value)))}
+          />
+        </label>
+      </div>
+      <p className="mt-3 text-[11px] text-base-content/60">
+        When enabled, the daemon runs <code className="font-mono">claude plugin update</code> for
+        every installed plugin on this schedule — the same as the "Update all" button. Default:
+        every 3 hours.
+      </p>
+    </Card>
   );
 }
 

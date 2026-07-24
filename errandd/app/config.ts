@@ -196,11 +196,38 @@ const DEFAULT_SETTINGS: Settings = {
   watchdog: { maxConsecutiveTimeouts: null, maxRuntimeSeconds: null },
   session: { autoRotate: false, maxMessages: 50, maxAgeHours: 24, summaryPath: "" },
   plugins: {},
+  pluginAutoUpdate: { enabled: true, intervalHours: 3 },
   jobsRepo: { kind: "git", url: "", branch: "main", intervalSeconds: 300 },
   jobsRepos: [],
   git: { name: "", email: "" },
   hooks: { defaultPrRepo: ["*/*"], defaultPrUser: ["*"] },
 };
+
+export interface PluginAutoUpdateConfig {
+  /** When true, the daemon periodically updates the Claude Code plugins it
+   *  manages by shelling `claude plugin update` for every installed plugin —
+   *  the same operation as the dashboard "Update all" button. Default true. */
+  enabled: boolean;
+  /** Hours between automatic plugin-update cycles. Default 3. Non-finite or
+   *  ≤ 0 values fall back to the default at parse time. */
+  intervalHours: number;
+}
+
+/**
+ * Decide whether an auto-update cycle is due. Pure so the scheduler tick in
+ * start.ts stays trivial and this stays unit-testable. Returns false when
+ * disabled or when less than `intervalHours` has elapsed since `lastRunAt`
+ * (`lastRunAt` = 0 means "never run" → due immediately once enabled).
+ */
+export function isPluginAutoUpdateDue(
+  cfg: PluginAutoUpdateConfig,
+  lastRunAt: number,
+  now: number,
+): boolean {
+  if (!cfg.enabled) return false;
+  const intervalMs = cfg.intervalHours * 60 * 60 * 1000;
+  return now - lastRunAt >= intervalMs;
+}
 
 export interface HeartbeatExcludeWindow {
   days?: number[];
@@ -305,6 +332,9 @@ export interface Settings {
   timeouts: TimeoutsConfig;
   watchdog: WatchdogSettings;
   plugins: Record<string, PluginEntry>;
+  /** Periodic auto-update of the managed Claude Code plugins. Default:
+   *  enabled, every 3 hours. See {@link isPluginAutoUpdateDue}. */
+  pluginAutoUpdate: PluginAutoUpdateConfig;
   session: SessionConfig;
   jobsDir?: string;
   /** @deprecated single-repo form; migrated into `jobsRepos[0]` at parse time. The on-disk
@@ -497,6 +527,16 @@ function parseAgenticConfig(raw: unknown): AgenticConfig {
     defaultMode: typeof r.defaultMode === "string" ? r.defaultMode.trim() : "implementation",
     modes: modes.length > 0 ? modes : defaults.modes,
   };
+}
+
+function parsePluginAutoUpdate(raw: unknown): PluginAutoUpdateConfig {
+  const r = asRecord(raw);
+  const intervalHours =
+    Number.isFinite(r.intervalHours) && Number(r.intervalHours) > 0
+      ? Number(r.intervalHours)
+      : 3;
+  // Default enabled: absent key ⇒ on; only an explicit `false` turns it off.
+  return { enabled: r.enabled !== false, intervalHours };
 }
 
 function parseJobsRepoConfig(raw: unknown): JobsRepoConfig {
@@ -702,6 +742,7 @@ function parseSettings(
     },
     watchdog: parseWatchdogConfig(raw.watchdog),
     plugins: parsePlugins(raw.plugins),
+    pluginAutoUpdate: parsePluginAutoUpdate(raw.pluginAutoUpdate),
     session: {
       autoRotate: session.autoRotate === true,
       maxMessages: Number.isFinite(session.maxMessages) ? Number(session.maxMessages) : 50,
