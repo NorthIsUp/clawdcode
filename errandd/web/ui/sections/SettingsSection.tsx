@@ -617,23 +617,22 @@ function isSelfPlugin(id: string): boolean {
   return pluginName(id) === "errandd";
 }
 
-/** What a plugin (child) row shows beyond the bare name. In a uniform
- *  marketplace group the version/scope live on the parent, so children
- *  suppress them; the single-plugin group has no marketplace parent, so its
- *  children show everything incl. the `@marketplace` suffix. */
+/** What a plugin (child) row shows beyond the bare name. When the parent
+ *  marketplace group carries a uniform version/scope, its children suppress
+ *  them to avoid repetition. */
 interface RowDisplay {
   showVersion: boolean;
   showScope: boolean;
-  showMarketplace: boolean;
 }
 
 /**
- * Installed plugins as a marketplace → plugin → skills tree. Plugins group
- * under a collapsible marketplace parent (name + uniform version/scope);
- * each plugin child keeps its own expand to its skills/commands/agents.
- * Marketplaces with one installed plugin collapse into a "single-plugin
- * marketplaces" group. errandd (this daemon) floats to the top. A `●` marks
- * plugins whose GitOps default is ENABLED (preflight's DEFAULT_ENABLED); an
+ * Installed plugins as a marketplace → plugin → skills tree. Every
+ * marketplace renders identically — a collapsible parent (name + uniform
+ * version/scope) over its bare-name plugin child(ren) — whether it declares
+ * one plugin or many; each plugin child keeps its own expand to its
+ * skills/commands/agents. errandd (this daemon) floats to the top. A "gitops"
+ * pill marks plugins whose GitOps default is ENABLED (preflight's
+ * DEFAULT_ENABLED); an
  * "overridden" marker flags rows where the effective toggle differs from that
  * GitOps default (drift); a `⚠` pill flags same-name collisions.
  *
@@ -689,13 +688,9 @@ function InstalledPluginsCard({ runtimeVersion }: { runtimeVersion: string | nul
       byMarket.set(mkt, [p]);
     }
   }
-  const multi = [...byMarket.entries()]
-    .filter(([, ps]) => ps.length >= 2)
-    .sort(([a], [b]) => a.localeCompare(b));
-  const single = [...byMarket.entries()]
-    .filter(([, ps]) => ps.length === 1)
-    .flatMap(([, ps]) => ps)
-    .sort((a, b) => a.id.localeCompare(b.id));
+  // Every marketplace renders identically — as its own parent group over its
+  // bare-name plugin child(ren) — whether it declares one plugin or many.
+  const groups = [...byMarket.entries()].sort(([a], [b]) => a.localeCompare(b));
 
   const reload = () => plugins.reload();
   const isDup = (p: InstalledPlugin) => p.enabled && dupNames.has(pluginName(p.id));
@@ -722,12 +717,7 @@ function InstalledPluginsCard({ runtimeVersion }: { runtimeVersion: string | nul
       {rows.length > 0 && (
         <>
           <p className="text-xs text-base-content/60 mb-2">
-            Grouped by marketplace. <span className="text-base-content/50">●</span> = enabled by the
-            GitOps default; the toggle sets your local override and your choice sticks across reboots;{" "}
-            <span className="italic">overridden</span> marks a row where your choice differs from the
-            GitOps default. Expand a plugin to see its skills / commands / agents. A routine can
-            override per-run via <code className="font-mono">enable:</code> /{" "}
-            <code className="font-mono">disable:</code> frontmatter.
+            Grouped by marketplace. Toggle sets a per-user override (sticks across reboots).
           </p>
           <div className="text-sm space-y-3">
             {selfRows.length > 0 && (
@@ -738,13 +728,13 @@ function InstalledPluginsCard({ runtimeVersion }: { runtimeVersion: string | nul
                     plugin={p}
                     onChanged={reload}
                     isDup={isDup(p)}
-                    display={{ showVersion: true, showScope: true, showMarketplace: false }}
+                    display={{ showVersion: true, showScope: true }}
                   />
                 ))}
               </ul>
             )}
 
-            {multi.map(([mkt, ps]) => (
+            {groups.map(([mkt, ps]) => (
               <MarketplaceGroup
                 key={mkt}
                 marketplace={mkt}
@@ -753,25 +743,6 @@ function InstalledPluginsCard({ runtimeVersion }: { runtimeVersion: string | nul
                 isDup={isDup}
               />
             ))}
-
-            {single.length > 0 && (
-              <div>
-                <div className="text-xs font-semibold uppercase tracking-wide text-base-content/70">
-                  single-plugin marketplaces
-                </div>
-                <ul className="mt-1 ml-3 space-y-1 border-l border-base-300 pl-3">
-                  {single.map((p) => (
-                    <InstalledPluginRow
-                      key={`${p.id}-${p.scope}`}
-                      plugin={p}
-                      onChanged={reload}
-                      isDup={isDup(p)}
-                      display={{ showVersion: true, showScope: true, showMarketplace: true }}
-                    />
-                  ))}
-                </ul>
-              </div>
-            )}
           </div>
         </>
       )}
@@ -779,9 +750,9 @@ function InstalledPluginsCard({ runtimeVersion }: { runtimeVersion: string | nul
   );
 }
 
-/** A marketplace with ≥2 installed plugins: a collapsible parent row (name +
- *  uniform version/scope when the children agree) over its indented plugin
- *  children. */
+/** A marketplace: a collapsible parent row (name + uniform version/scope when
+ *  the children agree) over its indented plugin child(ren). Renders the same
+ *  whether the marketplace declares one plugin or many. */
 function MarketplaceGroup({
   marketplace,
   plugins,
@@ -802,7 +773,6 @@ function MarketplaceGroup({
   const display: RowDisplay = {
     showVersion: uniformVersion === null,
     showScope: uniformScope === null,
-    showMarketplace: false,
   };
   const sorted = [...plugins].sort((a, b) => pluginName(a.id).localeCompare(pluginName(b.id)));
 
@@ -826,7 +796,9 @@ function MarketplaceGroup({
         <span className="font-mono font-medium">{marketplace}</span>
         {uniformVersion && <span className="text-base-content/60 text-xs">v{uniformVersion}</span>}
         {uniformScope && <span className="badge badge-ghost badge-xs">{uniformScope}</span>}
-        <span className="text-xs text-base-content/50">{plugins.length} plugins</span>
+        <span className="text-xs text-base-content/50">
+          {plugins.length} {plugins.length === 1 ? "plugin" : "plugins"}
+        </span>
       </div>
       {expanded && (
         <ul id={panelId} className="mt-1 ml-3 space-y-1 border-l border-base-300 pl-3">
@@ -896,9 +868,9 @@ function InstalledPluginRow({
   const [expanded, setExpanded] = useState(false);
   const self = isSelfPlugin(plugin.id);
   const name = pluginName(plugin.id);
-  // `●` now means "the GitOps default for this plugin is ENABLED" (preflight's
-  // DEFAULT_ENABLED allowlist), NOT suite membership. So for a plugin with no
-  // local override, ● present ⟺ toggle ON.
+  // The "gitops" pill means "the GitOps default for this plugin is ENABLED"
+  // (preflight's DEFAULT_ENABLED allowlist), NOT suite membership. So for a
+  // plugin with no local override, pill present ⟺ toggle ON.
   const isDefault = !!plugin.gitopsDefaultEnabled && !self;
   // Drift: the effective toggle differs from the GitOps default.
   const overridden = !!plugin.overridden && !self;
@@ -954,29 +926,17 @@ function InstalledPluginRow({
           // Spacer keeps childless rows aligned with the expandable ones.
           <span className="inline-block w-6 shrink-0" aria-hidden="true" />
         )}
-        {/* ● GitOps-default-enabled marker (subtle) — fixed width so names stay aligned. */}
-        <span
-          className="inline-block w-3 shrink-0 text-center text-base-content/50"
-          title={isDefault ? "Enabled by the GitOps default" : undefined}
-        >
-          {isDefault ? (
-            <>
-              <span aria-hidden="true">●</span>
-              <span className="sr-only">enabled by the GitOps default</span>
-            </>
-          ) : null}
-        </span>
         <span className="font-mono">{name}</span>
-        {display.showMarketplace && !self && (
-          <span className="font-mono text-xs text-base-content/50">
-            @{pluginMarketplace(plugin.id)}
-          </span>
-        )}
         {display.showVersion && (
           <span className="text-base-content/60 text-xs">v{plugin.version || "?"}</span>
         )}
         {display.showScope && <span className="badge badge-ghost badge-xs">{plugin.scope}</span>}
         {self && <span className="badge badge-info badge-xs">this daemon</span>}
+        {isDefault && (
+          <span className="badge badge-ghost badge-xs" title="Enabled by the GitOps default">
+            gitops
+          </span>
+        )}
         {overridden && (
           <span
             className="badge badge-ghost badge-xs italic"
