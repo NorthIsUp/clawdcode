@@ -6,12 +6,20 @@
     "https://github.com/anthropics/skills",
     "https://github.com/kdoroszewicz/cursor-plugins-claude",
     "https://github.com/SawyerHood/dev-browser",
-    "https://github.com/thedotmack/claude-mem"
+    "https://github.com/thedotmack/claude-mem",
+    "https://github.com/JuliusBrussee/caveman",
+    "https://github.com/DietrichGebert/ponytail",
+    "https://github.com/upstash/context7"
   ],
   "cherryPick": [
     {
       "repo": "https://github.com/anthropics/claude-plugins-official",
       "plugins": ["ralph-loop", "hookify", "code-review", "pr-review-toolkit", "commit-commands", "plugin-dev"]
+    },
+    {
+      "$comment": "daisyui's marketplace also declares `daisyui-blueprint` (a paid-license MCP server) — cherry-pick ONLY the free `daisyui` skill so preflight never installs the paid one.",
+      "repo": "https://github.com/saadeghi/daisyui",
+      "plugins": ["daisyui"]
     }
   ],
   "jobsRepos": [
