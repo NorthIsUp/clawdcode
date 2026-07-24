@@ -630,8 +630,9 @@ interface RowDisplay {
  * marketplace renders identically — a collapsible parent (name + uniform
  * version/scope) over its bare-name plugin child(ren) — whether it declares
  * one plugin or many; each plugin child keeps its own expand to its
- * skills/commands/agents. errandd (this daemon) floats to the top. A `●` marks
- * plugins whose GitOps default is ENABLED (preflight's DEFAULT_ENABLED); an
+ * skills/commands/agents. errandd (this daemon) floats to the top. A "gitops"
+ * pill marks plugins whose GitOps default is ENABLED (preflight's
+ * DEFAULT_ENABLED); an
  * "overridden" marker flags rows where the effective toggle differs from that
  * GitOps default (drift); a `⚠` pill flags same-name collisions.
  *
@@ -716,12 +717,7 @@ function InstalledPluginsCard({ runtimeVersion }: { runtimeVersion: string | nul
       {rows.length > 0 && (
         <>
           <p className="text-xs text-base-content/60 mb-2">
-            Grouped by marketplace. <span className="text-base-content/50">●</span> = enabled by the
-            GitOps default; the toggle sets your local override and your choice sticks across reboots;{" "}
-            <span className="italic">overridden</span> marks a row where your choice differs from the
-            GitOps default. Expand a plugin to see its skills / commands / agents. A routine can
-            override per-run via <code className="font-mono">enable:</code> /{" "}
-            <code className="font-mono">disable:</code> frontmatter.
+            Grouped by marketplace. Toggle sets a per-user override (sticks across reboots).
           </p>
           <div className="text-sm space-y-3">
             {selfRows.length > 0 && (
@@ -872,9 +868,9 @@ function InstalledPluginRow({
   const [expanded, setExpanded] = useState(false);
   const self = isSelfPlugin(plugin.id);
   const name = pluginName(plugin.id);
-  // `●` now means "the GitOps default for this plugin is ENABLED" (preflight's
-  // DEFAULT_ENABLED allowlist), NOT suite membership. So for a plugin with no
-  // local override, ● present ⟺ toggle ON.
+  // The "gitops" pill means "the GitOps default for this plugin is ENABLED"
+  // (preflight's DEFAULT_ENABLED allowlist), NOT suite membership. So for a
+  // plugin with no local override, pill present ⟺ toggle ON.
   const isDefault = !!plugin.gitopsDefaultEnabled && !self;
   // Drift: the effective toggle differs from the GitOps default.
   const overridden = !!plugin.overridden && !self;
@@ -930,24 +926,17 @@ function InstalledPluginRow({
           // Spacer keeps childless rows aligned with the expandable ones.
           <span className="inline-block w-6 shrink-0" aria-hidden="true" />
         )}
-        {/* ● GitOps-default-enabled marker (subtle) — fixed width so names stay aligned. */}
-        <span
-          className="inline-block w-3 shrink-0 text-center text-base-content/50"
-          title={isDefault ? "Enabled by the GitOps default" : undefined}
-        >
-          {isDefault ? (
-            <>
-              <span aria-hidden="true">●</span>
-              <span className="sr-only">enabled by the GitOps default</span>
-            </>
-          ) : null}
-        </span>
         <span className="font-mono">{name}</span>
         {display.showVersion && (
           <span className="text-base-content/60 text-xs">v{plugin.version || "?"}</span>
         )}
         {display.showScope && <span className="badge badge-ghost badge-xs">{plugin.scope}</span>}
         {self && <span className="badge badge-info badge-xs">this daemon</span>}
+        {isDefault && (
+          <span className="badge badge-ghost badge-xs" title="Enabled by the GitOps default">
+            gitops
+          </span>
+        )}
         {overridden && (
           <span
             className="badge badge-ghost badge-xs italic"
